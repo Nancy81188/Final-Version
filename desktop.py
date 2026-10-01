@@ -108,7 +108,7 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
-        self.title("Saber Accounting 2.9.38")
+        self.title("Saber Accounting 2.9.39")
         screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
         try: dpi_scale=max(1.0,min(2.0,self.winfo_fpixels("1i")/96.0))
         except tk.TclError: dpi_scale=1.0
@@ -2200,6 +2200,7 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
         self.action_button(nssf_forms,"Employment Declaration Worksheet",lambda:self.employee_nssf_declaration("hire","preview")).pack(side="left",padx=4)
         self.action_button(nssf_forms,"Termination Declaration Worksheet",lambda:self.employee_nssf_declaration("leave","preview")).pack(side="left",padx=4)
         self.action_button(employee_actions,"CNSS Employee Forms",lambda:self.open_cnss_form("cnss_r3", self._selected_employee_id())).pack(side="left",padx=4)
+        tk.Button(employee_actions,text="Official Forms (Excel)",command=self.official_excel_form,bg=GOLD,fg=NAVY,border=0,padx=12,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
         self.action_button(employee_actions,"Refresh",self.load_payroll).pack(side="left",padx=4)
         self.employee_tree=self.table(employees,[("number","Employee ID",105),("name","Employee Name",220),("job","Job Title",150),
             ("start","Starting Date",110),("leaving","Leaving Date",110),("branch","Branch",120),("currency","Currency",70),
@@ -2364,6 +2365,37 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
         for label,kind in (("Preview","preview"),("Save PDF","pdf"),("Save Excel","xlsx")):
             self.action_button(actions,label,lambda value=kind:export(value)).pack(side="left",padx=4)
         self.action_button(actions,"Close",dialog.destroy).pack(side="left",padx=4)
+
+    def official_excel_form(self):
+        """MOF R3 / R3-1 and CNSS 2AA / 41A / leave forms as editable Excel, filled from Settings > Company and the selected employee."""
+        import payroll_excel_forms as forms
+        selected=self.employee_tree.selection() if hasattr(self,"employee_tree") else ()
+        employee=next((row for row in getattr(self,"employee_rows",[]) if selected and str(row["id"])==str(selected[0])),None)
+        window=tk.Toplevel(self); window.title("Official forms (Excel)"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        labels={title:key for key,(title,_builder,_needs) in forms.FORMS.items()}
+        choice=tk.StringVar(value=next(iter(labels)))
+        tk.Label(window,text="Form",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=0,padx=10,pady=(12,4),sticky="w")
+        ttk.Combobox(window,textvariable=choice,values=list(labels),state="readonly",width=58).grid(row=0,column=1,padx=10,pady=(12,4))
+        who=f"Employee: {employee['employee_number']} - {employee['full_name']}" if employee else "No employee selected (only R3-1, the company letter, can be made)"
+        tk.Label(window,text=who,bg=LIGHT,fg=NAVY if employee else "#8B1E1E").grid(row=1,column=0,columnspan=2,padx=10,sticky="w")
+        tk.Label(window,text="The form is filled from Settings > Company and the employee record. Empty yellow cells are for you to complete; mark options with X.",
+                 bg=LIGHT,fg="#5f6b76",wraplength=520,justify="left").grid(row=2,column=0,columnspan=2,padx=10,pady=6,sticky="w")
+        def make():
+            key=labels[choice.get()]
+            if forms.FORMS[key][2] and not employee: return messagebox.showwarning("Official forms","Select an employee in the list first",parent=window)
+            name=f"{key}_{employee['employee_number'] if employee and forms.FORMS[key][2] else 'company'}.xlsx"
+            path=filedialog.asksaveasfilename(parent=window,defaultextension=".xlsx",initialfile=name,filetypes=[("Excel workbook","*.xlsx")])
+            if not path: return
+            try:
+                company=self.client.settings()
+                forms.build_form(key,path,company,employee if forms.FORMS[key][2] else None)
+            except PermissionError: return messagebox.showerror("Official forms","Close the file in Excel, then try again",parent=window)
+            except Exception as exc: return messagebox.showerror("Official forms",str(exc),parent=window)
+            window.destroy()
+            if messagebox.askyesno("Official forms",f"Saved:\n{path}\n\nOpen it now?"):
+                try: os.startfile(path)
+                except Exception: pass
+        self.action_button(window,"Create Excel",make).grid(row=3,column=1,padx=10,pady=10,sticky="e")
 
     def employee_r3_worksheet(self,format_name,form="R3"):
         selected=self.employee_tree.selection()

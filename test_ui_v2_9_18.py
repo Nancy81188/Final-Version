@@ -86,6 +86,22 @@ class ProgramWindowFixesTest(unittest.TestCase):
         self.assertIn("open", app.books_lock_label.cget("text"))
         self.assertFalse([m for m in self.messages if m[0] == "showerror"], self.messages)
 
+    def test_official_excel_forms_dialog_creates_a_filled_file(self):
+        import tempfile
+        app = self.app
+        if not hasattr(app, "employee_tree"): app.build_payroll()
+        app.client.save_employee({"employee_number": "100000777", "full_name": "Test Person", "currency": "LBP", "base_salary": "30000000"})
+        app.load_payroll(); app.update()
+        app.employee_tree.selection_set(app.employee_tree.get_children()[0]); app.update()
+        folder = tempfile.mkdtemp(); target = str(Path(folder) / "41a.xlsx")
+        with mock.patch("desktop.filedialog.asksaveasfilename", return_value=target):
+            app.official_excel_form(); app.update()
+            window = [w for w in app.winfo_children() if isinstance(w, tk.Toplevel)][-1]
+            buttons = [w for w in window.winfo_children() if isinstance(w, tk.Button)]
+            buttons[-1].invoke(); app.update()
+        self.assertTrue(Path(target).is_file())
+        self.assertFalse([m for m in self.messages if m[0] == "showerror"], self.messages)
+
     def test_stock_card_opens_from_items(self):
         self.app.load_inventory(); self.app.update()
         rows = self.app.items_tree.get_children(); self.assertTrue(rows)

@@ -1,5 +1,14 @@
 # Saber Accounting MVP
 
+## Version 2.9.39 (official payroll forms as editable Excel, filled automatically)
+
+- **Payroll > Employees > "Official Forms (Excel)"**: select an employee, choose the form and save. Five forms, laid out like the printed ones (right-to-left, A4, one page per sheet):
+  - MOF **R3** - new employee registration; MOF **R3-1** - covering letter (company only, no employee needed);
+  - CNSS **2AA** - employment declaration (2 sheets: declaration and family members); CNSS **41A** - employment notice; CNSS **leave notice**.
+- Filled from Settings > Company (name, MOF and NSSF numbers, address, phone, e-mail) and the employee record (name / surname, father, mother, birth date and place, nationality, ID, NSSF and MOF numbers, marital status, children, spouse working, hire / leave date, job, salary). Registration numbers go one digit per box, dates into day / month / year, and options are marked with X. Anything Saber does not hold (for example the sex, which is not in the employee record) stays empty for the user; light-yellow cells stay editable.
+- New module `payroll_excel_forms.py` (added to the build as a hidden import). Tests: `test_payroll_excel_forms.py` and a window test for the dialog. 365 tests pass.
+- Changed files: payroll_excel_forms.py (new), desktop.py, .github/workflows/build-windows-installer.yml, installer.iss, README.md, test_payroll_excel_forms.py (new), test_ui_v2_9_18.py.
+
 ## Version 2.9.38 (PDF invoices with unreadable labels; USD invoices showing the VAT in LBP)
 
 - Some PDFs use fonts without a character map: the text layer holds control characters and scrambled Arabic words. Such pages are now read with OCR, and the OCR reading is preferred.
