@@ -136,7 +136,7 @@ class FinalFeaturesMixin:
         self.pr_year = tk.StringVar(value=str(getattr(self, "current_fiscal_year", now.year))); self.pr_index = tk.StringVar(value=f"Q{(now.month - 1) // 3 + 1}")
         self.pr_group = tk.StringVar(value="Employees and Managers (separate)"); self.pr_drafts = tk.BooleanVar(value=False)
         reports = ["R10 - Quarterly withholding", "R5 - Annual employer declaration", "R6 - Individual annual statement",
-                   "NSSF - Contributions statement (payment)", "SETTLEMENT - NSSF annual reconciliation", "CEILINGS - NSSF ceilings by month"]
+                   "NSSF - Contributions table (all employees)", "SETTLEMENT - NSSF annual reconciliation", "CEILINGS - NSSF ceilings by month"]
         tk.Label(controls, text="Report", bg=LIGHT).grid(row=0, column=0, padx=4, sticky="w")
         report_box=ttk.Combobox(controls, textvariable=self.pr_report, values=reports, state="readonly", width=31); report_box.grid(row=0, column=1, padx=4)
         tk.Label(controls, text="Period", bg=LIGHT).grid(row=0, column=2, padx=4, sticky="w")
@@ -172,8 +172,8 @@ class FinalFeaturesMixin:
                 self.pr_index_box.config(values=["Full year"], state="disabled"); self.pr_index.set("Full year")
         def refresh_report(_event=None):
             if self.pr_report.get().startswith("NSSF -"):
-                period_box.config(values=["Auto (employee count)", "Monthly", "Quarterly", "Yearly"])
-                self.pr_period_type.set("Auto (employee count)")
+                period_box.config(values=["Monthly", "Quarterly", "Yearly", "Auto (employee count)"])
+                if self.pr_period_type.get() not in ("Monthly", "Quarterly", "Yearly"): self.pr_period_type.set("Quarterly")
             else:
                 period_box.config(values=["Monthly", "Quarterly", "Yearly"])
                 if self.pr_period_type.get() == "Auto (employee count)": self.pr_period_type.set("Quarterly")
@@ -278,7 +278,7 @@ class FinalFeaturesMixin:
 
     def record_nssf_payment(self):
         result = getattr(self, "payroll_report_result", None)
-        if not result or result.get("report") != "NSSF": return messagebox.showwarning("NSSF Payment", "Generate 'NSSF - Contributions statement' for the period first")
+        if not result or result.get("report") != "NSSF": return messagebox.showwarning("NSSF Payment", "Generate 'NSSF - Contributions table' for the period first")
         window = tk.Toplevel(self); window.title("Record NSSF Payment"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
         values = {"amount": tk.StringVar(value=f'{result["net_payable_lbp"]:.0f}'), "payment_date": tk.StringVar(value=datetime.now().strftime("%d-%m-%Y") if str(datetime.now().year) == str(getattr(self, "current_fiscal_year", datetime.now().year)) else _display(result["date_to"])),
                   "cash_account": tk.StringVar(value="531"), "reference": tk.StringVar()}

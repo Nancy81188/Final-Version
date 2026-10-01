@@ -141,8 +141,10 @@ def _annual_report_bases(report: Mapping[str, Any] | None) -> dict[int, dict[str
 def _annual_report_rows(report: Mapping[str, Any] | None) -> list[Sequence[Any]]:
     if not report:
         return []
+    detail = report.get("monthly_detail")
     sections = report.get("sections") or []
-    rows = sections[0].get("rows") if sections and isinstance(sections[0], Mapping) else []
+    if isinstance(detail, Mapping): rows = detail.get("rows")
+    else: rows = sections[0].get("rows") if sections and isinstance(sections[0], Mapping) else []
     return [
         row for row in (rows or [])
         if isinstance(row, (list, tuple))

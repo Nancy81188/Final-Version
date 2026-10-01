@@ -1,5 +1,19 @@
 # Saber Accounting MVP
 
+## Version 2.9.34 (build fix)
+
+- `requirements.txt` listed `pypdfium2`, `pytesseract` and `PyMuPDF` twice with different versions (left over from the 2.9.32 merge), so `pip install` stopped and both GitHub workflows failed. It now has one line per package, the same versions as the last green build (2.9.31). No code change.
+- Changed files: requirements.txt, installer.iss, desktop.py (title), README.md.
+
+## Version 2.9.33 (clear NSSF table; simpler Assets & Depreciation)
+
+- **Payroll > Official Reports > "NSSF - Contributions table (all employees)"**: the first table now has **one line per employee** for the chosen period (Monthly, Quarterly or Yearly): number of months, salary subject, sickness base, employee 3%, employer 8%, family base and 6%, end-of-service base and 8.5%, total, allowances paid and net due, with a TOTAL line. Each month is calculated with the ceilings and rates in force that month, so a quarter or a year that crosses a change (for example 08-2025: sickness ceiling 120,000,000, minimum wage 28,000,000) is right without any manual split.
+- Below it: the payment summary by branch, then **"Rules applied in this period"** (one line per group of months with the same ceilings and rates), then the monthly detail for checking, then the employee list. Column titles are shorter so the table fits on screen. Quarterly is the default period (Auto is still available).
+- The CNSS forms and the annual settlement read the monthly detail (`monthly_detail` in the report) as before, so their figures do not change.
+- **Purchases & Expenses > Assets & Depreciation**, tab **2. Asset Data Entry** is simplified: choose the asset account (from tab 1, it fills the rate, life and accounts), one "Asset" box (code, description, currency, purchase date, value, residual, start date, invoice), one "Depreciation" box, the buttons Save / New / Delete, and the asset register. The schedule of one asset opens with "Schedule of this asset"; **Annual Rollforward** moved to tab 3 next to the monthly posting.
+- Tests: new test for the NSSF table (one line per employee = sum of its months, rules grouped by month, monthly / quarterly / yearly) and a window test for the three asset tabs; two NSSF tests now read the monthly detail / employee list by name instead of by position. 352 tests pass.
+- Changed files: payroll_reports.py, cnss_forms.py, desktop_final.py, desktop_stage3.py, desktop_assets.py, desktop.py, installer.iss, README.md, test_final_features.py, test_employee_r3.py, test_ui_v2_9_18.py.
+
 ## Version 2.9.32 (the two lines of development merged - nothing lost)
 
 - After version 2.9.23 the project split in two: the Replit line (2.9.24-2.9.27: VAT filing worksheet, invoice returns, warehouse transfer screen, statement navigation, account lookup create, asset attachments, CNSS forms, PDF form editor, party similarity, OCR review) and the ChatGPT line (2.9.24-2.9.31: payroll tax forms, faster tabs, payroll periods, lighter startup, PDF reading, assets depreciation, OCR in the installer). When 2.9.30 was uploaded the Replit line was lost from GitHub.

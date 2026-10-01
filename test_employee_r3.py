@@ -98,7 +98,8 @@ class EmployeeRegistrationTest(unittest.TestCase):
             report = build_nssf_statement(db, "yearly", 2025)
             self.assertEqual(report["employee_count"], 2)
             self.assertEqual(report["payroll_employee_count"], 0)
-            self.assertEqual(len(report["sections"][1]["rows"]), 2)
+            roster = next(s for s in report["sections"] if s["heading"].startswith("Company employee list"))
+            self.assertEqual(len(roster["rows"]), 2)
             automatic = build_nssf_statement(db, "auto", 2025, 5)
             self.assertEqual((automatic["declaration_period"], automatic["date_from"], automatic["date_to"]),
                              ("quarterly", "2025-04-01", "2025-06-30"))

@@ -621,55 +621,69 @@ class Stage3Mixin:
         self.load_purchases(); self.load_expenses()
 
     def build_assets_page(self,page):
+        """Tab 2 - Asset Data Entry: choose the asset account (from tab 1), enter the purchase, save.
+        Rates and accounts come from the asset account; the depreciation table is in tab 3."""
         self.asset_edit_id=None
         defaults={"asset_code":"","name":"","acquired_on":self.fiscal_today(),"start_on":self.fiscal_today(),
                   "currency":"USD","cost":"","residual":"0","useful_months":"60","frequency":"monthly",
                   "asset_account":"","depreciation_account":"","accumulated_account":"","invoice_id":""}
         self.asset_fields={key:tk.StringVar(value=value) for key,value in defaults.items()}
         self.asset_rate=tk.StringVar(value="")
-        sections=[("1. Purchase details",[[ ("Asset code","asset_code"),("Description","name"),("Currency","currency")],
-            [("Purchase date","acquired_on"),("Purchase value","cost"),("Purchase invoice ID","invoice_id")],
-            [("Asset account","asset_account")]]),
-            ("2. Amortisation settings",[[ ("Amortisation start","start_on"),("Residual value","residual"),("Annual rate % (review-required)","rate")],
-            [("Useful life (months)","useful_months"),("Post","frequency")],
-            [("Amortisation expense","depreciation_account"),("Accumulated amortisation","accumulated_account")]])]
-        for title,layout in sections:
-            fields=tk.LabelFrame(page,text=title,bg=LIGHT,padx=10,pady=5); fields.pack(fill="x",padx=8,pady=(4,0))
-            for row,items in enumerate(layout):
-              for index,(label,key) in enumerate(items):
+        form=tk.LabelFrame(page,text="Asset",bg=LIGHT,padx=10,pady=6); form.pack(fill="x",padx=8,pady=(6,0))
+        layout=[[("Asset code","asset_code",14),("Description","name",34),("Currency","currency",8)],
+                [("Purchase date","acquired_on",12),("Purchase value","cost",16),("Residual value","residual",12)],
+                [("Depreciation start","start_on",12),("Purchase invoice No./ID","invoice_id",16),("","",0)]]
+        for row,items in enumerate(layout):
+            for index,(label,key,width) in enumerate(items):
+                if not key: continue
                 column=index*2
-                tk.Label(fields,text=label,bg=LIGHT).grid(row=row,column=column,sticky="w",padx=4,pady=5)
-                if key in ("asset_account","depreciation_account","accumulated_account"):
-                    widget=self.account_search_box(fields,self.asset_fields[key],17)
-                elif key in ("acquired_on","start_on"): widget=self.date_entry(fields,self.asset_fields[key],12)
-                elif key in ("currency","frequency"):
-                    widget=ttk.Combobox(fields,textvariable=self.asset_fields[key],state="readonly",width=14,
-                        values=["USD","LBP","EUR","AED"] if key=="currency" else ["monthly","yearly"])
-                elif key=="rate": widget=tk.Entry(fields,textvariable=self.asset_rate,width=12)
-                else: widget=tk.Entry(fields,textvariable=self.asset_fields[key],width=20)
-                widget.grid(row=row,column=column+1,sticky="ew",padx=(2,12),pady=5)
-                fields.grid_columnconfigure(column+1,weight=1)
+                tk.Label(form,text=label,bg=LIGHT).grid(row=row,column=column,sticky="w",padx=4,pady=4)
+                if key in ("acquired_on","start_on"): widget=self.date_entry(form,self.asset_fields[key],width)
+                elif key=="currency": widget=ttk.Combobox(form,textvariable=self.asset_fields[key],state="readonly",width=width,values=getattr(self,"currency_codes",None) or ["USD","LBP","EUR","AED"])
+                else: widget=tk.Entry(form,textvariable=self.asset_fields[key],width=width)
+                widget.grid(row=row,column=column+1,sticky="w",padx=(2,14),pady=4)
+        rules=tk.LabelFrame(page,text="Depreciation (filled from the asset account in tab 1 - change only if needed)",bg=LIGHT,padx=10,pady=4); rules.pack(fill="x",padx=8,pady=(6,0))
+        tk.Label(rules,text="Rate % / year",bg=LIGHT).grid(row=0,column=0,sticky="w",padx=4)
+        tk.Entry(rules,textvariable=self.asset_rate,width=8).grid(row=0,column=1,sticky="w",padx=(2,14))
+        tk.Label(rules,text="Useful life (months)",bg=LIGHT).grid(row=0,column=2,sticky="w",padx=4)
+        tk.Entry(rules,textvariable=self.asset_fields["useful_months"],width=8).grid(row=0,column=3,sticky="w",padx=(2,14))
+        tk.Label(rules,text="Post",bg=LIGHT).grid(row=0,column=4,sticky="w",padx=4)
+        ttk.Combobox(rules,textvariable=self.asset_fields["frequency"],state="readonly",width=9,values=["monthly","yearly"]).grid(row=0,column=5,sticky="w",padx=(2,14))
+        for column,(label,key) in enumerate((("Asset account","asset_account"),("Expense account","depreciation_account"),("Accumulated account","accumulated_account"))):
+            tk.Label(rules,text=label,bg=LIGHT).grid(row=1,column=column*2,sticky="w",padx=4,pady=(4,0))
+            self.account_search_box(rules,self.asset_fields[key],14).grid(row=1,column=column*2+1,sticky="w",padx=(2,14),pady=(4,0))
         self.asset_rate.trace_add("write",self.asset_rate_changed)
         for key in ("cost","residual"):
             self.asset_fields[key].trace_add("write",self.asset_rate_changed)
-        actions=tk.Frame(page,bg=LIGHT); actions.pack(fill="x",padx=8,pady=4)
-        self.action_button(actions,"Upload PDF",self.choose_asset_pdf).pack(side="left",padx=3)
-        self.action_button(actions,"Record Asset Purchase",self.open_asset_purchase).pack(side="left",padx=3)
-        for label,command in (("Annual Rollforward",self.show_asset_rollforward),("New",self.new_asset),("Save",self.save_asset_entry),("Delete",self.delete_asset_entry),
-                              ("PDF Attachments",self.asset_attachments_window),("Post selected period",self.post_asset_period),("Refresh",self.load_assets)):
+        actions=tk.Frame(page,bg=LIGHT); actions.pack(fill="x",padx=8,pady=6)
+        tk.Button(actions,text="Save",command=self.save_asset_entry,bg=GOLD,fg=NAVY,border=0,padx=20,pady=6,font=("Segoe UI",9,"bold")).pack(side="left",padx=3)
+        for label,command in (("New",self.new_asset),("Delete",self.delete_asset_entry)):
             self.action_button(actions,label,command).pack(side="left",padx=3)
-        tk.Label(actions,text="Enter and verify the annual rate (review required); no Lebanese rate is assumed.",bg=LIGHT,fg=MUTED).pack(side="left",padx=12)
-        lists=tk.Frame(page,bg=LIGHT); lists.pack(fill="both",expand=True,padx=8,pady=4)
-        self.asset_list=ttk.Treeview(lists,columns=("code","name","purchase","cost","currency","previous","yearly","cumulative","net"),show="headings",height=5)
-        for key,title,width in (("code","Asset",90),("name","Description",150),("purchase","Purchase date",105),("cost","Purchase value",100),("currency","Currency",70),
-                                ("previous","Old amort.",100),("yearly","Yearly amort.",105),("cumulative","Cumulative amort.",120),("net","Net value",100)):
-            self.asset_list.heading(key,text=title); self.asset_list.column(key,width=width,stretch=key=="name")
-        self.asset_list.pack(fill="x"); self.asset_list.bind("<<TreeviewSelect>>",lambda _e:self.select_asset())
-        self.asset_schedule_tree=ttk.Treeview(lists,columns=("date","amount","accumulated","net","status"),show="headings")
-        for key,title,width in (("date","Period end",120),("amount","Amortisation",130),("accumulated","Accumulated",130),("net","Net book value",130),("status","Status",85)):
-            self.asset_schedule_tree.heading(key,text=title); self.asset_schedule_tree.column(key,width=width)
-        self.asset_schedule_tree.pack(fill="both",expand=True,pady=(8,0))
+        tk.Label(actions,text="  |  ",bg=LIGHT,fg=MUTED).pack(side="left")
+        for label,command in (("Fill from PDF",self.choose_asset_pdf),("PDF Attachments",self.asset_attachments_window),
+                              ("Schedule of this asset",self.show_asset_schedule),("Record Asset Purchase",self.open_asset_purchase)):
+            self.action_button(actions,label,command).pack(side="left",padx=3)
+        lists=tk.LabelFrame(page,text="Asset register - click a line to edit it",bg=LIGHT,padx=4,pady=4); lists.pack(fill="both",expand=True,padx=8,pady=(0,6))
+        self.asset_list=ttk.Treeview(lists,columns=("code","name","purchase","cost","currency","previous","yearly","cumulative","net"),show="headings")
+        for key,title,width in (("code","Asset",90),("name","Description",190),("purchase","Purchase date",100),("cost","Purchase value",110),("currency","Currency",70),
+                                ("previous","Old deprec.",100),("yearly","This year",100),("cumulative","Total deprec.",110),("net","Net value",110)):
+            self.asset_list.heading(key,text=title); self.asset_list.column(key,width=width,stretch=key=="name",anchor="w" if key in ("code","name","purchase","currency") else "e")
+        self.asset_list.pack(fill="both",expand=True); self.asset_list.bind("<<TreeviewSelect>>",lambda _e:self.select_asset())
+        self.asset_schedule_tree=None
         self.load_assets()
+
+    def show_asset_schedule(self):
+        if not self.asset_edit_id: return messagebox.showwarning("Assets","Select an asset in the register first")
+        window=tk.Toplevel(self); window.title("Depreciation schedule of the selected asset"); window.geometry("720x460"); window.configure(bg=LIGHT)
+        tree=ttk.Treeview(window,columns=("date","amount","accumulated","net","status"),show="headings")
+        for key,title,width in (("date","Period end",120),("amount","Depreciation",130),("accumulated","Accumulated",130),("net","Net book value",130),("status","Status",90)):
+            tree.heading(key,text=title); tree.column(key,width=width,anchor="w" if key in ("date","status") else "e")
+        tree.pack(fill="both",expand=True,padx=8,pady=8); self.asset_schedule_tree=tree
+        bar=tk.Frame(window,bg=LIGHT); bar.pack(fill="x",padx=8,pady=(0,8))
+        self.action_button(bar,"Post selected period",self.post_asset_period).pack(side="left",padx=3)
+        tk.Label(bar,text="Monthly posting by account is in tab 3.",bg=LIGHT,fg=MUTED).pack(side="left",padx=10)
+        window.bind("<Destroy>",lambda e:setattr(self,"asset_schedule_tree",None) if e.widget is window else None)
+        self.select_asset()
 
     def new_asset(self):
         self.asset_edit_id=None
@@ -677,7 +691,7 @@ class Stage3Mixin:
         for key,var in self.asset_fields.items():
             var.set({"acquired_on":self.fiscal_today(),"start_on":self.fiscal_today(),"currency":"USD","residual":"0",
                      "useful_months":"60","frequency":"monthly"}.get(key,""))
-        self.asset_schedule_tree.delete(*self.asset_schedule_tree.get_children())
+        if getattr(self,"asset_schedule_tree",None) is not None: self.asset_schedule_tree.delete(*self.asset_schedule_tree.get_children())
 
     def choose_asset_pdf(self):
         path=filedialog.askopenfilename(filetypes=[("PDF asset invoice","*.pdf")])
@@ -845,10 +859,12 @@ class Stage3Mixin:
             value=asset.get(key) or ""
             var.set(_dd(value) if key in ("acquired_on","start_on") and value else str(value))
         self.asset_rate.set(str(asset.get("annual_rate") or ""))
-        self.asset_schedule_tree.delete(*self.asset_schedule_tree.get_children())
+        tree=getattr(self,"asset_schedule_tree",None)
+        if tree is None or not tree.winfo_exists(): return
+        tree.delete(*tree.get_children())
         try: rows=self.client.asset_schedule(self.asset_edit_id)
         except Exception as exc: return messagebox.showerror("Assets",str(exc))
-        for row in rows: self.asset_schedule_tree.insert("","end",iid=row["period_end"],values=(_dd(row["period_end"]),row["amount"],row["accumulated"],row["net_book_value"],"Posted" if row["posted"] else "Draft"))
+        for row in rows: tree.insert("","end",iid=row["period_end"],values=(_dd(row["period_end"]),row["amount"],row["accumulated"],row["net_book_value"],"Posted" if row["posted"] else "Draft"))
 
     def upload_asset_pdf(self,asset_id,path):
         path=Path(path)
@@ -991,7 +1007,8 @@ class Stage3Mixin:
         self.new_asset(); self.load_assets()
 
     def post_asset_period(self):
-        selected=self.asset_schedule_tree.selection()
+        tree=getattr(self,"asset_schedule_tree",None)
+        selected=tree.selection() if tree is not None and tree.winfo_exists() else ()
         if not self.asset_edit_id or not selected: return messagebox.showwarning("Assets","Select an asset and an amortisation period")
         period=selected[0]
         if not messagebox.askyesno("Assets",f"Post amortisation for {period} to the journal?"): return

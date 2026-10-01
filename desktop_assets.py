@@ -97,6 +97,8 @@ class AssetsMixin:
         tk.Button(bar2, text="Post All Accounts", command=lambda: self.post_depreciation_entry(all_accounts=True), bg=GOLD, fg=NAVY, border=0, padx=12, pady=5).pack(side="left", padx=3)
         for text, mode in (("Print Preview", "preview"), ("Excel", "xlsx"), ("PDF", "pdf")):
             tk.Button(bar2, text=text, command=lambda m=mode: self.export_depreciation_table(m), bg=NAVY, fg="white", border=0, padx=10, pady=5).pack(side="left", padx=2)
+        if hasattr(self, "show_asset_rollforward"):
+            tk.Button(bar2, text="Annual Rollforward", command=self.show_asset_rollforward, bg=NAVY, fg="white", border=0, padx=10, pady=5).pack(side="left", padx=(12, 2))
         self.dt_info = tk.Label(page, text="Each asset account shows its assets, then one depreciation entry per account (Dr expense / Cr accumulated).", bg=LIGHT, fg=NAVY, anchor="w")
         self.dt_info.pack(fill="x", padx=10)
         self.dt_tree = ttk.Treeview(page, columns=("code", "name", "date", "value", "old", "current", "total", "net", "posted"), show="headings")

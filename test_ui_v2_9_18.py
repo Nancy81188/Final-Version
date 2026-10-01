@@ -54,6 +54,28 @@ class ProgramWindowFixesTest(unittest.TestCase):
         self.app.client.select_company_year(self.company["id"], year); self.app.current_company = self.company; self.app.current_fiscal_year = int(year)
         self.app.main_screen(); self.app.update()
 
+    def test_assets_are_three_clear_tabs_and_an_asset_saves_from_its_account(self):
+        app = self.app
+        app._ensure_main_tab(app.purchases_tab) if hasattr(app, "_ensure_main_tab") else None
+        if not hasattr(app, "assets_tabs"): app.build_purchases_expenses()
+        app.update()
+        titles = [app.assets_tabs.tab(tab, "text") for tab in app.assets_tabs.tabs()]
+        self.assertEqual(titles, ["1. Asset Accounts & Depreciation %", "2. Asset Data Entry", "3. Monthly Depreciation Table"])
+        app.client.save_asset_category({"account_code": "2244", "name": "Vehicles", "annual_rate": "20",
+                                        "depreciation_account": "681", "accumulated_account": "2824"})
+        app.load_asset_accounts(); app.update()
+        label = next(v for v in app.asset_category_box["values"] if v.startswith("2244"))
+        app.asset_category.set(label); app.asset_category_chosen()
+        self.assertEqual((app.asset_fields["asset_account"].get(), app.asset_rate.get(), app.asset_fields["useful_months"].get()), ("2244", "20", "60"))
+        app.asset_fields["asset_code"].set("VAN-1"); app.asset_fields["name"].set("Delivery van"); app.asset_fields["cost"].set("12000")
+        app.asset_fields["acquired_on"].set(f"01-01-{app.current_fiscal_year}"); app.asset_fields["start_on"].set(f"01-01-{app.current_fiscal_year}")
+        app.save_asset_entry(review_confirmed=True); app.update()
+        self.assertFalse([m for m in self.messages if m[0] == "showerror"], self.messages)
+        self.assertTrue(app.asset_list.get_children())
+        self.assertIsNone(app.asset_schedule_tree)  # the schedule opens only on request, keeping tab 2 simple
+        app.show_asset_schedule(); app.update()
+        self.assertTrue(app.asset_schedule_tree.get_children())
+
     def test_stock_card_opens_from_items(self):
         self.app.load_inventory(); self.app.update()
         rows = self.app.items_tree.get_children(); self.assertTrue(rows)

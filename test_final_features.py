@@ -896,7 +896,7 @@ class ArabicPdfAndNssfTest(unittest.TestCase):
 
     def test_nssf_statement_monthly_ceilings_and_payment(self):
         result = build_payroll_report(self.db, "NSSF", "quarterly", 2025, 3)
-        rows = {(r[1], r[2]): r for r in result["sections"][0]["rows"]}
+        rows = {(r[1], r[2]): r for r in result["monthly_detail"]["rows"]}
         self.assertEqual(rows[("رامي الخوري", "07-2025")][4:7], [90000000, 2700000, 7200000])  # 90M ceiling in July
         self.assertEqual(rows[("رامي الخوري", "08-2025")][4:7], [100000000, 3000000, 8000000])  # Salary is below the 120M ceiling
         self.assertEqual(rows[("Maya Haddad", "07-2025")][3:6], [179000000, 90000000, 2700000])  # USD salary converted, exact LBP
@@ -905,6 +905,29 @@ class ArabicPdfAndNssfTest(unittest.TestCase):
         payment = self.db.record_nssf_payment({"amount": str(result["net_payable_lbp"]), "payment_date": "15-10-2025", "cash_account": "531", "reference": "NSSF-778", "period_label": result["period_label"]}, self.user)
         lines = [(r["account_code"], r["debit"], r["credit"]) for r in self.db.journal() if r["entry_number"] == payment["voucher"]]
         self.assertEqual(lines, [("4431", 145825000.0, 0.0), ("531", 0.0, 145825000.0)])
+
+
+    def test_nssf_table_has_one_line_per_employee_and_the_rules_of_each_month(self):
+        result = build_payroll_report(self.db, "NSSF", "quarterly", 2025, 3)
+        table = result["sections"][0]
+        self.assertIn("one line per employee", table["heading"])
+        lines = [r for r in table["rows"][:-1]]
+        self.assertEqual(len({r[1] for r in lines}), len(lines))  # each employee appears once
+        detail = result["monthly_detail"]["rows"][:-1]
+        for line in lines:
+            months = [r for r in detail if r[1] == line[1]]
+            self.assertEqual(line[2], len(months))
+            for position in range(3, 14):
+                self.assertEqual(line[position], sum(r[position] for r in months))
+        total = table["rows"][-1]
+        self.assertEqual(total[-1], result["net_payable_lbp"])
+        rules = result["sections"][2]["rows"]
+        self.assertEqual(rules[0][0], "07-2025"); self.assertEqual(rules[0][1], 90000000)
+        self.assertEqual(rules[1][0], "08-2025 to 09-2025"); self.assertEqual(rules[1][1], 120000000)
+        self.assertEqual(rules[1][7], 28000000)
+        for period, index in (("monthly", 8), ("quarterly", 3), ("yearly", 1)):
+            with self.subTest(period=period):
+                self.assertIn("one line per employee", build_payroll_report(self.db, "NSSF", period, 2025, index)["sections"][0]["heading"])
 
     def test_arabic_text_in_pdf(self):
         from report_export import shape_arabic, has_arabic, arabic_fonts, export_sections_pdf, export_invoice_pdf

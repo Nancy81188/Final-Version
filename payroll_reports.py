@@ -8,7 +8,7 @@ exchange rate of their payroll period.
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 REPORTS = {
@@ -314,13 +314,23 @@ def build_nssf_statement(db, period_type="monthly", year=None, index=1, include_
         rows.append([row.get("nssf_number") or "-", row["full_name"], row["period_date"][5:7] + "-" + row["period_date"][:4]] + [values[k] for k in
                     ("salary", "sick_base", "employee", "employer_sick", "family_base", "family", "eos_base", "eos", "total", "allowance", "net")])
     rows.sort(key=lambda r: (r[1], r[2][3:] + r[2][:2]))
-    rows.append(["TOTAL | المجموع", f"{len(payroll_employee_ids)} employee(s)", ""] + [totals[k] for k in ("salary", "sick_base", "employee", "employer_sick", "family_base", "family", "eos_base", "eos", "total", "allowance", "net")])
+    keys = ("salary", "sick_base", "employee", "employer_sick", "family_base", "family", "eos_base", "eos", "total", "allowance", "net")
+    # ---- one line per employee for the whole period (each month already used its own ceilings and rates)
+    by_employee = {}
+    for line in rows:
+        item = by_employee.setdefault((line[1], line[0]), {"months": [], **{k: ZERO for k in keys}})
+        item["months"].append(line[2])
+        for position, key in enumerate(keys): item[key] += line[3 + position]
+    summary_rows = [[number, name, len(item["months"])] + [item[k] for k in keys]
+                    for (name, number), item in sorted(by_employee.items())]
+    summary_rows.append(["TOTAL | المجموع", f"{len(by_employee)} employee(s)", sum(len(i["months"]) for i in by_employee.values())] + [totals[k] for k in keys])
+    rows.append(["TOTAL | المجموع", f"{len(payroll_employee_ids)} employee(s)", ""] + [totals[k] for k in keys])
     def rate_label(position):
         labels=sorted({_rate_text(values[position]) for values in rates_seen.values()})
         return " / ".join(labels) if labels else "saved rate"
-    headers = ["NSSF No. | رقم الضمان", "Employee | الأجير", "Month | الشهر", "Salary subject | الأجر الخاضع", "Sickness base | أساس المرض", f"Employee {rate_label(2)} | حصة الأجير",
-               f"Employer {rate_label(3)} | صاحب العمل", "Family base | أساس العائلية", f"Family {rate_label(4)} | العائلية", "EOS base | أساس نهاية الخدمة", f"EOS {rate_label(5)} | نهاية الخدمة",
-               "Total | المجموع", "Allowances | تعويضات مدفوعة", "Net due | الصافي"]
+    amount_headers = ["Salary subject", "Sickness base", f"Employee {rate_label(2)}", f"Employer sick. {rate_label(3)}", "Family base",
+                      f"Family {rate_label(4)}", "EOS base", f"EOS {rate_label(5)}", "Total", "Less allowances", "Net due"]
+    headers = ["NSSF No.", "Employee", "Month"] + amount_headers
     summary = [[f"Sickness & maternity - employee share ({rate_label(2)})", "المرض والأمومة - حصة الأجير", totals["employee"]],
                [f"Sickness & maternity - employer share ({rate_label(3)})", "المرض والأمومة - حصة صاحب العمل", totals["employer_sick"]],
                ["Sickness & maternity - total", "مجموع المرض والأمومة", totals["employee"] + totals["employer_sick"]],
@@ -329,14 +339,34 @@ def build_nssf_statement(db, period_type="monthly", year=None, index=1, include_
                ["TOTAL CONTRIBUTIONS", "مجموع الاشتراكات", totals["total"]],
                ["Less: family allowances paid to employees on behalf of the NSSF", "ينزل: التعويضات العائلية المدفوعة عن الصندوق", totals["allowance"]],
                ["NET AMOUNT PAYABLE TO THE NSSF (LBP)", "الصافي المتوجب دفعه للصندوق (ل.ل.)", totals["net"]]]
-    ceilings = [[month[5:] + "-" + month[:4], _ceiling_text(v[0]), _ceiling_text(v[1]), _rate_text(v[2]), _rate_text(v[3]), _rate_text(v[4]), _rate_text(v[5])] for month, v in sorted(rates_seen.items())]
-    sections = [{"heading": f"Employees - {label} | الأجراء", "headers": headers, "rows": rows if len(rows) > 1 else [["No payroll in this period"] + [""] * 13], "total_rows": [len(rows) - 1] if len(rows) > 1 else []},
+    # ---- the rules in force during the period, grouped: consecutive months with the same ceilings and rates form one line
+    month_keys = []
+    cursor = date.fromisoformat(start[:10]).replace(day=1); last = date.fromisoformat(end[:10])
+    while cursor <= last:
+        month_keys.append(cursor.strftime("%Y-%m")); cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+    rules = []
+    for month in month_keys:
+        settings = db.payroll_settings_for(_month_end(month + "-01"))
+        values = (settings.get("medical_ceiling"), settings.get("family_ceiling"), settings.get("employee_nssf_rate"), settings.get("medical_rate"),
+                  settings.get("family_rate"), settings.get("end_service_rate"), settings.get("minimum_wage"))
+        if rules and rules[-1][2] == values: rules[-1][1] = month
+        else: rules.append([month, month, values])
+    show_month = lambda m: m[5:] + "-" + m[:4]
+    rule_rows = [[show_month(a) if a == b else f"{show_month(a)} to {show_month(b)}", _ceiling_text(v[0]), _ceiling_text(v[1]), _rate_text(v[2]), _rate_text(v[3]),
+                  _rate_text(v[4]), _rate_text(v[5]), _ceiling_text(v[6])] for a, b, v in rules]
+    detail = {"heading": f"Monthly detail (for checking) - {label} | التفصيل الشهري", "headers": headers,
+              "rows": rows if len(rows) > 1 else [["No payroll in this period"] + [""] * 13], "total_rows": [len(rows) - 1] if len(rows) > 1 else []}
+    sections = [{"heading": f"NSSF table - {label} - one line per employee | جدول الضمان الاجتماعي",
+                 "headers": ["NSSF No.", "Employee", "Months"] + amount_headers,
+                 "rows": summary_rows if by_employee else [["No payroll in this period"] + [""] * 13], "total_rows": [len(summary_rows) - 1] if by_employee else []},
+                {"heading": "Payment summary | خلاصة الدفع", "headers": ["Branch", "الفرع", "Amount (LBP)"], "rows": summary, "total_rows": [2, 5, 7]},
+                {"heading": "Rules applied in this period (each month uses the rules in force that month) | القوانين المطبقة",
+                 "headers": ["Months", "Sickness ceiling", "Family ceiling", "Employee", "Employer sickness", "Family", "End of service", "Minimum wage"],
+                 "rows": rule_rows or [["-"] * 8], "total_rows": []},
+                detail,
                 {"heading": f"Company employee list - {len(period_employees)} in period, {len(payroll_employee_ids)} with payroll | لائحة الأجراء",
                  "headers": ["Emp. No.","Employee Name","NSSF No.","Nationality","Hire Date","Leave Date","Payroll in period"],
-                 "rows": roster or [["No employees in this period"]+[""]*6],"total_rows": []},
-                {"heading": "Payment summary | خلاصة الدفع", "headers": ["Branch", "الفرع", "Amount (LBP)"], "rows": summary, "total_rows": [2, 5, 7]},
-                {"heading": "Monthly ceilings and rates applied | السقوف والنسب المعتمدة شهرياً", "headers": ["Month", "Sickness ceiling", "Family ceiling", "Employee", "Employer sickness", "Family", "End of service"],
-                 "rows": ceilings or [["-"] * 7], "total_rows": []}]
+                 "rows": roster or [["No employees in this period"]+[""]*6],"total_rows": []}]
     meta = [f"Employer: {company.get('company_name') or '-'}   Employer NSSF No.: {company.get('company_nssf') or '-'}   MOF No.: {company.get('company_mof') or '-'}",
             f"Current active employees: {current_employee_count}   In selected period: {len(period_employees)}   With payroll: {len(payroll_employee_ids)}",
             f"Period: {label} ({_display(start)} to {_display(end)})   Amounts in LBP   Source: " + ("posted and draft payroll" if include_drafts else "posted payroll"),
@@ -345,7 +375,7 @@ def build_nssf_statement(db, period_type="monthly", year=None, index=1, include_
     return {"report": "NSSF", "title": NSSF_TITLE, "period_label": label, "date_from": start, "date_to": end, "meta": meta, "sections": sections,
             "declaration_period": period_type, "declaration_employee_count": employee_count_at_selection,
             "record_count": len(records), "employee_count": len(period_employees), "active_employee_count": current_employee_count,
-            "payroll_employee_count": len(payroll_employee_ids), "net_payable_lbp": totals["net"], "summary": {k: v for k, v in totals.items()}}
+            "payroll_employee_count": len(payroll_employee_ids), "net_payable_lbp": totals["net"], "monthly_detail": detail, "summary": {k: v for k, v in totals.items()}}
 
 
 def build_nssf_settlement(db,year):
@@ -358,7 +388,7 @@ def build_nssf_settlement(db,year):
     statement=build_nssf_statement(db,"yearly",year,include_drafts=False)
     filed={row["month"]:row for row in db.nssf_filed_wages(year)}
     actual={month:{"sick":ZERO,"family":ZERO,"eos":ZERO,"net":ZERO} for month in range(1,13)}
-    for row in statement["sections"][0]["rows"][:-1]:
+    for row in statement["monthly_detail"]["rows"][:-1]:
         month=int(row[2][:2]); total=actual[month]
         for key,column in (("sick",4),("family",7),("eos",9),("net",13)): total[key]+=Decimal(str(row[column]))
     lines=[]; payments=[]; missing=[]; wage_difference=ZERO; amount_paid=ZERO
