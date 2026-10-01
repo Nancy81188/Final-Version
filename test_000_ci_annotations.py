@@ -6,6 +6,7 @@ check results when job logs cannot be downloaded.
 """
 
 import os
+import sys
 import unittest
 
 
@@ -22,11 +23,11 @@ if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
         message = " ".join(str(exception).split())[:800] or exception_type.__name__
         title = f"{kind}: {test.id()}"
         module = test.__class__.__module__.replace(".", "/")
-        print(
-            f"::error file={_escape(module + '.py')},line=1,"
-            f"title={_escape(title)}::{_escape(exception_type.__name__ + ': ' + message)}",
-            flush=True,
-        )
+        line = (f"::error file={_escape(module + '.py')},line=1,"
+                f"title={_escape(title)}::{_escape(exception_type.__name__ + ': ' + message)}")
+        # Windows consoles may use cp1252: never let an Arabic or symbol character crash the test run.
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        print(line.encode(encoding, "backslashreplace").decode(encoding), flush=True)
 
     def _failure_with_annotation(self, test, error):
         _annotate("FAIL", test, error)

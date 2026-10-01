@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.35 (Windows build: UTF-8 test output)
+
+- On the Windows runner the console is cp1252: when a test failed with an Arabic or special character in its message, printing the GitHub annotation crashed the whole test run (UnicodeEncodeError). The annotation print is now encoding-safe and the Windows workflow runs Python in UTF-8 mode (`PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`).
+- Changed files: test_000_ci_annotations.py, .github/workflows/build-windows-installer.yml, installer.iss, desktop.py (title), README.md.
+
 ## Version 2.9.34 (build fix)
 
 - `requirements.txt` listed `pypdfium2`, `pytesseract` and `PyMuPDF` twice with different versions (left over from the 2.9.32 merge), so `pip install` stopped and both GitHub workflows failed. It now has one line per package, the same versions as the last green build (2.9.31). No code change.
