@@ -184,6 +184,8 @@ def _invoice_text_needs_ocr(path, text):
     """Retry weak text layers with OCR instead of treating any extracted text as usable."""
     if len((text or "").strip()) < 20:
         return True
+    if (text or "").count("\x1f") > 5:
+        return True   # fonts without a character map: scrambled words, read the page image instead
     parsed = _parse_invoice_text(path, text)
     return parsed.get("total") is None or (
         not parsed.get("invoice_number") and not parsed.get("invoice_date")
@@ -668,7 +670,12 @@ def read_invoice_pdf(path):
         return result
 
     ocr_result = _parse_invoice_text(path, ocr_text)
-    result = _merge_invoice_suggestions(result, ocr_result)
+    if text.count("\x1f") > 5:
+        # Fonts without a character map leave control characters and scrambled Arabic in the text layer:
+        # the OCR reading of the page is then the more reliable one.
+        result = _merge_invoice_suggestions(ocr_result, result)
+    else:
+        result = _merge_invoice_suggestions(result, ocr_result)
     combined_text = "\n".join(part for part in (text.strip(), ocr_text.strip()) if part)
     result["text"] = combined_text
     result["ocr_used"] = True
@@ -715,6 +722,42 @@ def _subtotal_reconciling_vat(text, vat, total):
     return found
 
 
+def _vat_triple(text):
+    """Amounts whose labels are unreadable (broken Arabic fonts, boxes without words): find
+    before-VAT + VAT = total where VAT is exactly 11% of before-VAT. Dates, percentages and long
+    reference numbers are ignored. Returns (subtotal, vat, total) or None."""
+    clean = re.sub(r"\b\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}\b", " ", normalize_invoice_text(text or ""))
+    clean = re.sub(r"\d+(?:[.,]\d+)?\s*[%٪]", " ", clean)
+    values = set()
+    for token in re.findall(r"(?<![\w.])\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?(?![\w])|(?<![\w.,])\d+(?:\.\d{1,2})?(?![\w,])", clean):
+        digits = token.replace(",", "")
+        if len(digits.split(".")[0]) > 9: continue
+        try: values.add(round(float(digits), 2))
+        except ValueError: pass
+    best = None
+    for a in values:
+        if a <= 0: continue
+        for b in values:
+            if b <= 0 or abs(b - a * 0.11) > max(0.02, a * 0.0005): continue
+            c = round(a + b, 2)
+            if any(abs(c - v) <= 0.02 for v in values) and (best is None or c > best[2]): best = (a, b, c)
+    return best
+
+
+def _foreign_currency_from_lbp_vat(text, vat):
+    """Foreign-currency invoices in Lebanon also show the VAT in LBP ("VAT 11% LBP 374,110,000").
+    If an LBP amount on a VAT line is VAT x a plausible exchange rate, the invoice itself is not in LBP."""
+    if not vat: return None
+    for line in (text or "").splitlines():
+        if not re.search(r"(?i)lbp|l\.l|ل\.ل", line) or not re.search(r"(?i)vat|tva|ضريبة", line): continue
+        for token in re.findall(r"\d{1,3}(?:,\d{3})+|\d{5,}", line):
+            amount = float(token.replace(",", ""))
+            rate = amount / vat
+            if 1000 <= rate <= 200000:
+                return ("EUR" if re.search(r"(?i)\beur\b|€", text or "") else "USD"), round(rate)
+    return None
+
+
 def _parse_invoice_text(path, text):
     path = Path(path); text = normalize_invoice_text(text)
     result = {"file": path.name, "path": str(path), "text": text, "invoice_number": "", "invoice_date": "", "party_name": "", "currency": "",
@@ -723,6 +766,8 @@ def _parse_invoice_text(path, text):
     if len(text.strip()) < 20:
         result["notes"] = "This PDF is a scanned image (no text inside). The file will be attached; enter the amounts manually."; return result
     result["invoice_number"] = _invoice_number(text)
+    if re.fullmatch(r"\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}", result["invoice_number"] or ""):
+        result["invoice_number"] = _document_reference_number(text) or ""   # a date is never the invoice number
     result["invoice_date"] = _invoice_date(text)
     result["currency"] = _invoice_currency(text)
     result["total"] = _invoice_total_after(text)
@@ -756,6 +801,21 @@ def _parse_invoice_text(path, text):
     result["acquisition_cost"] = result["subtotal"]
     if result["acquisition_cost"] is None and result["vat"] == 0:
         result["acquisition_cost"] = result["total"]
+    inferred = []
+    if result["total"] is None or result["vat"] is None or result["subtotal"] is None:
+        triple = _vat_triple(text)
+        # A VAT read from the "VAT 11% LBP ..." line of a foreign-currency invoice is the LBP equivalent, not the VAT.
+        if triple and result.get("vat") and result.get("total") is None and 1000 <= result["vat"] / triple[1] <= 200000:
+            result["vat"] = None
+        known = [(key, value) for key, value in zip(("subtotal", "vat", "total"), triple or ()) if result.get(key) is not None]
+        if triple and all(abs(result[key] - value) <= 0.02 for key, value in known):
+            for key, value in zip(("subtotal", "vat", "total"), triple):
+                if result.get(key) is None: result[key] = value; inferred.append(key)
+    foreign = _foreign_currency_from_lbp_vat(text, result["vat"])
+    if foreign and result.get("currency") in ("", "LBP", None):
+        result["currency"] = foreign[0]
+        inferred.append(f"currency {foreign[0]} (the LBP amount is the VAT at about {foreign[1]:,} LBP)")
+    result["inferred"] = inferred
     result["notes"] = _invoice_notes(result, text)
     return result
 
@@ -790,6 +850,8 @@ def _invoice_notes(result, text, prefix=""):
         notes.append("VAT amount not found; enter or confirm it manually")
     if result.get("items"):
         notes.append(f"{len(result['items'])} item row(s) pre-filled for review")
+    if result.get("inferred"):
+        notes.append("recognised without labels by the 11% VAT check - verify: " + ", ".join(result["inferred"]))
     return "; ".join(notes)
 
 

@@ -1,5 +1,14 @@
 # Saber Accounting MVP
 
+## Version 2.9.38 (PDF invoices with unreadable labels; USD invoices showing the VAT in LBP)
+
+- Some PDFs use fonts without a character map: the text layer holds control characters and scrambled Arabic words. Such pages are now read with OCR, and the OCR reading is preferred.
+- When the amounts have no readable label (a summary box with numbers only), the reader recognises **before VAT + VAT = total with VAT exactly 11% of before VAT**; dates, percentages and long reference numbers are ignored. The Check note says "recognised without labels by the 11% VAT check - verify".
+- A line such as "VAT 11% LBP 374,110,000" on a foreign-currency invoice is the VAT in LBP: it is no longer taken as the VAT amount, and the invoice currency is set to USD (EUR when the invoice mentions EUR / €), with the implied rate shown in the Check note.
+- A date is never taken as the invoice number.
+- Checked on invoice 5000290336 (Mohamad M. Saad): number 16, date 01-11-2024, supplier, USD, 38,000 / 4,180 / 42,180 - 7 / 7 fields. Tests added with the real text and OCR kept in `tests_data/`. 361 tests pass.
+- Changed files: pdf_import.py, test_pdf_real_scans.py, tests_data/ (2 new files), installer.iss, desktop.py, README.md.
+
 ## Version 2.9.37 (scanned PDF import fixed on Windows)
 
 - **Cause of empty rows for scanned PDFs in the installed program:** the bundled OCR language files were passed to Tesseract as `--tessdata-dir "C:\Program Files\...\tessdata"`. pytesseract splits that text in a way that breaks Windows paths (backslashes, spaces, quotes), so Tesseract found no language and every scanned PDF showed "scanned image (no text inside)". The folder is now given through `TESSDATA_PREFIX`, which needs no splitting.

@@ -22,6 +22,22 @@ class RealScanTests(unittest.TestCase):
         self.assertEqual(parsed["currency"], "USD")
         self.assertEqual((parsed["subtotal"], parsed["vat"], parsed["total"]), (18878.5, 2076.64, 20955.14))
 
+    def test_unlabelled_amounts_and_lbp_vat_line_of_a_usd_invoice(self):
+        # Text layer with broken Arabic labels: the summary box shows 38000 / 4180 / 0 / 42,180.00
+        # without readable words, and "VAT 11% LBP 374,110,000" is the VAT in LBP of a USD invoice.
+        text = (DATA / "text_saad_invoice_broken_arabic.txt").read_text(encoding="utf-8")
+        parsed = _parse_invoice_text("5000290336.pdf", text)
+        self.assertEqual((parsed["invoice_number"], parsed["invoice_date"]), ("16", "01-11-2024"))
+        # The scrambled text layer is sent to OCR; the OCR reading gives the supplier.
+        from pdf_import import _invoice_text_needs_ocr
+        self.assertTrue(_invoice_text_needs_ocr("5000290336.pdf", text))
+        ocr = _parse_invoice_text("5000290336.pdf", (DATA / "ocr_saad_invoice.txt").read_text(encoding="utf-8"))
+        self.assertEqual((ocr["invoice_number"], ocr["invoice_date"], ocr["party_name"], ocr["currency"]), ("16", "01-11-2024", "Mohamad M. Saad", "USD"))
+        self.assertEqual((ocr["subtotal"], ocr["vat"], ocr["total"]), (38000.0, 4180.0, 42180.0))
+        self.assertEqual(parsed["currency"], "USD")
+        self.assertEqual((parsed["subtotal"], parsed["vat"], parsed["total"]), (38000.0, 4180.0, 42180.0))
+        self.assertIn("11% VAT check - verify", parsed["notes"])
+
     def test_section_total_is_not_taken_as_subtotal_when_another_total_reconciles(self):
         text = ("Supplier SAL\nInvoice No: 9\nDate: 01-02-2026\nTOTAL USD $ 100.00\nTOTAL USD $ 50.00\n"
                 "TOTAL A+B $ 150.00\nVAT 11% $ 16.50\nGrand Total: $ 166.50")
