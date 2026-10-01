@@ -369,6 +369,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/backups":
             return self._json(200,{"items":self.db.list_backups()})
         if path == "/api/settings": return self._json(200,self.db.settings())
+        if path == "/api/books-lock": return self._json(200,self.db.books_lock())
         if path == "/api/currencies": return self._json(200,{"items":self.db.currencies()})
         if path == "/api/exchange-rates": return self._json(200,{"items":self.db.list_exchange_rates()})
         if path == "/api/doe/candidates":
@@ -576,6 +577,14 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200,{"user":result})
         if path == "/api/backups/create":
             return self._json(200,{"path":self.db.backup()})
+        if path == "/api/backups/scheduled":
+            if user["role"]=="viewer": return self._json(200,{"path":None})
+            try: return self._json(200,{"path":self.db.maybe_scheduled_backup()})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/books-lock":
+            if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
+            try: return self._json(200,self.db.set_books_lock(body.get("locked_until"),user["id"]))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/backups/restore":
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             try: result=self.db.restore_backup(body.get("name"),user["id"])

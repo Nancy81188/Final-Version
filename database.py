@@ -213,6 +213,33 @@ CREATE TABLE IF NOT EXISTS vat_returns (
  credit_carried_forward_lbp TEXT NOT NULL DEFAULT '0', snapshot TEXT NOT NULL,
  saved_by INTEGER, saved_by_name TEXT, saved_at TEXT NOT NULL, UNIQUE(year,quarter)
 );
+-- Books locked up to a date (app_settings 'books_locked_until', ISO date): no journal entry dated on or before it
+-- can be added, changed or deleted, whatever screen or import tries it. Unlock (administrator) to correct a closed period.
+-- Entry dates are stored as DD-MM-YYYY (older files may hold YYYY-MM-DD); both are compared as ISO dates.
+DROP TRIGGER IF EXISTS books_lock_entry_insert;
+CREATE TRIGGER books_lock_entry_insert BEFORE INSERT ON journal_entries
+ WHEN (CASE WHEN substr(NEW.entry_date,3,1)='-' THEN substr(NEW.entry_date,7,4)||'-'||substr(NEW.entry_date,4,2)||'-'||substr(NEW.entry_date,1,2) ELSE substr(NEW.entry_date,1,10) END) <= (SELECT value FROM app_settings WHERE key='books_locked_until' AND value<>'')
+ BEGIN SELECT RAISE(ABORT,'PERIOD LOCKED: the books are closed up to this date. An administrator must unlock the period first'); END;
+DROP TRIGGER IF EXISTS books_lock_entry_update;
+CREATE TRIGGER books_lock_entry_update BEFORE UPDATE ON journal_entries
+ WHEN (CASE WHEN substr(OLD.entry_date,3,1)='-' THEN substr(OLD.entry_date,7,4)||'-'||substr(OLD.entry_date,4,2)||'-'||substr(OLD.entry_date,1,2) ELSE substr(OLD.entry_date,1,10) END) <= (SELECT value FROM app_settings WHERE key='books_locked_until' AND value<>'') OR (CASE WHEN substr(NEW.entry_date,3,1)='-' THEN substr(NEW.entry_date,7,4)||'-'||substr(NEW.entry_date,4,2)||'-'||substr(NEW.entry_date,1,2) ELSE substr(NEW.entry_date,1,10) END) <= (SELECT value FROM app_settings WHERE key='books_locked_until' AND value<>'')
+ BEGIN SELECT RAISE(ABORT,'PERIOD LOCKED: the books are closed up to this date. An administrator must unlock the period first'); END;
+DROP TRIGGER IF EXISTS books_lock_entry_delete;
+CREATE TRIGGER books_lock_entry_delete BEFORE DELETE ON journal_entries
+ WHEN (CASE WHEN substr(OLD.entry_date,3,1)='-' THEN substr(OLD.entry_date,7,4)||'-'||substr(OLD.entry_date,4,2)||'-'||substr(OLD.entry_date,1,2) ELSE substr(OLD.entry_date,1,10) END) <= (SELECT value FROM app_settings WHERE key='books_locked_until' AND value<>'')
+ BEGIN SELECT RAISE(ABORT,'PERIOD LOCKED: the books are closed up to this date. An administrator must unlock the period first'); END;
+DROP TRIGGER IF EXISTS books_lock_line_insert;
+CREATE TRIGGER books_lock_line_insert BEFORE INSERT ON journal_lines
+ WHEN (CASE WHEN substr((SELECT entry_date FROM journal_entries WHERE id=NEW.entry_id),3,1)='-' THEN substr((SELECT entry_date FROM journal_entries WHERE id=NEW.entry_id),7,4)||'-'||substr((SELECT entry_date FROM journal_entries WHERE id=NEW.entry_id),4,2)||'-'||substr((SELECT entry_date FROM journal_entries WHERE id=NEW.entry_id),1,2) ELSE substr((SELECT entry_date FROM journal_entries WHERE id=NEW.entry_id),1,10) END) <= (SELECT value FROM app_settings WHERE key='books_locked_until' AND value<>'')
+ BEGIN SELECT RAISE(ABORT,'PERIOD LOCKED: the books are closed up to this date. An administrator must unlock the period first'); END;
+DROP TRIGGER IF EXISTS books_lock_line_update;
+CREATE TRIGGER books_lock_line_update BEFORE UPDATE ON journal_lines
+ WHEN (CASE WHEN substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),3,1)='-' THEN substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),7,4)||'-'||substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),4,2)||'-'||substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),1,2) ELSE substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),1,10) END) <= (SELECT value FROM app_settings WHERE key='books_locked_until' AND value<>'')
+ BEGIN SELECT RAISE(ABORT,'PERIOD LOCKED: the books are closed up to this date. An administrator must unlock the period first'); END;
+DROP TRIGGER IF EXISTS books_lock_line_delete;
+CREATE TRIGGER books_lock_line_delete BEFORE DELETE ON journal_lines
+ WHEN (CASE WHEN substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),3,1)='-' THEN substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),7,4)||'-'||substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),4,2)||'-'||substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),1,2) ELSE substr((SELECT entry_date FROM journal_entries WHERE id=OLD.entry_id),1,10) END) <= (SELECT value FROM app_settings WHERE key='books_locked_until' AND value<>'')
+ BEGIN SELECT RAISE(ABORT,'PERIOD LOCKED: the books are closed up to this date. An administrator must unlock the period first'); END;
 """
 
 LEGACY_ACCOUNT_MAP = {
@@ -340,7 +367,7 @@ class Database:
                 if not self.pooled: connection.close()
 
     # Bump whenever initialize(), SCHEMA, seed accounts or its migration helpers change.
-    STARTUP_SCHEMA_VERSION = "1"
+    STARTUP_SCHEMA_VERSION = "2"
 
     @staticmethod
     def _startup_schema_signature(db):
@@ -365,6 +392,21 @@ class Database:
             self.initialize(admin_password)
 
     def initialize(self, admin_password):
+        # Upgrades and repairs may rebuild old entries: the period lock is paused only while they run, then restored.
+        lock = None
+        try:
+            with self.connect() as db:
+                if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_settings'").fetchone():
+                    row = db.execute("SELECT value FROM app_settings WHERE key='books_locked_until'").fetchone()
+                    lock = row["value"] if row else None
+                    if lock: db.execute("UPDATE app_settings SET value='' WHERE key='books_locked_until'")
+            return self._initialize(admin_password)
+        finally:
+            if lock:
+                with self.connect() as db:
+                    db.execute("UPDATE app_settings SET value=? WHERE key='books_locked_until'", (lock,))
+
+    def _initialize(self, admin_password):
         with self.connect() as db:
             db.executescript(SCHEMA)
             db.executemany("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",
@@ -917,7 +959,7 @@ class Database:
     def list_backups(self):
         files=self._backup_files()
         return [{"name":path.name,"size":path.stat().st_size,"modified":datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
-                 "kind":"safety" if "_safety" in path.stem else "older version" if path.name.startswith("saber_accounting_") and self.backup_label else "backup"}
+                 "kind":"safety" if "_safety" in path.stem else "automatic" if path.stem.endswith("_auto") else "older version" if path.name.startswith("saber_accounting_") and self.backup_label else "backup"}
                 for path in sorted(files.values(),key=lambda p:p.stat().st_mtime,reverse=True)]
 
     def backup_path(self, name):
@@ -973,16 +1015,46 @@ class Database:
                 (user_id,"update","settings",json.dumps({key:values[key] for key in allowed if key in values}),utcnow()))
         return self.settings()
 
+    AUTO_BACKUPS_KEPT = 30
+
     def maybe_scheduled_backup(self):
+        """Automatic backup when the interval (default 24 hours) has passed; keeps the newest 30 automatic copies.
+        Manual and safety backups are never deleted."""
         settings=self.settings(); hours=int(settings.get("backup_interval_hours","24")); last=settings.get("last_scheduled_backup","")
         try: due=(datetime.now(timezone.utc)-datetime.fromisoformat(last)).total_seconds()>=hours*3600
         except Exception: due=True
-        if due:
-            path=self.backup()
-            with self.connect() as db:
-                db.execute("INSERT INTO app_settings(key,value) VALUES('last_scheduled_backup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(utcnow(),))
-            return path
-        return None
+        if not due: return None
+        path=self.backup("auto")
+        with self.connect() as db:
+            db.execute("INSERT INTO app_settings(key,value) VALUES('last_scheduled_backup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(utcnow(),))
+        self.prune_auto_backups()
+        return path
+
+    def prune_auto_backups(self, keep=None):
+        keep=self.AUTO_BACKUPS_KEPT if keep is None else int(keep)
+        folder=self._backups_dir()
+        if not folder.exists(): return []
+        automatic=sorted(folder.glob("*_auto.db"),key=lambda p:(p.stat().st_mtime,p.name),reverse=True)
+        removed=[]
+        for path in automatic[keep:]:
+            try: path.unlink(); removed.append(path.name)
+            except OSError: pass
+        return removed
+
+    def books_lock(self):
+        value=self.settings().get("books_locked_until","")
+        return {"locked_until":value,"display":display_date(value) if value else ""}
+
+    def set_books_lock(self, value, user_id):
+        """Lock the books up to a date (DD-MM-YYYY), or unlock with an empty value. A backup is made first."""
+        text=str(value or "").strip()
+        iso=iso_date(text,"Lock date") if text else ""
+        self.backup("safety")
+        with self.connect() as db:
+            db.execute("INSERT INTO app_settings(key,value) VALUES('books_locked_until',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(iso,))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
+                (user_id,"lock" if iso else "unlock","books",json.dumps({"locked_until":iso}),utcnow()))
+        return self.books_lock()
 
     def clear_invoices(self, user_id, make_backup=True):
         with self.connect() as db:

@@ -29,7 +29,8 @@ Every test must pass. Add a test for every new calculation (VAT, payroll, stock,
 - VAT 11% (Law 379/2001): output 4427; input 44210 purchases, 44211 export-related, 44216 expenses; partial deduction (Art. 31); VAT due rounded up to LBP 10,000 from 25-11-2024.
 - Payroll: Budget Law 324/2024 brackets and family deductions; configurable NSSF rates and effective-dated ceilings; payroll uses the rules of the month's last day. Check README's payroll/NSSF compliance limits before treating any rate, eligibility rule, or report export as filing-ready. Accounts 6311 salaries, 6312 bonus, 6313 commission, 6315 schooling, 6316 managers, 6319 transport, 4411 salary tax, 4431 NSSF.
 - Year end: result to 138 (profit) / 139 (loss); stock by the periodic method (6051 / 6052 / 37).
-- Each company and each fiscal year is its own database file; backups are made on request (the background daily backup is an optional installer task, off by default).
+- Each company and each fiscal year is its own database file. Backups are automatic (owner decision, 2.9.36): one a day when a company is opened, plus the daily background backup task (on by default, can be unticked in the installer); the newest 30 automatic copies are kept, manual and safety copies are never deleted.
+- Closed periods: an administrator can lock the books up to a date (Backup & Restore > Close the books). Database triggers then refuse any journal entry dated on or before it; do not remove or bypass them.
 
 ## 6. Privacy
 - The optional OpenAI features send data outside the computer; they must stay optional and ask before sending.

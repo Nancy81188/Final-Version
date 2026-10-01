@@ -94,6 +94,9 @@ class Stage3Mixin:
             lookup_columns=("vat_account","supplier_account","expense_account","expense_no_vat_account"), lookup_groups=True,
             choices_by_column={"entry_type":list(TYPES)}, selectmode="extended")
         self.import_tree = self.import_sheet.tree
+        self.import_check_label = tk.Label(page, text="Select a row to read its full Check note here.", bg="#fff8e6", fg=NAVY, anchor="w", justify="left", wraplength=1200)
+        self.import_check_label.pack(fill="x", padx=12, pady=(0, 4), before=bottom)
+        self.import_tree.bind("<<TreeviewSelect>>", lambda _e: self.show_import_check(), add="+")
 
     def apply_selected_import_vat_account(self):
         selected = [iid for iid in self.import_tree.get_children() if iid in self.import_tree.selection()]
@@ -129,6 +132,14 @@ class Stage3Mixin:
         matches=[account for account,name in names.items() if row_matches_search((account,name),value)]
         if len(matches)==1: return matches[0]
         raise ValueError("Choose one account from the list (F2 / right-click), or enter its number")
+
+    def show_import_check(self):
+        """Show the full Check note of the selected preview row (the column is too narrow for long notes)."""
+        label = getattr(self, "import_check_label", None)
+        selected = self.import_tree.selection()
+        if label is None or not selected: return
+        row = self.import_sheet.rows.get(selected[0], {})
+        label.config(text=f'Row {row.get("line", "")} - Check: {row.get("notes") or "nothing to review"}')
 
     def import_cell_changed(self, iid, key, text):
         row = self.import_sheet.rows[iid]

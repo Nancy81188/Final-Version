@@ -1,5 +1,24 @@
 # Saber Accounting MVP
 
+## Version 2.9.37 (scanned PDF import fixed on Windows)
+
+- **Cause of empty rows for scanned PDFs in the installed program:** the bundled OCR language files were passed to Tesseract as `--tessdata-dir "C:\Program Files\...\tessdata"`. pytesseract splits that text in a way that breaks Windows paths (backslashes, spaces, quotes), so Tesseract found no language and every scanned PDF showed "scanned image (no text inside)". The folder is now given through `TESSDATA_PREFIX`, which needs no splitting.
+- Better reading of real scans (checked on a Tabet Entreprises variation order: 7 / 7 fields right):
+  - **Date:** a date on a line labelled "Date" wins over dates in the item table; when the full-page OCR misses an underlined or right-aligned date / reference, the top of the page is read again (left and right halves separately).
+  - **Before VAT:** when there are several section totals, the total line whose amount + VAT = Grand Total is used (e.g. "TOTAL A+B+C").
+  - **Supplier:** junk read from a logo before the company name is removed.
+- **Import preview:** selecting a row shows its full **Check** note under the buttons (the column is too narrow for long notes).
+- Tests: `test_pdf_real_scans.py` with the real OCR text kept in `tests_data/`. 360 tests pass.
+- Changed files: pdf_import.py, desktop_stage3.py, installer.iss, desktop.py, README.md, test_pdf_real_scans.py (new), tests_data/ocr_tabet_variation_order.txt (new).
+
+## Version 2.9.36 (automatic backups and closing the books)
+
+- **Automatic backups, on by default:** every time a company / year is opened, a backup is made in the background if the last one is older than the backup interval (24 hours by default). The installer task "Start automatic daily backups with Windows" is now ticked by default. Only the newest **30 automatic** copies are kept; manual ("Create Backup Now") and safety copies are never deleted. Backup & Restore shows the type "automatic".
+- **Close the books (period lock):** Settings > Backup & Restore > "Close the books" (administrator). Enter the last date to lock (for example 31-03-2026 after filing Q1) and press Lock: no invoice, expense, payment, payroll, depreciation or journal entry dated on or before that date can be added, changed or deleted, from any screen or import. The rule is enforced by database triggers, so no path can bypass it. Unlock reopens all periods. A safety backup is made before every lock / unlock, and both are written to the audit log. Program upgrades pause the lock only while they repair old entries, then restore it.
+- AI_RULES.md updated with both rules (owner decision).
+- Tests: new `test_books_lock_backups.py` (lock refuses insert / change / delete of entries and lines on or before the date, nothing is half-posted, unlock works, the lock survives reopening; automatic backup once per interval, 30 kept, manual copies kept; restore brings the data back) and a window test for Lock / Unlock. 357 tests pass.
+- Changed files: database.py (STARTUP_SCHEMA_VERSION 2), server.py, client.py, desktop.py, installer.iss, AI_RULES.md, README.md, test_books_lock_backups.py (new), test_ui_v2_9_18.py.
+
 ## Version 2.9.35 (Windows build: UTF-8 test output)
 
 - On the Windows runner the console is cp1252: when a test failed with an Arabic or special character in its message, printing the GitHub annotation crashed the whole test run (UnicodeEncodeError). The annotation print is now encoding-safe and the Windows workflow runs Python in UTF-8 mode (`PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`).

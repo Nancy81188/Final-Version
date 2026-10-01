@@ -76,6 +76,16 @@ class ProgramWindowFixesTest(unittest.TestCase):
         app.show_asset_schedule(); app.update()
         self.assertTrue(app.asset_schedule_tree.get_children())
 
+    def test_close_the_books_lock_and_unlock_from_backup_page(self):
+        app = self.app
+        if not hasattr(app, "books_lock_label"): app.build_settings()
+        app.update()
+        app.books_lock_date.set("31-01-2020"); app.lock_books(); app.update()
+        self.assertIn("LOCKED up to 31-01-2020", app.books_lock_label.cget("text"))
+        app.unlock_books(); app.update()
+        self.assertIn("open", app.books_lock_label.cget("text"))
+        self.assertFalse([m for m in self.messages if m[0] == "showerror"], self.messages)
+
     def test_stock_card_opens_from_items(self):
         self.app.load_inventory(); self.app.update()
         rows = self.app.items_tree.get_children(); self.assertTrue(rows)

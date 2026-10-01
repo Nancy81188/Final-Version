@@ -5,6 +5,7 @@ the optional OCR runtime is installed; invoice text is never sent elsewhere.
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from datetime import datetime
@@ -69,12 +70,13 @@ def _ocr_pdf_pages(path, page_numbers=None):
             raise RuntimeError("The bundled Tesseract OCR engine is missing")
         pytesseract.pytesseract.tesseract_cmd = str(executable)
 
+    # The bundled language files are found through TESSDATA_PREFIX, not a --tessdata-dir option:
+    # pytesseract splits the option text, which breaks Windows paths ("C:\\Program Files\\...")
+    # because of the backslashes, the spaces and the quotes, and OCR then reports no languages.
+    if tessdata.is_dir():
+        os.environ["TESSDATA_PREFIX"] = str(tessdata)
     config = "--psm 6"
-    if tessdata.is_dir():
-        config += f' --tessdata-dir "{tessdata}"'
     english_config = "--psm 4"
-    if tessdata.is_dir():
-        english_config += f' --tessdata-dir "{tessdata}"'
     try:
         available = set(pytesseract.get_languages(config=config))
     except Exception as exc:
@@ -119,6 +121,8 @@ def _ocr_pdf_pages(path, page_numbers=None):
                     )
                     if _ocr_invoice_score(path, alternate) > _ocr_invoice_score(path, text):
                         text = alternate
+                if "eng" in languages and not _labelled_invoice_date(text):
+                    text = text + "\n" + _ocr_header_lines(pytesseract, image, english_config)
                 texts.append(text)
             finally:
                 if image is not None:
@@ -129,6 +133,28 @@ def _ocr_pdf_pages(path, page_numbers=None):
     finally:
         document.close()
     return texts
+
+
+def _labelled_invoice_date(text):
+    return re.search(r"(?im)\b(?:date|dated|le|التاريخ|تاريخ)\b\s*[:.]?\s*\d", normalize_invoice_text(text or ""))
+
+
+def _ocr_header_lines(pytesseract, image, config):
+    """Underlined or right-aligned header fields (Date, Ref No.) are often lost by a full-page pass.
+    Read the top quarter again, left and right halves separately, as sparse text; return the new lines."""
+    try:
+        from PIL import Image
+        width, height = image.size
+        lines = []
+        for box in ((width // 2, 0, width, height // 4), (0, 0, width // 2, height // 4)):
+            crop = image.crop(box)
+            crop = crop.resize((crop.width * 2, crop.height * 2), getattr(getattr(Image, "Resampling", Image), "LANCZOS"))
+            sparse = config.replace("--psm 4", "--psm 11")
+            lines += [line.strip() for line in pytesseract.image_to_string(crop, lang="eng", config=sparse).splitlines()
+                      if re.search(r"(?i)\b(date|ref|invoice|facture|no\.?|nb)\b", line)]
+        return "\n".join(lines) + "\n" if lines else ""
+    except Exception:
+        return ""
 
 
 def _ocr_pdf(path, page_numbers=None):
@@ -376,6 +402,15 @@ def _document_reference_number(text):
 
 
 def _invoice_date(text):
+    # A date on a line labelled "Date" wins over dates in the item table (delivery days, periods).
+    for line in str(text or "").splitlines():
+        if re.search(r"(?i)^\W*(?:invoice\s+)?(?:date|dated|le|التاريخ|تاريخ)\b", line.strip()):
+            found = _any_date(line)
+            if found: return found
+    return _any_date(text)
+
+
+def _any_date(text):
     for pattern, order in DATE_PATTERNS:
         for groups in re.findall(pattern, text):
             try:
@@ -659,6 +694,27 @@ def _warn_on_invoice_total_mismatch(result):
             result["notes"] = (result.get("notes", "") + "; " + warning).strip("; ")
 
 
+_MONEY = re.compile(r"(?<![\d.,])(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+\.\d{1,2})(?![\d])")
+
+
+def _subtotal_reconciling_vat(text, vat, total):
+    """A total line (e.g. "TOTAL A+B+C", "Total HT") whose amount plus the VAT equals the grand total.
+    Used when several section totals exist; the last matching line before the VAT wins."""
+    if vat is None or total is None or vat <= 0: return None
+    tolerance = max(0.05, abs(total) * 0.005); found = None
+    for line in text.splitlines():
+        lower = line.casefold()
+        if re.search(r"vat|tva|ضريبة|grand|ttc|net\s+payable", lower): 
+            if found is not None: break
+            continue
+        if not re.search(r"total|subtotal|مجموع|montant|ht\b", lower): continue
+        for match in _MONEY.finditer(line):
+            try: amount = float(match.group(1).replace(",", "").replace(" ", ""))
+            except ValueError: continue
+            if abs(amount + vat - total) <= tolerance: found = amount
+    return found
+
+
 def _parse_invoice_text(path, text):
     path = Path(path); text = normalize_invoice_text(text)
     result = {"file": path.name, "path": str(path), "text": text, "invoice_number": "", "invoice_date": "", "party_name": "", "currency": "",
@@ -674,9 +730,15 @@ def _parse_invoice_text(path, text):
     result["subtotal"] = _amount_after(text, ("subtotal", "sub-total", "sub total", "before vat", "total ht", "net amount", "excl", *ARABIC_SUBTOTAL))
     if result["subtotal"] is None:
         result["subtotal"] = _subtotal_from_tax_breakdown(text)
+    reconciled = _subtotal_reconciling_vat(text, result["vat"], result["total"])
+    if reconciled is not None and (result["subtotal"] is None
+            or abs(result["subtotal"] + result["vat"] - result["total"]) > max(0.05, abs(result["total"]) * 0.005)):
+        result["subtotal"] = reconciled
     for line in text.splitlines():
         clean = line.strip()
         if len(clean) >= 3 and not re.search(r"invoice|facture|date|tel|phone|page|www|@", clean, re.I) and sum(ch.isalpha() for ch in clean) >= 3:
+            # OCR often reads a logo as a short junk word ending in ">" or "|" before the company name.
+            clean = re.sub(r"^\W*\w{0,8}\s*[>»|\]}]+\s*", "", clean).strip() or clean
             result["party_name"] = clean[:60]; break
     result["items"] = _line_items(text)
     # For a fixed-asset register preview, use a description only when the PDF

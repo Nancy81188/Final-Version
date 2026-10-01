@@ -249,6 +249,9 @@ class ApiClient:
     def save_user(self,item): return self.request("POST","/api/users",item)["user"]
     def backups(self): return self.request("GET","/api/backups")["items"]
     def create_backup(self): return self.request("POST","/api/backups/create",{})
+    def scheduled_backup(self): return self.request("POST","/api/backups/scheduled",{})
+    def books_lock(self): return self.request("GET","/api/books-lock")
+    def set_books_lock(self,date): return self.request("POST","/api/books-lock",{"locked_until":date})
     def restore_backup(self,name): return self.request("POST","/api/backups/restore",{"name":name})
     def settings(self): return self.request("GET","/api/settings")
     def save_settings(self,item): return self.request("POST","/api/settings",item)

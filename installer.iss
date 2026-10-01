@@ -1,5 +1,5 @@
 #define MyAppName "Saber Accounting"
-#define MyAppVersion "2.9.35"
+#define MyAppVersion "2.9.37"
 #define MyAppPublisher "Saber for Audit"
 
 [Setup]
@@ -28,8 +28,8 @@ CloseApplications=yes
 RestartApplications=no
 
 [Tasks]
-; Off by default: backups are made from Backup & Restore when the user asks. Tick it to start a daily background backup of every company and year with Windows.
-Name: "autobackup"; Description: "Start automatic daily backups with Windows (all companies and years)"; Flags: unchecked
+; On by default (owner request, 2.9.36): daily background backup of every company and year with Windows. Untick to rely only on the backup made when a company is opened.
+Name: "autobackup"; Description: "Start automatic daily backups with Windows (all companies and years)"
 
 [Files]
 ; The application is built with PyInstaller --onedir, so the program lives in

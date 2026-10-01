@@ -4,6 +4,7 @@ import os
 import ctypes
 import tkinter as tk
 import sys
+import threading
 import traceback
 import mimetypes
 import time
@@ -107,7 +108,7 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
-        self.title("Saber Accounting 2.9.35")
+        self.title("Saber Accounting 2.9.37")
         screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
         try: dpi_scale=max(1.0,min(2.0,self.winfo_fpixels("1i")/96.0))
         except tk.TclError: dpi_scale=1.0
@@ -495,7 +496,18 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
             window.destroy(); self.company_selection_screen()
         self.action_button(window,"Save Company",update).grid(row=3,column=0,padx=6,pady=14); self.action_button(window,"Create Separate Year",create_year).grid(row=3,column=1,padx=6,pady=14)
 
+    def start_automatic_backup(self):
+        """Daily automatic backup of the open company / year, made quietly in the background when the
+        company is opened (at most once per backup interval, newest 30 kept)."""
+        client=getattr(self,"client",None)
+        if client is None: return
+        def work():
+            try: client.scheduled_backup()
+            except Exception: pass
+        threading.Thread(target=work,daemon=True).start()
+
     def main_screen(self):
+        self.start_automatic_backup()
         if not hasattr(self, "show_department"): self.show_department=tk.BooleanVar(value=True)
         if not hasattr(self, "show_project"): self.show_project=tk.BooleanVar(value=True)
         self._dimension_groups=[]; self._dimension_sheets=[]
@@ -3187,7 +3199,15 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
             self.action_button(backup_controls,"Save Backup As... (USB / Drive)",self.save_backup_as).pack(side="left",padx=4)
             self.action_button(backup_controls,"Open Backup Folder",self.open_backup_folder).pack(side="left",padx=4)
             if is_admin: tk.Button(backup_controls,text="Restore Selected",command=self.restore_selected_backup,bg="#8B1E1E",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
-            tk.Label(backups,text="Backups are saved by company and fiscal year automatically each day while signed in to Windows. You can also create or export one here.",bg=LIGHT,fg="#5f6b76",wraplength=1050,justify="left").pack(fill="x",padx=14)
+            if is_admin:
+                lock_bar=tk.LabelFrame(backups,text="Close the books (period lock)",bg=LIGHT,padx=8,pady=6); lock_bar.pack(fill="x",padx=10,pady=(0,6))
+                self.books_lock_date=tk.StringVar()
+                tk.Label(lock_bar,text="Lock up to (DD-MM-YYYY)",bg=LIGHT).pack(side="left",padx=(2,4))
+                self.date_entry(lock_bar,self.books_lock_date,12).pack(side="left",padx=4)
+                tk.Button(lock_bar,text="Lock",command=self.lock_books,bg=GOLD,fg=NAVY,border=0,padx=14,pady=5,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
+                self.action_button(lock_bar,"Unlock",self.unlock_books).pack(side="left",padx=4)
+                self.books_lock_label=tk.Label(lock_bar,text="",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")); self.books_lock_label.pack(side="left",padx=12)
+            tk.Label(backups,text="An automatic backup of this company and year is made every day when you open it (the newest 30 automatic copies are kept; manual and safety copies are never deleted). Keep a copy outside the computer too: Save Backup As... (USB / Drive).",bg=LIGHT,fg="#5f6b76",wraplength=1050,justify="left").pack(fill="x",padx=14)
             self.backups_tree=self.table(backups,[("name","Backup File",430),("kind","Type",100),("size","Size",100),("modified","Created",170)])
         rate_controls=tk.Frame(rates,bg=LIGHT); rate_controls.pack(fill="x",padx=10,pady=10)
         self.rate_date=tk.StringVar(value=datetime.now().strftime("%d-%m-%Y")); self.rate_date_to=tk.StringVar(value=datetime.now().strftime("%d-%m-%Y")); self.rate_from=tk.StringVar(value="USD"); self.rate_to=tk.StringVar(value="LBP"); self.rate_value=tk.StringVar(value="1")
@@ -3234,6 +3254,7 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
         if not hasattr(self,"rates_tree"): return
         try:
             settings=self.client.settings(); rates=self.client.exchange_rates()
+            self.refresh_books_lock()
             self.base_currency.set(settings.get("base_currency","USD")); self.backup_hours.set(settings.get("backup_interval_hours","24"))
             for key,var in self.company_fields.items(): var.set(settings.get(key,"Saber for Audit" if key=="company_name" else ""))
             self.company_vat_registered.set(settings.get("company_vat_registered","Yes") or "Yes"); self.company_vat_date.set(settings.get("company_vat_date","") or "")
@@ -3335,6 +3356,29 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
         try: result=self.client.restore_euro_rates()
         except Exception as exc: return messagebox.showerror("Exchange Rates",str(exc))
         self.load_settings_pages(); messagebox.showinfo("Exchange Rates",f'Restored {result.get("days",0)} days from 01-01-2024 until today')
+
+    def refresh_books_lock(self):
+        label=getattr(self,"books_lock_label",None)
+        if label is None or not label.winfo_exists(): return
+        try: lock=self.client.books_lock()
+        except Exception: return
+        label.config(text=f"Books are LOCKED up to {lock['display']}: nothing dated on or before it can be posted, changed or deleted." if lock.get("display")
+                     else "Books are open: no period is locked.", fg="#8B1E1E" if lock.get("display") else NAVY)
+        if lock.get("display"): self.books_lock_date.set(lock["display"])
+
+    def lock_books(self):
+        date=self.books_lock_date.get().strip()
+        if not date: return messagebox.showwarning("Close the books","Enter the last date to lock (for example the last day of the month or quarter you filed)")
+        if not messagebox.askyesno("Close the books",f"Lock the books up to {date}?\n\nNo invoice, expense, payment, payroll or journal entry dated on or before {date} can be added, changed or deleted until an administrator unlocks it. A safety backup is made first."): return
+        try: self.client.set_books_lock(date)
+        except Exception as exc: return messagebox.showerror("Close the books",str(exc))
+        self.refresh_books_lock(); self.load_settings_pages()
+
+    def unlock_books(self):
+        if not messagebox.askyesno("Close the books","Unlock all periods? Closed months can then be changed again. A safety backup is made first."): return
+        try: self.client.set_books_lock("")
+        except Exception as exc: return messagebox.showerror("Close the books",str(exc))
+        self.books_lock_date.set(""); self.refresh_books_lock(); self.load_settings_pages()
 
     def save_general_settings(self):
         payload={"base_currency":self.base_currency.get(),"backup_interval_hours":self.backup_hours.get()}
