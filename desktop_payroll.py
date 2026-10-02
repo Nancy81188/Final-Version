@@ -70,6 +70,7 @@ class PayrollMixin:
         tk.Button(buttons,text="Save Payroll",command=self.save_payroll,bg=GOLD,fg=NAVY,border=0,padx=15,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=3)
         payroll_actions=tk.Frame(run,bg=LIGHT); payroll_actions.pack(fill="x",padx=10)
         self.action_button(payroll_actions,"Post Selected to Accounting",self.post_selected_payroll).pack(side="left",padx=4,pady=3)
+        tk.Button(payroll_actions,text="Monthly Payroll Sheet | الحركة الشهرية",command=self.open_payroll_sheet,bg=GOLD,fg=NAVY,border=0,padx=12,pady=6,font=("Segoe UI",9,"bold")).pack(side="left",padx=4,pady=3)
         self.payroll_tree=self.table(run,[("number","Payroll No.",135),("period","Period",95),("employee","Employee",190),("currency","Currency",65),
             ("gross","Gross",105),("tax","Tax",95),("nssf","Employee NSSF",110),("net","Net Salary",110),("status","Status",75)])
         self.payroll_setting_vars={key:tk.StringVar() for key in ("date_from","date_to","single_allowance","spouse_allowance","child_allowance","employee_nssf_rate","medical_rate","end_service_rate","family_rate","employee_ceiling","medical_ceiling","family_ceiling","end_service_ceiling","salary_account","salary_payable_account","payroll_tax_account","nssf_payable_account",
@@ -123,7 +124,7 @@ class PayrollMixin:
 
     def employee_dialog(self,employee=None):
         window=tk.Toplevel(self); window.title("Employee File"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
-        self.fit_dialog(window,940,650,480,360)
+        self.fit_dialog(window,960,760,480,360)
         outer,form=self.scrollable_page(window); outer.pack(fill="both",expand=True)
         data=employee or {}; fields={key:tk.StringVar(value=str(data.get(key) or "")) for key in ("employee_number","full_name","national_id","mof_number","nssf_number","address","contact_number","nationality","father_name","mother_name","birth_date","birth_place","job_title","hire_date","leave_date","base_salary","salary_account","payable_account")}
         if not fields["employee_number"].get(): fields["employee_number"].set("1000")
@@ -141,8 +142,27 @@ class PayrollMixin:
         tk.Label(form,text="Payroll Group",bg=LIGHT).grid(row=11,column=0,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=employee_group,values=["employee","manager"],state="readonly",width=25).grid(row=11,column=1)
         sex=tk.StringVar(value=data.get("sex") or "")
         tk.Label(form,text="Sex (for official forms)",bg=LIGHT).grid(row=11,column=2,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=sex,values=["male","female"],state="readonly",width=25).grid(row=11,column=3)
+        # 2.9.44 register (like the official declaration workbook): unit, recurring allowances, NSSF branches, address.
+        register=tk.LabelFrame(form,text="Employee register | سجل المستخدمين",bg=LIGHT,padx=6,pady=4)
+        register.grid(row=12,column=0,columnspan=4,padx=10,pady=8,sticky="ew")
+        register_vars={key:tk.StringVar(value=str(data.get(key) or "")) for key in ("unit_code","unit_name","cost_of_living","extra_indemnity","representation_taxable","representation_exempt",
+            "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","leave_reason")}
+        register_labels=(("unit_code","Unit code | رمز القسم"),("unit_name","Unit | القسم"),("cost_of_living","Cost of living / month"),("extra_indemnity","Extra indemnity (phone) / month"),
+            ("representation_taxable","Representation taxable / month"),("representation_exempt","Representation not taxable / month"),
+            ("addr_governorate","Governorate | محافظة"),("addr_caza","Caza | قضاء"),("addr_town","Town | بلدة"),("addr_district","District | حي"),
+            ("addr_street","Street | شارع"),("addr_building","Building | مبنى"),("addr_floor","Floor | طابق"),("phone2","Phone 2"),("leave_reason","Leaving reason | سبب الترك"))
+        for index,(key,label) in enumerate(register_labels):
+            row,column=index//2,(index%2)*2
+            tk.Label(register,text=label,bg=LIGHT).grid(row=row,column=column,padx=6,pady=3,sticky="w")
+            tk.Entry(register,textvariable=register_vars[key],width=26).grid(row=row,column=column+1,padx=6,pady=3,sticky="w")
+        flags={key:tk.BooleanVar(value=str(data.get(key) or "0")=="1") for key in ("nssf_no_end_service","nssf_no_family","nssf_no_medical")}
+        flag_row=tk.Frame(register,bg=LIGHT); flag_row.grid(row=8,column=0,columnspan=4,sticky="w",pady=(4,0))
+        tk.Label(flag_row,text="Not subject to NSSF:",bg=LIGHT,fg=NAVY).pack(side="left",padx=4)
+        for key,label in (("nssf_no_end_service","End of service | تعويض نهاية الخدمة"),("nssf_no_family","Family allowances | التعويضات العائلية"),("nssf_no_medical","Sickness & maternity | المرض والأمومة")):
+            tk.Checkbutton(flag_row,text=label,variable=flags[key],bg=LIGHT).pack(side="left",padx=6)
         def save():
             payload={key:var.get().strip() for key,var in fields.items()}; payload.update({"id":data.get("id"),"marital_status":marital.get(),"spouse_works":spouse_works.get(),"children":children.get(),"employee_group":employee_group.get(),"currency":currency.get(),"active":active.get(),"sex":sex.get()})
+            payload.update({key:var.get().strip() for key,var in register_vars.items()}); payload.update({key:"1" if var.get() else "0" for key,var in flags.items()})
             try: saved=self.client.save_employee(payload)
             except Exception as exc: return messagebox.showerror("Employee",str(exc),parent=window)
             window.destroy(); self.load_payroll(); messagebox.showinfo("Employee",f'Employee {saved["employee_number"]} saved successfully')

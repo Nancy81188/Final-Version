@@ -19,8 +19,9 @@ from desktop_parties import PartiesMixin
 from desktop_payroll import PayrollMixin
 from desktop_reports import ReportsMixin
 from desktop_settings import SettingsMixin
+from desktop_payroll_sheet import PayrollSheetMixin
 
-class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
+class SaberApp(PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
@@ -116,8 +117,10 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
 
     def _report_callback_error(self, kind, value, tb):
         """A button or screen action failed: write the details to the log and tell the user."""
+        if kind.__name__ == "SessionExpired":  # the sign-in screen is already shown
+            log.info("Session ended during a screen action"); return
         log.error("Screen action failed", exc_info=(kind, value, tb))
-        try: messagebox.showerror("Saber Accounting", f"{value}\n\nThe details were written to the log file (Settings > Backup & Restore > Open log folder).")
+        try: messagebox.showerror("Saber Accounting", f"Something went wrong: {value}\n\nYour saved data is safe. The details were written to the log file (Settings > Backup & Restore > Open Log Folder).")
         except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     def _style(self):
@@ -371,6 +374,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
     def login(self):
         try:
             self.client = ApiClient(self.server.get(), on_unauthorized=self.session_ended)
+            self.client.confirm_negative_stock=lambda text: messagebox.askyesno("Stock below zero | مخزون سالب",text,icon="warning")
             self.current_user=self.client.login(self.username.get(), self.password.get())
             self.last_activity=time.monotonic(); self.bind_all("<Any-KeyPress>",self.record_activity); self.bind_all("<Any-Button>",self.record_activity); self.after(60000,self.check_auto_logout)
             self.company_selection_screen()

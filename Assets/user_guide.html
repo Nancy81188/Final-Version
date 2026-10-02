@@ -52,15 +52,19 @@
 <li><b>Sales Invoice</b> tab: choose the customer, date, currency and VAT treatment, add the lines, then save. The journal entry is made automatically.</li>
 <li><b>Purchases &amp; Expenses</b>: supplier invoices and expenses, with deductible / non-deductible VAT.</li>
 <li><b>Payment &amp; Receipt</b>: money received from customers and paid to suppliers.</li>
-<li><b>Journal Voucher</b>: manual entries. Debit must equal Credit, otherwise the voucher is refused.</li>
+<li><b>Journal Voucher</b>: manual entries. Debit must equal Credit, otherwise the voucher is refused. This rule protects every entry, from every screen and import. <span class="path">General Journal &gt; Check Balance</span> lists entries saved unbalanced by older versions.</li>
 <li><b>Customers / Suppliers</b>: accounts, statements and ageing.</li>
+<li><b>Return</b> (Return Selected Invoice): goods come back and the stock moves. A <b>Credit Note</b> or <b>Debit Note</b> is a discount or price adjustment: no stock moves.</li>
+<li>When stock would go below zero, Saber warns you; choose Yes to save anyway (the stock shows negative until goods are received).</li>
 </ul><p class="tip">Press F2 in an account field to search the chart of accounts.</p></div>
 <div class="ar"><ul>
 <li>تبويب <b>Sales Invoice</b>: اختر الزبون والتاريخ والعملة ونوع الضريبة، أضف البنود ثم احفظ. يُنشأ القيد تلقائياً.</li>
 <li><b>Purchases &amp; Expenses</b>: فواتير الموردين والمصاريف، مع الضريبة القابلة وغير القابلة للحسم.</li>
 <li><b>Payment &amp; Receipt</b>: المقبوضات من الزبائن والمدفوعات للموردين.</li>
-<li><b>Journal Voucher</b>: القيود اليدوية. يجب أن يتساوى المدين والدائن وإلا يُرفض القيد.</li>
+<li><b>Journal Voucher</b>: القيود اليدوية. يجب أن يتساوى المدين والدائن وإلا يُرفض القيد. هذه القاعدة تحمي كل قيد، من كل شاشة وكل استيراد. <span class="path">General Journal &gt; Check Balance</span> يعرض القيود غير المتوازنة التي حُفظت بنسخ أقدم.</li>
 <li><b>Customers / Suppliers</b>: الحسابات وكشوفات الحساب وأعمار الديون.</li>
+<li><b>Return</b> (مرتجع): ترجع البضاعة ويتحرك المخزون. <b>Credit Note</b> أو <b>Debit Note</b> حسم أو تعديل سعر: لا يتحرك المخزون.</li>
+<li>إذا كان المخزون سيصبح سالباً يظهر تنبيه؛ اختر Yes للحفظ (يبقى المخزون سالباً حتى استلام البضاعة).</li>
 </ul><p class="tip">اضغط F2 في خانة الحساب للبحث في دليل الحسابات.</p></div>
 </div></section>
 
@@ -82,6 +86,8 @@
 <li><span class="path">Payroll &gt; Employees</span>: add each employee (including <b>Sex</b> for the official forms, NSSF and MOF numbers, family).</li>
 <li><span class="path">Payroll &gt; Payroll Entry</span>: choose the employee and month, <b>Calculate</b>, check, then <b>Save Payroll</b> and <b>Post Payroll</b>.</li>
 <li><span class="path">Payroll Reports &amp; Worksheets (R5 / R6 / R10)</span>: official reports for employees and managers, in Excel or PDF.</li>
+<li><span class="path">Payroll Entry &gt; Monthly Payroll Sheet</span>: all employees of the month in one table, with every allowance (taxable or not, by R6 line). Calculate All, Save All, Post All, Export Excel.</li>
+<li>Reports R5_BOXES, R10_BOXES, R6_LINES, AUDIT, MOVEMENT, REGISTER and LEAVERS follow the official declaration layout.</li>
 <li><b>NSSF - Contributions table</b>: one line per employee for the month, quarter or year; ceilings that change during the period are applied month by month.</li>
 <li><span class="path">Employees &gt; Official Forms (Excel)</span>: R3, R3-1, CNSS 2AA, 41A and the leave notice, filled automatically.</li>
 </ol><p class="tip">Rates and ceilings: <span class="path">Payroll &gt; Tax &amp; NSSF Settings</span>.</p></div>
@@ -89,6 +95,8 @@
 <li><span class="path">Payroll &gt; Employees</span>: أضف كل موظف (مع <b>الجنس</b> للنماذج الرسمية، ورقم الضمان ورقم المالية، والعائلة).</li>
 <li><span class="path">Payroll &gt; Payroll Entry</span>: اختر الموظف والشهر، <b>Calculate</b>، راجع ثم <b>Save Payroll</b> و<b>Post Payroll</b>.</li>
 <li><span class="path">Payroll Reports &amp; Worksheets (R5 / R6 / R10)</span>: التقارير الرسمية للأجراء والمدراء، Excel أو PDF.</li>
+<li><span class="path">Payroll Entry &gt; Monthly Payroll Sheet</span>: كل موظفي الشهر في جدول واحد مع كل البدلات (خاضعة أو غير خاضعة، حسب سطر ر6). Calculate All وSave All وPost All وExport Excel.</li>
+<li>التقارير R5_BOXES وR10_BOXES وR6_LINES وAUDIT وMOVEMENT وREGISTER وLEAVERS على شكل التصاريح الرسمية.</li>
 <li><b>NSSF - Contributions table</b>: سطر لكل موظف عن الشهر أو الفصل أو السنة؛ السقوف التي تتغير خلال الفترة تُطبّق شهراً بشهر.</li>
 <li><span class="path">Employees &gt; Official Forms (Excel)</span>: R3 وR3-1 ونماذج الضمان 2AA و41A وإشعار ترك العمل، تُملأ تلقائياً.</li>
 </ol><p class="tip">النسب والسقوف: <span class="path">Payroll &gt; Tax &amp; NSSF Settings</span>.</p></div>

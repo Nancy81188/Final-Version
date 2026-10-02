@@ -89,7 +89,8 @@ def pdf_paragraph(text, style, bold=False):
         arabic_style = ParagraphStyle(f"ar-{style.name}-{bold}", parent=style, fontName=bold_font if bold else regular, fontSize=size, leading=size * 1.4,
                                       alignment=2 if not _re.search(r"[A-Za-z]{3}", str(text)) else style.alignment)
         return Paragraph(_escape(shape_arabic(text)), arabic_style)
-    return Paragraph(_escape(str(text or "")), style)
+    text = _escape(str(text or ""))
+    return Paragraph(f"<b>{text}</b>" if bold and text else text, style)
 
 def export_excel(path, title, headers, rows):
     wb = Workbook(); ws = wb.active; ws.title = title[:31]
@@ -163,7 +164,7 @@ def export_invoice_pdf(path, invoice, items, logo_path=None, company=None):
     section_s=ParagraphStyle("inv-sec",parent=label_s,textColor=GOLD_C,fontSize=8)
 
     subtype=str(invoice.get("doc_subtype") or "invoice"); kind=str(invoice.get("kind") or "sale")
-    title={"credit_note":"CREDIT NOTE","debit_note":"DEBIT NOTE"}.get(subtype,"SALES INVOICE" if kind=="sale" else "PURCHASE INVOICE")
+    title=("RETURN NOTE" if invoice.get("is_return") else {"credit_note":"CREDIT NOTE","debit_note":"DEBIT NOTE"}.get(subtype,"SALES INVOICE" if kind=="sale" else "PURCHASE INVOICE"))
 
     subtotal=float(invoice.get("subtotal") or 0); vat=float(invoice.get("vat") or 0); total=float(invoice.get("total") or subtotal+vat)
     cur=invoice.get("currency") or ""; paid=float(invoice.get("amount_paid") or 0); balance=total-paid
@@ -324,12 +325,53 @@ def _formatted(value):
     return str(value)
 
 
+def _is_blank_or_zero(value):
+    from decimal import Decimal
+    if value is None or value == "": return True
+    if isinstance(value, bool): return False
+    if isinstance(value, (int, float, Decimal)): return float(value) == 0
+    text = str(value).strip().replace(",", "")
+    try: return float(text) == 0
+    except ValueError: return text in ("", "-")
+
+
+def tidy_sections(sections):
+    """2.9.45 report check-up: easier to read without changing any figure.
+
+    Columns that are empty or zero on every line are left out (the first two columns - code and name - always
+    stay). Sections marked "fixed" (official layouts such as R5 / R6 boxes) keep every column."""
+    tidy = []
+    for section in sections or []:
+        headers = list(section.get("headers") or []); rows = [list(r) for r in section.get("rows") or []]
+        if section.get("narrative") or section.get("fixed") or len(headers) <= 3 or not rows:
+            tidy.append(section); continue
+        keep = [i for i in range(len(headers)) if i < 2 or not all(_is_blank_or_zero(r[i] if i < len(r) else None) for r in rows)]
+        if len(keep) == len(headers): tidy.append(section); continue
+        dropped = [str(headers[i]).split(" | ")[0] for i in range(len(headers)) if i not in keep]
+        tidy.append({**section, "headers": [headers[i] for i in keep], "rows": [[r[i] if i < len(r) else "" for i in keep] for r in rows],
+                     "hidden_columns": dropped})
+    return tidy
+
+
+def _looks_numeric(text):
+    text = str(text or "").strip()
+    return text == "-" or (bool(text) and text.replace(",", "").replace(".", "").lstrip("-").rstrip("%").isdigit())
+
+
+def _cell_text(value):
+    """PDF / screen text: zero amounts show as a dash."""
+    from decimal import Decimal
+    if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool) and float(value) == 0: return "-"
+    return _formatted(value)
+
+
 def _safe_sheet_title(title):
     cleaned = "".join("-" if ch in '[]:*?/\\' else ch for ch in str(title))
     return cleaned[:31] or "Report"
 
 
 def export_sections_excel(path, title, meta, sections):
+    sections = tidy_sections(sections)
     wb = Workbook(); ws = wb.active; ws.title = _safe_sheet_title(title)
     width = max([len(section["headers"]) for section in sections] + [2])
     navy = PatternFill("solid", fgColor=NAVY); total_fill = PatternFill("solid", fgColor="E8EDF2")
@@ -368,7 +410,7 @@ def export_sections_excel(path, title, meta, sections):
             for column, value in enumerate(values, 1):
                 c = ws.cell(row, column, _plain(value))
                 if isinstance(c.value, (int, float)) and not isinstance(c.value, bool):
-                    c.number_format = "#,##0.00" if isinstance(c.value, float) and abs(c.value - round(c.value)) > 1e-9 else "#,##0"
+                    c.number_format = "#,##0.00;-#,##0.00;\"-\"" if isinstance(c.value, float) and abs(c.value - round(c.value)) > 1e-9 else "#,##0;-#,##0;\"-\""
                     c.alignment = Alignment(horizontal="right")
                 else:
                     c.alignment = Alignment(vertical="top", wrap_text=True)
@@ -387,6 +429,7 @@ def export_sections_excel(path, title, meta, sections):
 
 def export_sections_pdf(path, title, meta, sections):
     from reportlab.lib.styles import ParagraphStyle
+    sections = tidy_sections(sections)
     financial = title.startswith("Financial Statements,")
     page = A4 if financial else landscape(A4)
     doc = SimpleDocTemplate(str(path), pagesize=page, rightMargin=8*mm, leftMargin=8*mm, topMargin=10*mm, bottomMargin=12*mm, title=title)
@@ -399,6 +442,7 @@ def export_sections_pdf(path, title, meta, sections):
         styles["Normal"].fontSize=11; styles["Normal"].leading=15
     header_style = ParagraphStyle("header", parent=styles["Normal"], fontName=bold_font, fontSize=10 if financial else 8, leading=13 if financial else 10, textColor=colors.white, alignment=1)
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=10 if financial else 8, leading=13 if financial else 10)
+    number_style = ParagraphStyle("cell-number", parent=cell_style, alignment=2)  # amounts line up on the right
     story = [pdf_paragraph(title, styles["Title"], True)]
     for line in list(meta or []) + [f"Generated: {datetime.now():%d-%m-%Y %H:%M}"]: story.append(pdf_paragraph(line, styles["Normal"]))
     story.append(Spacer(1, 4*mm))
@@ -419,13 +463,13 @@ def export_sections_pdf(path, title, meta, sections):
         headers = section["headers"]; count = len(headers)
         if not count:
             continue
-        body = [[_formatted(value) for value in list(values) + [""] * (count - len(values))] for values in section["rows"]]
+        body = [[_cell_text(value) for value in list(values) + [""] * (count - len(values))] for values in section["rows"]]
         if any(len(row) > count for row in body):
             raise ValueError(f"Section {section['heading']!r} has more values than headers")
         def preferred_width(column):
             header = max((len(part.strip()) for part in str(headers[column]).split(" | ")), default=0)
             longest = max([header] + [len(row[column]) for row in body])
-            numeric = all(not row[column] or row[column].replace(",", "").replace(".", "").lstrip("-").isdigit() for row in body)
+            numeric = all(not row[column] or row[column] == "-" or row[column].replace(",", "").replace(".", "").lstrip("-").isdigit() for row in body)
             return min(65*mm, max((20 if numeric else 29)*mm, longest * (4.5 if numeric else 4)))
         widths = [preferred_width(i) for i in range(count)]
         if financial and count == 5:
@@ -455,15 +499,16 @@ def export_sections_pdf(path, title, meta, sections):
             if len(bands) > 1:
                 story.append(pdf_paragraph(f"Columns {band[1] + 1}–{band[-1] + 1} of {count} (first column repeated)", styles["Normal"]))
             data = [[header_cell(headers[i]) for i in band]]
-            for row in body:
-                data.append([pdf_paragraph(row[i], cell_style) for i in band])
+            bold_rows = set(section.get("total_rows") or [])
+            for number, row in enumerate(body):
+                data.append([pdf_paragraph(row[i], number_style if _looks_numeric(row[i]) else cell_style, number in bold_rows) for i in band])
             table = Table(data, repeatRows=1, splitInRow=1, colWidths=[widths[i] for i in band])
             style = [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#071B2E")),
                      ("GRID", (0, 0), (-1, -1), .25, colors.grey), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                      ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F6F8")]),
                      ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
             for position, column in enumerate(band):
-                if any(value and value.replace(",", "").replace(".", "").lstrip("-").isdigit() for value in (row[column] for row in body)):
+                if any(value and (value == "-" or value.replace(",", "").replace(".", "").lstrip("-").isdigit()) for value in (row[column] for row in body)):
                     style.append(("ALIGN", (position, 1), (position, -1), "RIGHT"))
             for index in section.get("total_rows") or []:
                 if 0 <= index < len(body):

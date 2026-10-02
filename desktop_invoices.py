@@ -56,8 +56,10 @@ class InvoicesMixin:
         self.invoice_tree.delete(*self.invoice_tree.get_children())
         for r in rows:
             lbp,usd=self.exchange_equivalents(float(r["total"] or 0),r["currency"],rates)
-            entry_label=(("Sales" if r.get("kind")=="sale" else "Supplier")+" Credit Note"
-                         if r.get("doc_subtype")=="credit_note" else r.get("entry_type") or r["kind"])
+            entry_label=(("Sales" if r.get("kind")=="sale" else "Purchase")+" Return" if r.get("is_return")
+                         else ("Sales" if r.get("kind")=="sale" else "Supplier")+" Credit Note" if r.get("doc_subtype")=="credit_note"
+                         else ("Sales" if r.get("kind")=="sale" else "Supplier")+" Debit Note" if r.get("doc_subtype")=="debit_note"
+                         else r.get("entry_type") or r["kind"])
             self.invoice_tree.insert("","end",iid=str(r["id"]),values=(r["invoice_number"],"DELETED" if r.get("status")=="deleted" else str(r.get("status") or "").title(),r["invoice_date"],r["party_name"],r.get("branch_name") or "Head Office",entry_label,r["currency"],r.get("deductible_subtotal",r["subtotal"]),r.get("non_deductible_subtotal",0),r["total"],r.get("payment_method") or "",r.get("amount_paid") or 0,"" if lbp is None else f"{lbp:,.2f}","" if usd is None else f"{usd:,.2f}",r["debit"],r["credit"],("Yes" if r.get("vat_recoverable",1) else "NO") if r.get("kind")=="purchase" and float(r.get("vat") or 0) else ""),tags=("deleted",) if r.get("status")=="deleted" else ())
         self.invoice_tree.tag_configure("deleted",foreground="#8B1E1E")
 

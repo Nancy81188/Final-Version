@@ -6,6 +6,9 @@ stock value is booked at the period end by a 'STOCK VARIATION' Journal Voucher (
 from __future__ import annotations
 
 import json
+import logging
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -15,6 +18,35 @@ ZERO = Decimal("0")
 DOC_TYPES = {"opening": ("OPN", "Opening Stock", 1), "receipt": ("GRN", "Stock Receipt", 1), "issue": ("GIN", "Stock Issue", -1),
              "adjustment_in": ("ADJ", "Adjustment +", 1), "adjustment_out": ("ADJ", "Adjustment -", -1), "transfer": ("TRF", "Transfer", 0)}
 STOCK_ACCOUNT, OPENING_ACCOUNT, CLOSING_ACCOUNT = "37", "6051", "6052"
+
+# ---------------------------------------------------------------- negative stock (2.9.45)
+# Stock may go below zero only after the user confirmed the alert. The confirmation applies to the request
+# being saved (thread-local, set by the data service from the X-Allow-Negative-Stock header); the documents
+# that end up below zero are then marked allow_negative=1 so later, unrelated saves are not blocked by them.
+NEGATIVE_MARKER = "[NEGATIVE_STOCK] "
+_ALLOW = threading.local()
+log = logging.getLogger("saber.inventory")
+
+
+class NegativeStock(ValueError):
+    """Raised when a change would take stock below zero and the user has not confirmed it."""
+
+
+@contextmanager
+def negative_stock_allowed(flag=True):
+    previous = getattr(_ALLOW, "value", False); _ALLOW.value = bool(flag)
+    try: yield
+    finally: _ALLOW.value = previous
+
+
+def negative_allowed():
+    return bool(getattr(_ALLOW, "value", False))
+
+
+def _negative_message(lines):
+    shown = "\n".join(lines[:6]) + (f"\n... and {len(lines) - 6} more" if len(lines) > 6 else "")
+    return (NEGATIVE_MARKER + "Stock will go below zero:\n" + shown +
+            "\n\nSave anyway? The stock will show negative until the goods are received.")
 
 
 def _d(value):
@@ -36,6 +68,11 @@ def migrate(db):
     for column, definition in (("warehouse_id", "INTEGER"), ("document_id", "INTEGER"), ("movement_type", "TEXT"), ("sales_price", "TEXT"), ("line_no", "INTEGER"),
                                ("invoice_item_id","INTEGER"),("cost_layers","TEXT")):
         if column not in movement_columns: db.execute(f"ALTER TABLE stock_movements ADD COLUMN {column} {definition}")
+    document_columns = {row["name"] for row in db.execute("PRAGMA table_info(stock_documents)")}
+    for column, definition in (("allow_negative", "INTEGER NOT NULL DEFAULT 0"), ("project_id", "INTEGER"), ("branch_id", "INTEGER")):
+        if column not in document_columns: db.execute(f"ALTER TABLE stock_documents ADD COLUMN {column} {definition}")
+    if "brand" not in {row["name"] for row in db.execute("PRAGMA table_info(inventory_items)")}:
+        db.execute("ALTER TABLE inventory_items ADD COLUMN brand TEXT")
     db.execute("CREATE TABLE IF NOT EXISTS item_categories (id INTEGER PRIMARY KEY, name TEXT NOT NULL, parent_id INTEGER, UNIQUE(name,parent_id))")
     db.execute("CREATE TABLE IF NOT EXISTS item_units (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)")
     db.execute("""CREATE TABLE IF NOT EXISTS physical_counts (id INTEGER PRIMARY KEY, number TEXT NOT NULL UNIQUE, count_date TEXT NOT NULL, warehouse_id INTEGER NOT NULL,
@@ -52,16 +89,28 @@ def migrate(db):
     db.execute("UPDATE stock_movements SET warehouse_id=(SELECT id FROM warehouses WHERE code='MAIN') WHERE warehouse_id IS NULL")
 
 
+SHOW_KEYS = ("brand", "warehouse", "project", "branch")  # which of these appear in the inventory screens (2.9.45)
+
+
 def settings(database):
     values = database.settings()
-    return {"currency": values.get("inventory_currency", "USD"), "method": values.get("inventory_method", "average")}
+    result = {"currency": values.get("inventory_currency", "USD"), "method": values.get("inventory_method", "average")}
+    for key in SHOW_KEYS: result[f"show_{key}"] = values.get(f"inventory_show_{key}", "1") != "0"
+    return result
+
+
+def brands(database):
+    with database.connect() as db:
+        return [r["brand"] for r in db.execute("SELECT DISTINCT brand FROM inventory_items WHERE brand IS NOT NULL AND brand<>'' ORDER BY brand COLLATE NOCASE")]
 
 
 def save_settings(database, item, user_id):
     currency = str(item.get("currency") or "USD").upper(); method = str(item.get("method") or "average").lower()
     if currency not in database.currency_codes() or method not in ("average", "fifo"): raise ValueError("Choose a listed currency and Average or FIFO")
+    pairs = [("inventory_currency", currency), ("inventory_method", method)]
+    pairs += [(f"inventory_show_{key}", "1" if item.get(f"show_{key}") else "0") for key in SHOW_KEYS if f"show_{key}" in item]
     with database.connect() as db:
-        for key, value in (("inventory_currency", currency), ("inventory_method", method)):
+        for key, value in pairs:
             db.execute("INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
     return settings(database)
 
@@ -100,13 +149,15 @@ def save_item(database, item, user_id):
         unit = str(item.get("unit") or "unit").strip() or "unit"; db.execute("INSERT OR IGNORE INTO item_units(name) VALUES(?)", (unit,))
         default_vat = "0" if str(item.get("default_vat") or "11").strip() in ("0", "0.0", "0%") else "11"
         cost_account = str(item.get("cost_account") or "").split(" - ", 1)[0].strip() or None
+        brand = str(item.get("brand") or "").strip() or None
         values = (sku, name, unit, str(item.get("category") or "").strip() or None, str(reorder), str(price),
                   1 if item.get("active", True) else 0, str(item.get("notes") or "").strip() or None, str(item.get("barcode") or "").strip() or None,
                   str(item.get("subcategory") or "").strip() or None, str(supplier) if supplier else None, str(item.get("location") or "").strip() or None, default_vat, cost_account)
         if item.get("id"):
             db.execute("UPDATE inventory_items SET sku=?,name=?,unit=?,category=?,reorder_level=?,sales_price=?,active=?,notes=?,barcode=?,subcategory=?,supplier_id=?,location=?,default_vat=?,cost_account=? WHERE id=?", values + (int(item["id"]),)); saved = int(item["id"])
+            if "brand" in item: db.execute("UPDATE inventory_items SET brand=? WHERE id=?", (brand, saved))
         else:
-            saved = db.execute("INSERT INTO inventory_items(sku,name,unit,category,reorder_level,sales_price,active,notes,barcode,subcategory,supplier_id,location,default_vat,cost_account,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values + (utcnow(),)).lastrowid
+            saved = db.execute("INSERT INTO inventory_items(sku,name,unit,category,reorder_level,sales_price,active,notes,barcode,subcategory,supplier_id,location,default_vat,cost_account,created_at,brand) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values + (utcnow(), brand)).lastrowid
         db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "save", "inventory_item", saved, json.dumps({"sku": sku}), utcnow()))
     return next(i for i in list_items(database) if i["id"] == saved)
 
@@ -114,7 +165,7 @@ def save_item(database, item, user_id):
 # ---------------------------------------------------------------- costing engine
 def _movements(database, date_to=None, exclude_document_id=None):
     with database.connect() as db:
-        rows = [dict(r) for r in db.execute("""SELECT m.*,d.number,d.doc_type,d.doc_date,d.reference,d.party_id,d.invoice_id,p.name party_name,w.code warehouse_code
+        rows = [dict(r) for r in db.execute("""SELECT m.*,d.number,d.doc_type,d.doc_date,d.reference,d.party_id,d.invoice_id,d.allow_negative,d.project_id,d.branch_id,p.name party_name,w.code warehouse_code
             FROM stock_movements m JOIN stock_documents d ON d.id=m.document_id LEFT JOIN parties p ON p.id=d.party_id LEFT JOIN warehouses w ON w.id=m.warehouse_id
             ORDER BY d.doc_date,d.id,m.id""")]
     return [r for r in rows if (not date_to or r["doc_date"] <= date_to) and r["document_id"] != exclude_document_id]
@@ -142,7 +193,13 @@ def run_costing(database, date_to=None, method=None, callback=None, exclude_docu
                 layer[0] -= take; amount -= take
                 if layer[0] == 0: layers.pop(0)
             if amount:
-                raise ValueError(f"FIFO stock history has insufficient layers for item {row['item_id']} in warehouse {wid}")
+                if not (row.get("allow_negative") or negative_allowed()):
+                    raise ValueError(f"FIFO stock history has insufficient layers for item {row['item_id']} in warehouse {wid}")
+                # Confirmed negative stock: the missing quantity goes out at the last known cost and is
+                # owed by the warehouse; the next receipts there settle it first.
+                last = item.get("last_cost") or ZERO
+                taken.append([amount, last, row["doc_date"], row["document_id"], row["line_no"]])
+                debts = item.setdefault("debt", {}); debts[wid] = debts.get(wid, ZERO) + amount
             return taken
         def take_specific_layers(requested):
             taken=[]
@@ -187,8 +244,14 @@ def run_costing(database, date_to=None, method=None, callback=None, exclude_docu
                     for part in costing_layers:
                         layers.append([_d(part["quantity"]),_d(part["unit_cost"]),row["doc_date"],row["document_id"],row["line_no"]])
                 else: layers.append([qty, cost, row["doc_date"],row["document_id"],row["line_no"]])
+                owed = item.get("debt", {}).get(wid, ZERO)
+                while owed > 0 and layers:
+                    layer = layers[0]; take = min(layer[0], owed); layer[0] -= take; owed -= take
+                    if layer[0] == 0: layers.pop(0)
+                if "debt" in item: item["debt"][wid] = owed
             else: item["layers"].append([qty, cost])
             issued_cost = cost
+            if cost > 0: item["last_cost"] = cost
         else:
             out = -qty
             try: explicit_layers=json.loads(row.get("cost_layers") or "[]")
@@ -205,11 +268,12 @@ def run_costing(database, date_to=None, method=None, callback=None, exclude_docu
                 issued_cost = total / out if out else ZERO
                 issued_layers=[{"quantity":str(part[0]),"unit_cost":str(part[1]),"source_document_id":part[3],"source_line_no":part[4]} for part in taken]
             else:
-                issued_cost = (item["value"] / item["qty"]) if item["qty"] else ZERO
+                issued_cost = (item["value"] / item["qty"]) if item["qty"] > 0 else (item.get("last_cost") or ZERO)
                 for layer in item["layers"]: layer[1] = issued_cost
                 issued_layers=[{"quantity":str(out),"unit_cost":str(issued_cost)}]
             item["qty"] -= out; item["value"] -= out * issued_cost; item["last_out"] = row["doc_date"]
-            if item["qty"] <= 0: item["value"] = ZERO; item["layers"] = []
+            if issued_cost > 0: item["last_cost"] = issued_cost
+            if item["qty"] <= 0: item["value"] = item["qty"] * issued_cost if item["qty"] < 0 else ZERO; item["layers"] = []
         if callback: callback(row, issued_cost, qty * issued_cost)
         if layers_callback and qty<0: layers_callback(row,issued_layers)
     if transfers: raise ValueError("Unpaired FIFO transfer in stock history")
@@ -291,14 +355,31 @@ def _convert_inventory_cost(database, invoice, unit_cost):
 
 
 def _assert_nonnegative_history(db):
-    balances={}
-    rows=db.execute("""SELECT m.item_id,m.warehouse_id,m.quantity,d.number,d.doc_date
-        FROM stock_movements m JOIN stock_documents d ON d.id=m.document_id ORDER BY d.doc_date,d.id,m.id""")
+    """No document may leave an item below zero in a warehouse, unless that was confirmed (allow_negative)."""
+    balances={}; shortages={}
+    rows=db.execute("""SELECT m.item_id,m.warehouse_id,m.quantity,d.id document_id,d.number,d.doc_date,COALESCE(d.allow_negative,0) allow_negative,
+        i.sku,w.code warehouse_code FROM stock_movements m JOIN stock_documents d ON d.id=m.document_id
+        LEFT JOIN inventory_items i ON i.id=m.item_id LEFT JOIN warehouses w ON w.id=m.warehouse_id ORDER BY d.doc_date,d.id,m.id""")
     for row in rows:
         key=(row["item_id"],row["warehouse_id"])
         balances[key]=balances.get(key,ZERO)+_d(row["quantity"])
-        if balances[key]<Decimal("-0.000001"):
-            raise ValueError(f"Stock movement {row['number']} on {display_date(row['doc_date'])} would make later stock negative")
+        if balances[key]<Decimal("-0.000001") and _d(row["quantity"])<0 and not row["allow_negative"]:
+            shortages[(row["document_id"],key)]=(row["document_id"],f"Stock movement {row['number']} on {display_date(row['doc_date'])} would make later stock negative ({row['sku']} in {row['warehouse_code']}: {balances[key]:,.3f})")
+    if not shortages: return
+    if not negative_allowed(): raise NegativeStock(_negative_message([text for _id,text in shortages.values()]))
+    ids=sorted({doc_id for doc_id,_text in shortages.values()})
+    db.execute(f"UPDATE stock_documents SET allow_negative=1 WHERE id IN ({','.join('?'*len(ids))})",ids)
+    log.warning("Negative stock confirmed by the user: %s", "; ".join(text for _id,text in shortages.values()))
+
+
+def _optional_id(db, table, value):
+    """Project / branch of a stock document: an id, a code or a name; empty = none."""
+    text = str(value or "").strip()
+    if not text: return None
+    column = "code" if table == "projects" else "name"
+    row = db.execute(f"SELECT id FROM {table} WHERE id=? OR {column}=? OR name=?", (int(text) if text.isdigit() else -1, text, text)).fetchone()
+    if not row: raise ValueError(f"{'Project' if table == 'projects' else 'Branch'} '{text}' was not found")
+    return row["id"]
 
 
 def save_document(database, header, lines, user_id, document_id=None):
@@ -333,7 +414,8 @@ def save_document(database, header, lines, user_id, document_id=None):
             available = state.get(item_id, {}).get("by_warehouse", {}).get(warehouse["id"], ZERO)
             if qty > available:
                 sku = next(n[0]["sku"] for n in normalized if n[0]["id"] == item_id)
-                raise ValueError(f"Not enough stock of {sku} in {warehouse['code']} on {display_date(date)}: available {available:,.3f}, requested {qty:,.3f}")
+                if not negative_allowed():
+                    raise NegativeStock(_negative_message([f"Not enough stock of {sku} in {warehouse['code']} on {display_date(date)}: available {available:,.3f}, requested {qty:,.3f}"]))
     with database.connect() as db:
         if document_id:
             old = db.execute("SELECT * FROM stock_documents WHERE id=?", (int(document_id),)).fetchone()
@@ -342,14 +424,16 @@ def save_document(database, header, lines, user_id, document_id=None):
                 database._assert_no_active_linked_returns(db,old["invoice_id"],"edit stock for")
             database._assert_period_open(old["doc_date"]); number = old["number"]
             db.execute("DELETE FROM stock_movements WHERE document_id=?", (int(document_id),))
-            db.execute("""UPDATE stock_documents SET doc_type=?,doc_date=?,warehouse_id=?,to_warehouse_id=?,party_id=?,reference=?,notes=? WHERE id=?""",
-                (doc_type, date, warehouse["id"], target["id"] if target else None, header.get("party_id") or None, header.get("reference") or None, header.get("notes") or None, int(document_id)))
+            db.execute("""UPDATE stock_documents SET doc_type=?,doc_date=?,warehouse_id=?,to_warehouse_id=?,party_id=?,reference=?,notes=?,project_id=?,branch_id=? WHERE id=?""",
+                (doc_type, date, warehouse["id"], target["id"] if target else None, header.get("party_id") or None, header.get("reference") or None, header.get("notes") or None,
+                 _optional_id(db, "projects", header.get("project_id")), _optional_id(db, "branches", header.get("branch_id")), int(document_id)))
             saved = int(document_id)
         else:
             number = str(header.get("number") or "").strip() or next_number(database, doc_type, date)
-            saved = db.execute("""INSERT INTO stock_documents(number,doc_type,doc_date,warehouse_id,to_warehouse_id,party_id,invoice_id,reference,notes,created_by,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (number, doc_type, date, warehouse["id"], target["id"] if target else None, header.get("party_id") or None,
-                header.get("invoice_id") or None, header.get("reference") or None, header.get("notes") or None, user_id, utcnow())).lastrowid
+            saved = db.execute("""INSERT INTO stock_documents(number,doc_type,doc_date,warehouse_id,to_warehouse_id,party_id,invoice_id,reference,notes,created_by,created_at,project_id,branch_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (number, doc_type, date, warehouse["id"], target["id"] if target else None, header.get("party_id") or None,
+                header.get("invoice_id") or None, header.get("reference") or None, header.get("notes") or None, user_id, utcnow(),
+                _optional_id(db, "projects", header.get("project_id")), _optional_id(db, "branches", header.get("branch_id")))).lastrowid
         sign = DOC_TYPES[doc_type][2]
         for position, (item, qty, cost, price, invoice_item_id, cost_layers, movement_type) in enumerate(normalized, 1):
             if doc_type == "transfer":
@@ -373,8 +457,9 @@ def _state_without(database, date, document_id):
 
 def get_document(database, document_id):
     with database.connect() as db:
-        doc = db.execute("""SELECT d.*,w.code warehouse_code,w.name warehouse_name,t.code to_warehouse_code,p.name party_name FROM stock_documents d
-            JOIN warehouses w ON w.id=d.warehouse_id LEFT JOIN warehouses t ON t.id=d.to_warehouse_id LEFT JOIN parties p ON p.id=d.party_id WHERE d.id=?""", (int(document_id),)).fetchone()
+        doc = db.execute("""SELECT d.*,w.code warehouse_code,w.name warehouse_name,t.code to_warehouse_code,p.name party_name,pr.code project_code,pr.name project_name,b.name branch_name
+            FROM stock_documents d JOIN warehouses w ON w.id=d.warehouse_id LEFT JOIN warehouses t ON t.id=d.to_warehouse_id LEFT JOIN parties p ON p.id=d.party_id
+            LEFT JOIN projects pr ON pr.id=d.project_id LEFT JOIN branches b ON b.id=d.branch_id WHERE d.id=?""", (int(document_id),)).fetchone()
         if not doc: raise KeyError("Stock document not found")
         lines = [dict(r) for r in db.execute("""SELECT m.*,i.sku,i.name,i.unit FROM stock_movements m JOIN inventory_items i ON i.id=m.item_id
             WHERE m.document_id=? ORDER BY m.line_no,m.id""", (int(document_id),))]
@@ -563,7 +648,14 @@ def build_report(database, report, options):
     if options.get("item_id") and not first_item: raise ValueError("Choose a valid Item From")
     if options.get("item_to_id") and not last_item: raise ValueError("Choose a valid Item To")
     if first_item and last_item and first_item["sku"]>last_item["sku"]: raise ValueError("Item From must be before Item To")
-    filters = [f"{label}: {options[key]}" for key, label in (("category", "Category"), ("subcategory", "Subcategory"), ("unit", "Unit"), ("supplier_name", "Supplier")) if options.get(key)]
+    filters = [f"{label}: {options[key]}" for key, label in (("category", "Category"), ("subcategory", "Subcategory"), ("brand", "Brand"), ("unit", "Unit"), ("supplier_name", "Supplier"),
+               ("project_name", "Project"), ("branch_name", "Branch")) if options.get(key)]
+    brand_filter = str(options.get("brand") or "").strip()
+    project_filter = int(options["project_id"]) if str(options.get("project_id") or "").isdigit() else None
+    branch_filter = int(options["branch_id"]) if str(options.get("branch_id") or "").isdigit() else None
+    def document_ok(row):
+        """Project / branch of the stock document (movement reports)."""
+        return (not project_filter or row.get("project_id") == project_filter) and (not branch_filter or row.get("branch_id") == branch_filter)
     wanted = lambda item_id: not options.get("item_id") or int(options["item_id"]) == item_id
     category = str(options.get("category") or "").strip(); subcategory = str(options.get("subcategory") or "").strip()
     unit_filter = str(options.get("unit") or "").strip(); supplier_filter = str(options.get("supplier_id") or "").strip()
@@ -574,6 +666,7 @@ def build_report(database, report, options):
         if category and (item.get("category") or "") != category: return False
         if subcategory and (item.get("subcategory") or "") != subcategory: return False
         if unit_filter and (item.get("unit") or "") != unit_filter: return False
+        if brand_filter and (item.get("brand") or "").casefold() != brand_filter.casefold(): return False
         if supplier_filter:
             data = listed.get(item_id, {})
             if str(item.get("supplier_id") or "") != supplier_filter and data.get("supplier_name") != options.get("supplier_name"): return False
@@ -668,7 +761,7 @@ def build_report(database, report, options):
     elif report == "movements":
         rows = []
         def record(row, unit, value):
-            if row["doc_date"] < date_from or not wanted(row["item_id"]) or not in_category(row["item_id"]) or (warehouse and row["warehouse_id"] != warehouse): return
+            if row["doc_date"] < date_from or not wanted(row["item_id"]) or not in_category(row["item_id"]) or (warehouse and row["warehouse_id"] != warehouse) or not document_ok(row): return
             if options.get("doc_type") and row["doc_type"] != options["doc_type"]: return
             qty = _d(row["quantity"]); unit_cost = _d(row["unit_cost"]) if qty > 0 and row["doc_type"] != "transfer" else unit
             rows.append([display_date(row["doc_date"]), row["number"], DOC_TYPES[row["doc_type"]][1], items[row["item_id"]]["sku"], items[row["item_id"]]["name"], row.get("warehouse_code") or "",
@@ -679,7 +772,7 @@ def build_report(database, report, options):
     elif report == "margin":
         sold = {}
         def record(row, unit, value):
-            if row["doc_type"] != "issue" or row["doc_date"] < date_from or not in_category(row["item_id"]): return
+            if row["doc_type"] != "issue" or row["doc_date"] < date_from or not in_category(row["item_id"]) or not document_ok(row): return
             data = sold.setdefault(row["item_id"], {"qty": ZERO, "cost": ZERO, "sales": ZERO})
             qty = -_d(row["quantity"]); data["qty"] += qty; data["cost"] += qty * unit; data["sales"] += qty * _d(row.get("sales_price"))
         run_costing(database, date_to, method, record)
@@ -692,6 +785,26 @@ def build_report(database, report, options):
         title = "Sales Margin (Cost of Goods Sold)"
         sections.append({"heading": f"Items issued {display_date(date_from)} to {display_date(date_to)} - sales at invoice price, cost at {'FIFO' if method == 'fifo' else 'weighted average'}",
                          "headers": ["Item Code", "Item", "Quantity Sold", f"Sales ({currency})", "Cost of Goods Sold", "Gross Margin", "Margin %"], "rows": rows, "total_rows": [len(rows) - 1]})
+    elif report == "brands":
+        state = run_costing(database, date_to, method); grouped = {}
+        for item_id, data in state.items():
+            if item_id not in items or not in_category(item_id): continue
+            values = _reported_warehouse_values(data)
+            for wid, qty in data.get("by_warehouse", {}).items():
+                if warehouse and wid != warehouse: continue
+                if not qty and not values.get(wid): continue
+                key = (items[item_id].get("brand") or "(no brand)", warehouses.get(wid, {}).get("code", "?"))
+                entry = grouped.setdefault(key, {"items": set(), "qty": ZERO, "value": ZERO, "negative": 0})
+                entry["items"].add(item_id); entry["qty"] += qty; entry["value"] += values.get(wid, ZERO)
+                if qty < 0: entry["negative"] += 1
+        rows = []; total = ZERO
+        for (brand, wh), entry in sorted(grouped.items()):
+            total += entry["value"]
+            rows.append([brand, wh, len(entry["items"]), entry["qty"], entry["value"].quantize(Decimal("0.01")), entry["negative"] or ""])
+        rows.append(["TOTAL", "", "", "", total.quantize(Decimal("0.01")), ""])
+        title = "Stock by Brand and Warehouse"
+        sections.append({"heading": f"Stock on {display_date(date_to)} by brand and warehouse", "headers": ["Brand", "Warehouse", "Items", "Quantity", f"Value ({currency})", "Items below zero"],
+                         "rows": rows, "total_rows": [len(rows) - 1]})
     elif report == "ageing":
         return ageing_report(database, options, items, warehouses, in_category, currency, method, date_to, company)
     elif report == "summary":

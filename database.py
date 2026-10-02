@@ -13,7 +13,7 @@ import threading
 import urllib.request
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from lebanese_accounts import DEFAULT_LEBANESE_ACCOUNTS, LEBANESE_ACCOUNTS
@@ -358,7 +358,9 @@ class Database:
                 connection = self._open_connection()
             self._transaction.connection = connection
             try:
+                self._watch_journal_lines(connection)
                 yield connection
+                self._refuse_unbalanced_entries(connection)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -367,8 +369,66 @@ class Database:
                 self._transaction.connection = None
                 if not self.pooled: connection.close()
 
+    # ------------------------------------------------------------ every journal entry must balance (2.9.43)
+    BALANCE_TOLERANCE = Decimal("0.01")
+    _balance_check_paused = False  # only while initialize() repairs entries written by older versions
+
+    @staticmethod
+    def _watch_journal_lines(connection):
+        """Note (per connection, in a TEMP table) every journal entry whose lines are added, changed or
+        deleted, so the whole entry can be checked once, just before the change is saved."""
+        if connection.execute("SELECT 1 FROM sqlite_temp_master WHERE type='trigger' AND name='saber_touch_line_insert'").fetchone():
+            return
+        if not connection.execute("SELECT 1 FROM main.sqlite_master WHERE type='table' AND name='journal_lines'").fetchone():
+            return  # brand-new file: the tables are created in this transaction, checked from the next one
+        connection.executescript("""
+            CREATE TEMP TABLE IF NOT EXISTS saber_touched_entries(entry_id INTEGER PRIMARY KEY);
+            CREATE TEMP TRIGGER IF NOT EXISTS saber_touch_line_insert AFTER INSERT ON main.journal_lines
+              BEGIN INSERT OR IGNORE INTO saber_touched_entries VALUES(NEW.entry_id); END;
+            CREATE TEMP TRIGGER IF NOT EXISTS saber_touch_line_update AFTER UPDATE ON main.journal_lines
+              BEGIN INSERT OR IGNORE INTO saber_touched_entries VALUES(OLD.entry_id); INSERT OR IGNORE INTO saber_touched_entries VALUES(NEW.entry_id); END;
+            CREATE TEMP TRIGGER IF NOT EXISTS saber_touch_line_delete AFTER DELETE ON main.journal_lines
+              BEGIN INSERT OR IGNORE INTO saber_touched_entries VALUES(OLD.entry_id); END;
+        """)
+
+    def _refuse_unbalanced_entries(self, connection):
+        """Total Debit must equal total Credit for every entry changed in this transaction, whatever screen,
+        import or upgrade path wrote it. Otherwise nothing of the change is saved."""
+        if not connection.execute("SELECT 1 FROM sqlite_temp_master WHERE type='table' AND name='saber_touched_entries'").fetchone():
+            return
+        rows = connection.execute("""SELECT e.id, e.entry_number, l.debit, l.credit FROM temp.saber_touched_entries t
+            JOIN main.journal_entries e ON e.id=t.entry_id JOIN main.journal_lines l ON l.entry_id=e.id""").fetchall()
+        connection.execute("DELETE FROM temp.saber_touched_entries")
+        if self._balance_check_paused or not rows: return
+        totals = {}
+        for row in rows:
+            entry = totals.setdefault(row[0], [row[1], Decimal(0), Decimal(0)])
+            try: entry[1] += Decimal(str(row[2] or 0)); entry[2] += Decimal(str(row[3] or 0))
+            except (InvalidOperation, ValueError): raise ValueError(f"Journal entry {row[1]} has an amount that is not a number")
+        for number, debit, credit in totals.values():
+            if abs(debit - credit) > self.BALANCE_TOLERANCE:
+                logging.getLogger("saber.database").warning("Unbalanced entry %s refused: debit %s, credit %s", number, debit, credit)
+                raise ValueError(f"Journal entry {number} is not balanced: total Debit {debit:,.2f}, total Credit {credit:,.2f}, "
+                                 f"difference {abs(debit - credit):,.2f}. Nothing was saved.")
+
+    def unbalanced_entries(self):
+        """Entries already saved with Debit different from Credit (written before 2.9.43), for review."""
+        with self.connect() as db:
+            rows = db.execute("SELECT e.id, e.entry_number, e.entry_date, e.description, l.debit, l.credit FROM journal_entries e JOIN journal_lines l ON l.entry_id=e.id ORDER BY e.id").fetchall()
+        totals = {}
+        for row in rows:
+            item = totals.setdefault(row["id"], {"id": row["id"], "entry_number": row["entry_number"], "entry_date": row["entry_date"], "description": row["description"], "debit": Decimal(0), "credit": Decimal(0)})
+            try: item["debit"] += Decimal(str(row["debit"] or 0)); item["credit"] += Decimal(str(row["credit"] or 0))
+            except (InvalidOperation, ValueError): item["debit"] = item["credit"] = None
+        result = []
+        for item in totals.values():
+            if item["debit"] is None or abs(item["debit"] - item["credit"]) > self.BALANCE_TOLERANCE:
+                result.append({**item, "debit": str(item["debit"]), "credit": str(item["credit"]),
+                               "difference": None if item["debit"] is None else str(item["debit"] - item["credit"])})
+        return result
+
     # Bump whenever initialize(), SCHEMA, seed accounts or its migration helpers change.
-    STARTUP_SCHEMA_VERSION = "3"
+    STARTUP_SCHEMA_VERSION = "4"
 
     @staticmethod
     def _startup_schema_signature(db):
@@ -401,7 +461,9 @@ class Database:
                     row = db.execute("SELECT value FROM app_settings WHERE key='books_locked_until'").fetchone()
                     lock = row["value"] if row else None
                     if lock: db.execute("UPDATE app_settings SET value='' WHERE key='books_locked_until'")
-            return self._initialize(admin_password)
+            self._balance_check_paused = True  # repairs of old entries must not be blocked; new work always is checked
+            try: return self._initialize(admin_password)
+            finally: self._balance_check_paused = False
         finally:
             if lock:
                 with self.connect() as db:
@@ -540,8 +602,11 @@ class Database:
             import bank_rec
             bank_rec.migrate(db)
             employee_cols={row["name"] for row in db.execute("PRAGMA table_info(employees)")}
-            for column in ("nationality","father_name","mother_name","birth_date","birth_place","sex"):
+            for column in ("nationality","father_name","mother_name","birth_date","birth_place","sex")+self.EMPLOYEE_REGISTER_FIELDS:
                 if column not in employee_cols: db.execute(f"ALTER TABLE employees ADD COLUMN {column} TEXT")
+            payroll_cols={row["name"] for row in db.execute("PRAGMA table_info(payroll_records)")}
+            for column in ("allowances",):
+                if column not in payroll_cols: db.execute(f"ALTER TABLE payroll_records ADD COLUMN {column} TEXT")
             import chart_extra
             chart_extra.ensure_accounts(db)
             item_cols={row["name"] for row in db.execute("PRAGMA table_info(invoice_items)")}
@@ -551,6 +616,13 @@ class Database:
             for column,definition in (("doc_subtype","TEXT NOT NULL DEFAULT 'invoice'"),("invoice_discount_percent","TEXT"),("invoice_discount_amount","TEXT"),("gross_before_discount","TEXT"),("notes","TEXT")):
                 if column not in inv_cols: db.execute(f"ALTER TABLE invoices ADD COLUMN {column} {definition}")
             if "return_request_id" not in inv_cols: db.execute("ALTER TABLE invoices ADD COLUMN return_request_id TEXT")
+            if "is_return" not in inv_cols:
+                # 2.9.45: a return (goods back, stock moves) is told apart from a credit note (discount / price
+                # adjustment, no stock). Credit notes made by "Return" from an invoice are returns.
+                db.execute("ALTER TABLE invoices ADD COLUMN is_return INTEGER NOT NULL DEFAULT 0")
+                linked=("OR (linked_invoice_id IS NOT NULL AND EXISTS(SELECT 1 FROM invoice_items x WHERE x.invoice_id=invoices.id AND x.origin_item_id IS NOT NULL))"
+                        if "linked_invoice_id" in inv_cols and "origin_item_id" in {r["name"] for r in db.execute("PRAGMA table_info(invoice_items)")} else "")
+                db.execute(f"UPDATE invoices SET is_return=1 WHERE doc_subtype='credit_note' AND (source_file IN ('Sales Return','Purchase Return') {linked})")
             if "return_request_hash" not in inv_cols: db.execute("ALTER TABLE invoices ADD COLUMN return_request_hash TEXT")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_return_request ON invoices(return_request_id) WHERE return_request_id IS NOT NULL")
             item_cols={row["name"] for row in db.execute("PRAGMA table_info(invoice_items)")}
@@ -1306,7 +1378,11 @@ class Database:
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
                 (user_id, "manual_entry", "invoice", invoice_id, json.dumps({"items": len(normalized)}), utcnow()))
         self._store_invoice_format(invoice_id, item, line_items)
-        if any(line.get("item_code") for line in line_items):
+        subtype=str(item.get("doc_subtype") or "invoice").lower(); is_return=bool(item.get("is_return")) and subtype=="credit_note"
+        with self.connect() as db: db.execute("UPDATE invoices SET is_return=? WHERE id=?",(1 if is_return else 0,invoice_id))
+        # Stock moves for invoices and returns only. A credit note or a debit note is a discount / price
+        # adjustment: it never moves goods, even when its lines name items.
+        if any(line.get("item_code") for line in line_items) and (subtype=="invoice" or is_return):
             import inventory
             try: inventory.issue_for_invoice(self, invoice_id, line_items, user_id)
             except Exception:
@@ -1919,7 +1995,7 @@ class Database:
             "expense_side":opposite(source.get("expense_side"),"C" if is_sale else "D"),
             "expense_no_vat_side":opposite(source.get("expense_no_vat_side"),"D"),
             "vat_treatment":source.get("vat_treatment") or "standard","vat_use":source.get("vat_use") or "mixed",
-            "doc_subtype":"credit_note","amount_paid":"0","payment_method":"On Account (Not Cash)",
+            "doc_subtype":"credit_note","is_return":True,"amount_paid":"0","payment_method":"On Account (Not Cash)",
             "notes":f"Return against {source['invoice_number']}","skip_vat_reclass":True,
             "branch":source.get("branch_name"),"department_id":source.get("department_id"),"project_id":source.get("project_id"),
             "linked_invoice_id":int(invoice_id)}
@@ -2588,7 +2664,7 @@ class Database:
                 i.due_date,i.payment_status,CAST(i.amount_paid AS REAL) amount_paid,i.payment_method,i.description,i.branch_id,COALESCE(b.name,'Head Office') branch_name,
                 CAST(i.total AS REAL)-CAST(i.amount_paid AS REAL) outstanding,i.cancelled_at,i.cancellation_reason,
                 (SELECT COUNT(*) FROM invoice_attachments x WHERE x.invoice_id=i.id) attachment_count,i.vat_recoverable,i.department_id,i.project_id,i.vat_treatment,i.vat_use,
-                i.doc_subtype,i.invoice_discount_percent,i.invoice_discount_amount,i.notes,i.linked_invoice_id
+                i.doc_subtype,i.invoice_discount_percent,i.invoice_discount_amount,i.notes,i.linked_invoice_id,COALESCE(i.is_return,0) is_return
                 FROM invoices i LEFT JOIN parties p ON p.id=i.party_id LEFT JOIN branches b ON b.id=i.branch_id ORDER BY i.id DESC LIMIT ?""", (limit,))]
 
     def list_accounts(self):
@@ -2899,6 +2975,13 @@ class Database:
 
     # Payroll is deliberately settings-driven.  Rates and ceilings are effective-dated so
     # a Lebanese statutory change does not rewrite previously calculated payroll periods.
+    # 2.9.44 employee register (like the official declaration workbooks): unit, recurring allowances,
+    # NSSF branches the employee is not subject to, structured address, how the employee left.
+    EMPLOYEE_MONEY_FIELDS = ("cost_of_living","extra_indemnity","representation_taxable","representation_exempt")
+    EMPLOYEE_FLAG_FIELDS = ("nssf_no_end_service","nssf_no_family","nssf_no_medical")
+    EMPLOYEE_REGISTER_FIELDS = ("unit_code","unit_name")+EMPLOYEE_MONEY_FIELDS+EMPLOYEE_FLAG_FIELDS+(
+        "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","pay_type","leave_reason")
+
     def list_employees(self, include_inactive=True):
         with self.connect() as db:
             where="" if include_inactive else "WHERE e.active=1"
@@ -2980,6 +3063,17 @@ class Database:
                     nationality,father_name,mother_name,birth_date,birth_place,
                     marital_status,spouse_works,children,employee_group,hire_date,leave_date,job_title,branch_id,currency,base_salary,salary_account,payable_account,active,created_by,created_at)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",values+(user_id,utcnow())).lastrowid; action="create"
+            register={key:str(item.get(key) if item.get(key) is not None else "").strip() for key in self.EMPLOYEE_REGISTER_FIELDS if key in item}
+            for key in self.EMPLOYEE_MONEY_FIELDS:
+                if register.get(key):
+                    try: amount=Decimal(register[key].replace(",",""))
+                    except Exception as exc: raise ValueError(f"{key.replace('_',' ').title()} must be a number") from exc
+                    if amount<0: raise ValueError(f"{key.replace('_',' ').title()} cannot be negative")
+                    register[key]=str(amount)
+            for key in self.EMPLOYEE_FLAG_FIELDS:
+                if key in register: register[key]="1" if register[key].lower() in ("1","true","yes","on") else "0"
+            if register:
+                db.execute(f"UPDATE employees SET {','.join(k+'=?' for k in register)} WHERE id=?",(*register.values(),saved_id))
             if "sex" in item:
                 sex=str(item.get("sex") or "").strip().lower()
                 sex={"m":"male","male":"male","ذكر":"male","f":"female","female":"female","أنثى":"female","انثى":"female"}.get(sex,"")
@@ -3134,6 +3228,10 @@ class Database:
             try: money[name]=D(str(raw).replace(",",""))
             except Exception as exc: raise ValueError(f"{name.replace('_',' ').title()} must be a number") from exc
             if money[name]<0: raise ValueError(f"{name.replace('_',' ').title()} cannot be negative")
+        import payroll_lines
+        allowances=payroll_lines.clean_allowances(item.get("allowances"))
+        not_nssf=self.allowances_not_nssf()
+        allowance_parts=payroll_lines.split(allowances,not_nssf)
         # The selected date identifies a payroll month. Prorate a monthly base salary
         # when the employee joined or left during that month; an edited salary is the actual amount.
         month_start=rules_date[:8]+"01"
@@ -3180,11 +3278,11 @@ class Database:
             notes.append("Child tax deduction split equally because both spouses work")
         allowance+=dependent_spouse_deduction+child_deduction
         if children>int(setting("max_children_deduction","5")): notes.append(f"Family deduction limited to {int(setting('max_children_deduction','5'))} children")
-        regular_lbp=to_lbp(money["salary"]+money["overtime"]+money["commission"])+taxable_transport_lbp+taxable_schooling_lbp
+        regular_lbp=to_lbp(money["salary"]+money["overtime"]+money["commission"]+allowance_parts["taxable_recurring"])+taxable_transport_lbp+taxable_schooling_lbp
         tax=lambda annual: self._progressive_tax(max(D("0"),annual-allowance),brackets)
         annual_regular=regular_lbp*12/tax_fraction
         regular_tax=tax(annual_regular)*tax_fraction/12
-        one_off_lbp=to_lbp(money["bonus"]+money["thirteenth_month"])
+        one_off_lbp=to_lbp(money["bonus"]+money["thirteenth_month"]+allowance_parts["taxable_one_off"])
         one_off_tax=(tax(annual_regular+one_off_lbp/tax_fraction)-tax(annual_regular))*tax_fraction
         retro_tax=D("0"); retro_months=[]
         if money["retro_salary"]:
@@ -3218,6 +3316,7 @@ class Database:
                     gross=sum((D(str(record[key] or 0)) for key in
                         ("salary","transport","overtime","commission","schooling","bonus","thirteenth_month")),D("0"))
                     exempt=D(str(record["exempt_transport"] or 0))+D(str(record["exempt_schooling"] or 0))
+                    gross+=self._record_taxable_allowances(record)
                     prior_base+=self._converted_amount(max(D("0"),gross-exempt),record["currency"],"LBP",record["period_date"])
                     prior_withheld+=D(str(record["income_tax_lbp"] or 0))
                 elapsed=D(len(previous))+tax_fraction
@@ -3239,7 +3338,7 @@ class Database:
         income_tax=from_lbp(income_tax_lbp).quantize(D("0.01")); retro_tax_value=from_lbp(retro_tax_lbp).quantize(D("0.01"))
         taxable_lbp=max(D("0"),annual_regular-allowance)*tax_fraction/12+one_off_lbp
         # NSSF: salary, overtime, commission, bonus and 13th this month; retroactive salary in its own months.
-        base_lbp=to_lbp(money["salary"]+money["overtime"]+money["commission"]+money["bonus"]+money["thirteenth_month"])
+        base_lbp=to_lbp(money["salary"]+money["overtime"]+money["commission"]+money["bonus"]+money["thirteenth_month"]+allowance_parts["nssf"])
         def contribution(ceiling_name,rate_name,base,month_settings):
             limit=D(str(month_settings.get(ceiling_name) or 0)); capped=min(base,limit) if limit>0 else base
             return capped*D(str(month_settings.get(rate_name) or 0))
@@ -3268,6 +3367,11 @@ class Database:
             reason="foreign national" if is_foreign else "over 64"
             notes.append(f"Employer end-of-service contribution was skipped by the app's nationality/age rule ({reason}); "
                          "eligibility depends on the employee's CNSS category and must be confirmed before filing")
+        keys=employee.keys()
+        flag=lambda name: name in keys and str(employee[name] or "0")=="1"
+        if flag("nssf_no_end_service"): totals["end_service"]=D("0"); notes.append("Not subject to NSSF end-of-service (employee register)")
+        if flag("nssf_no_family"): totals["family"]=D("0"); notes.append("Not subject to NSSF family allowances (employee register)")
+        if flag("nssf_no_medical"): totals["medical"]=D("0"); totals["employee"]=D("0"); notes.append("Not subject to NSSF sickness & maternity (employee register)")
         nssf={name:(value.quantize(D("0.01")),from_lbp(value).quantize(D("0.01"))) for name,value in totals.items()}
         # NSSF family allowances paid with the salary on behalf of the NSSF (not taxable, offset against NSSF dues).
         allowance_lbp=D("0")
@@ -3287,7 +3391,7 @@ class Database:
         if minimum>0 and to_lbp(money["salary"])<minimum: notes.append(f"Salary is below the minimum wage of {int(minimum):,} LBP for this period")
         if not str(employee["nssf_number"] or "").strip(): notes.append("NSSF number missing in the employee file")
         if not str(employee["mof_number"] or "").strip(): notes.append("MOF (tax) number missing in the employee file")
-        gross=sum(money.values(),D("0"))
+        gross=sum(money.values(),D("0"))+allowance_parts["total"]
         net=(gross-income_tax-nssf["employee"][1]+family_allowance).quantize(D("0.01"))
         salary_base=money["salary"]+money["overtime"]+money["commission"]+money["retro_salary"]+money["bonus"]+money["thirteenth_month"]
         return {**{k:float(v) for k,v in money.items()},"gross_salary":float(gross),"taxable_salary":float(from_lbp(taxable_lbp).quantize(D("0.01"))),
@@ -3298,9 +3402,26 @@ class Database:
             "worked_days":worked_days,"calendar_days":month_days,"transport_days":days,"exempt_transport":float(from_lbp(exempt_transport_lbp).quantize(D("0.01"))),"exempt_schooling":float(from_lbp(exempt_schooling_lbp).quantize(D("0.01"))),
             "family_allowance":float(family_allowance),"family_deduction_lbp":float(allowance),
             "annualized_recurring_lbp":float(annual_regular),"annualized_taxable_lbp":float(max(D("0"),annual_regular-allowance)),
-            "compliance_notes":notes,"period_date":period,
+            "compliance_notes":notes,"period_date":period,"allowances":{k:float(v) for k,v in allowances.items()},
+            "allowances_total":float(allowance_parts["total"]),"allowances_taxable":float(allowance_parts["taxable_recurring"]+allowance_parts["taxable_one_off"]),
             "settings_period":{"date_from":settings.get("date_from"),"date_to":settings.get("date_to")},"rules_date":rules_date,
             "ceilings":{"medical":float(D(str(settings.get("medical_ceiling") or 0))),"family":float(D(str(settings.get("family_ceiling") or 0)))}}
+
+    def allowances_not_nssf(self):
+        """Taxable allowances the company treats as not subject to NSSF (app setting, JSON list of codes)."""
+        try: value=json.loads(self.settings().get("payroll_allowances_not_nssf") or "[]")
+        except ValueError: value=[]
+        return tuple(code for code in value if isinstance(code,str))
+
+    @staticmethod
+    def _record_allowances(record):
+        try: data=json.loads(record["allowances"] or "{}") if "allowances" in record.keys() else {}
+        except (ValueError,TypeError): data={}
+        return {k:Decimal(str(v)) for k,v in data.items() if v}
+
+    def _record_taxable_allowances(self,record):
+        import payroll_lines
+        return sum((v for k,v in self._record_allowances(record).items() if k in payroll_lines.ALLOWANCES and payroll_lines.ALLOWANCES[k][1]),Decimal("0"))
 
     def list_payroll(self,period_from=None,period_to=None):
         conditions=[]; values=[]
@@ -3325,8 +3446,8 @@ class Database:
                 number=f"{prefix}{(int(row['payroll_number'].rsplit('-',1)[-1])+1 if row else 1):06d}"
             fields=("salary","transport","overtime","commission","retro_salary","schooling","bonus","thirteenth_month","director_remuneration","gross_salary","taxable_salary","income_tax","income_tax_lbp",
                 "nssf_base","employee_nssf","employer_medical","employer_end_service","employer_family","net_salary","retro_tax",
-                "transport_days","exempt_transport","exempt_schooling","family_allowance","regular_tax","one_off_tax","compliance_notes")
-            values=[json.dumps(calc[field]) if field=="compliance_notes" else str(calc[field]) for field in fields]
+                "transport_days","exempt_transport","exempt_schooling","family_allowance","regular_tax","one_off_tax","compliance_notes","allowances")
+            values=[json.dumps(calc[field]) if field in ("compliance_notes","allowances") else str(calc[field]) for field in fields]
             existing=db.execute("SELECT id,status FROM payroll_records WHERE employee_id=? AND period_date=?",(employee_id,period)).fetchone()
             if existing and existing["status"]=="posted": raise ValueError("Posted payroll cannot be changed")
             if existing:
@@ -3368,6 +3489,11 @@ class Database:
             entry_id=db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,branch_id,created_by,created_at)
                 VALUES(?,?,?,?,?,?,?,?,?)""",(number,display_date(record["period_date"]),f'Payroll - {record["full_name"]}',"payroll",record["id"],record["currency"],record["branch_id"],user_id,utcnow())).lastrowid
             lines=[(mapping[key],Decimal(str(record[key] or 0)),Decimal("0")) for key in component_names]
+            allowances_total=sum(self._record_allowances(record).values(),Decimal("0"))
+            if allowances_total:
+                allowance_account=str(mapping.get("allowances") or "").strip() or salary_account
+                db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(allowance_account,"Allowances and Benefits","expense"))
+                lines.append((allowance_account,allowances_total,Decimal("0")))
             family_allowance=Decimal(str(record["family_allowance"] or 0)) if "family_allowance" in record.keys() else Decimal("0")
             # Family allocation: its own posting account when one is set; otherwise offset on the NSSF account (as before).
             family_account=str(mapping.get("family_allowance") or "").strip() or nssf_account

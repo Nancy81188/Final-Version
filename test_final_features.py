@@ -570,9 +570,13 @@ class YearEndClosingTest(unittest.TestCase):
     def tearDown(self): self.folder.cleanup()
 
     def test_close_as_journal_voucher_and_open_next_year(self):
-        with self.db.connect() as db:  # an old-style closing that must be removed
-            entry = db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,created_at) VALUES('CLOSE-2024-USD','2024-12-31','old','year_close',2024,'USD',?)", (utcnow(),)).lastrowid
-            db.execute("INSERT INTO journal_lines(entry_id,account_id,debit,credit) VALUES(?,(SELECT id FROM accounts WHERE code='121'),'5','0')", (entry,))
+        # An old-style closing written by an older version (one-sided, so it could not be saved since 2.9.43).
+        self.db._balance_check_paused = True
+        try:
+            with self.db.connect() as db:  # an old-style closing that must be removed
+                entry = db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,created_at) VALUES('CLOSE-2024-USD','2024-12-31','old','year_close',2024,'USD',?)", (utcnow(),)).lastrowid
+                db.execute("INSERT INTO journal_lines(entry_id,account_id,debit,credit) VALUES(?,(SELECT id FROM accounts WHERE code='121'),'5','0')", (entry,))
+        finally: self.db._balance_check_paused = False
         result = self.manager.close_and_open_year(self.company, 2024, 1)
         self.assertEqual(result["removed_old_closing"], 1); self.assertEqual(sorted(result["opening_vouchers"]), ["OPEN-2025-LBP", "OPEN-2025-USD"])
         vouchers = {e["entry_number"]: e for e in self.db.journal() if e["source_type"] == "journal_voucher"}
@@ -814,7 +818,7 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(self.item("ITM-00001")["quantity"], 70)
         credit = self.db.create_manual_invoice(
             {"invoice_date": "20-03-2024", "party_name": "Tower Client", "kind": "sales", "currency": "USD", "status": "posted",
-             "doc_subtype": "credit_note", "invoice_number": self.db.next_invoice_number("credit_note", "20-03-2024"),
+             "doc_subtype": "credit_note", "is_return": True, "invoice_number": self.db.next_invoice_number("credit_note", "20-03-2024"),
              "supplier_side": "C - Credit", "vat_side": "D - Debit", "expense_side": "D - Debit", "expense_account": "709000001"},
             [{"description": "HPL return", "quantity": 10, "unit_price": 120, "item_code": "ITM-00001"}], self.user)
         # The returned goods come back in: a Stock Receipt (not a second issue) valued at the average cost.
@@ -831,7 +835,7 @@ class InventoryTest(unittest.TestCase):
         inventory.save_settings(self.db, {"currency": "USD", "method": "fifo"}, self.user)
         credit = self.db.create_manual_invoice(
             {"invoice_date": "20-03-2024", "party_name": "Tower Client", "kind": "sales", "currency": "USD", "status": "posted",
-             "doc_subtype": "credit_note", "invoice_number": self.db.next_invoice_number("credit_note", "20-03-2024"),
+             "doc_subtype": "credit_note", "is_return": True, "invoice_number": self.db.next_invoice_number("credit_note", "20-03-2024"),
              "supplier_side": "C - Credit", "vat_side": "D - Debit", "expense_side": "D - Debit", "expense_account": "709000001"},
             [{"description": "HPL return", "quantity": 10, "unit_price": 120, "item_code": "ITM-00001"}], self.user)
         stock = next(d for d in inventory.list_documents(self.db) if d.get("invoice_id") == credit)

@@ -39,6 +39,7 @@ class ReportsMixin:
         self.action_button(actions,"Export Excel",lambda:self.journal_report("xlsx")).pack(side="left",padx=4)
         self.action_button(actions,"Export PDF",lambda:self.journal_report("pdf")).pack(side="left",padx=4)
         self.action_button(actions,"Print",lambda:self.journal_report("print")).pack(side="left",padx=4)
+        self.action_button(actions,"Check Balance",self.check_unbalanced_entries).pack(side="left",padx=4)
         tk.Button(actions,text="Delete Selected Voucher",command=self.delete_selected_journal_voucher,bg="#6B1010",fg="white",border=0,padx=14,pady=7).pack(side="left",padx=4)
         self.journal_totals=tk.Label(actions,text="Debit: 0.00   Credit: 0.00",bg=LIGHT,font=("Segoe UI",10,"bold"))
         self.journal_totals.pack(side="left",padx=15)
@@ -48,6 +49,16 @@ class ReportsMixin:
             ("account","Account",85),("account_name","Account Name",190),("party","Customer / Supplier",165),
             ("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
         self.load_journal()
+
+    def check_unbalanced_entries(self):
+        """Since 2.9.43 no entry can be saved with Debit different from Credit. This lists entries saved
+        before that (by older versions or imports) so they can be corrected with a journal voucher."""
+        try: rows=self.client.unbalanced_entries()
+        except Exception as exc: return messagebox.showerror("Check Balance",str(exc))
+        if not rows: return messagebox.showinfo("Check Balance","All journal entries are balanced (total Debit = total Credit).")
+        lines="\n".join(f'{r["entry_number"]}  {safe_display_date(r["entry_date"])}  Debit {r["debit"]}  Credit {r["credit"]}  Difference {r["difference"]}' for r in rows[:30])
+        more=f"\n... and {len(rows)-30} more" if len(rows)>30 else ""
+        messagebox.showwarning("Check Balance",f"{len(rows)} entr{'y is' if len(rows)==1 else 'ies are'} not balanced (saved before 2.9.43):\n\n{lines}{more}\n\nCorrect them with a Journal Voucher.")
 
     def journal_date_range(self):
         values=[]

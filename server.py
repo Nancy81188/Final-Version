@@ -193,6 +193,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if path.startswith("/api/inventory/documents/"): return self._json(200,inventory.get_document(self.db,int(path.rsplit("/",1)[-1])))
                 if path == "/api/inventory/next-number": return self._json(200,{"number":inventory.next_number(self.db,self._query(parsed,"type"),self._query(parsed,"date"))})
                 if path == "/api/inventory/categories": return self._json(200,inventory.list_categories(self.db))
+                if path == "/api/inventory/brands": return self._json(200,{"items":inventory.brands(self.db)})
                 if path == "/api/inventory/count-sheet": return self._json(200,{"items":inventory.count_sheet(self.db,self._query(parsed,"warehouse_id"),self._query(parsed,"date"))})
                 if path == "/api/inventory/counts": return self._json(200,{"items":inventory.list_counts(self.db)})
                 if path.startswith("/api/inventory/counts/"): return self._json(200,inventory.get_count(self.db,int(path.rsplit("/",1)[-1])))
@@ -380,6 +381,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 log.exception("Request step failed")
                 return self._json(500,{"error":"Backup could not be downloaded"})
         if path == "/api/backups/folder": return self._json(200,{"folder":str(self.db._backups_dir())})
+        if path == "/api/journal/unbalanced": return self._json(200,{"items":self.db.unbalanced_entries()})
         if path == "/api/backups":
             return self._json(200,{"items":self.db.list_backups()})
         if path == "/api/settings": return self._json(200,self.db.settings())
@@ -916,8 +918,11 @@ def _keep_alive_safe(method):
             self._json(400,{"error":"Request body was incomplete"})
             return
         if self._key_refused(): return
+        import inventory
         try:
-            method(self)
+            # The user confirmed the negative-stock alert for this request (the desktop resends it with this header).
+            with inventory.negative_stock_allowed(self.headers.get("X-Allow-Negative-Stock") == "1"):
+                method(self)
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True; return
         except Exception as exc:

@@ -63,7 +63,7 @@ def _load_records(db, start, end, include_drafts):
     status = "" if include_drafts else " AND p.status='posted'"
     with db.connect() as connection:
         rows = [dict(row) for row in connection.execute(f"""SELECT p.*,e.employee_number,e.full_name,e.mof_number,e.nssf_number,
-            e.national_id,e.marital_status,e.spouse_works,e.children,e.employee_group,e.job_title,e.hire_date,e.leave_date
+            e.national_id,e.marital_status,e.spouse_works,e.children,e.employee_group,e.job_title,e.hire_date,e.leave_date,e.unit_code,e.father_name
             FROM payroll_records p JOIN employees e ON e.id=p.employee_id
             WHERE p.period_date>=? AND p.period_date<=?{status}
             ORDER BY e.employee_number,p.period_date""", (start, end))]
@@ -189,6 +189,9 @@ def build_payroll_report(db, report="R10", period_type="quarterly", year=None, i
     if report == "NSSF": return build_nssf_statement(db, period_type, year, index, include_drafts)
     if report == "SETTLEMENT": return build_nssf_settlement(db, year or date.today().year)
     if report == "CEILINGS": return build_ceilings_by_month(db, year or date.today().year)
+    import payroll_official
+    if report in payroll_official.OFFICIAL:
+        return payroll_official.build_official(db, report, period_type, year, index, include_drafts)
     if report not in REPORTS: raise ValueError("Report must be R5, R6, R10, NSSF or CEILINGS")
     start, end, label = period_range(period_type, year or date.today().year, index)
     records = _load_records(db, start, end, bool(include_drafts))

@@ -31,6 +31,7 @@ class ApiClient:
         self.company_id = None
         self.fiscal_year = None
         self.on_unauthorized = on_unauthorized
+        self.confirm_negative_stock = None  # callable(message) -> bool, set by the desktop window
         self._local = threading.local()      # one kept-open connection per thread
         self._cache = {}; self._cache_lock = threading.Lock()
 
@@ -119,9 +120,21 @@ class ApiClient:
                                "Check that the server computer is on and the address is correct.") from exc
         except TimeoutError as exc:
             raise RuntimeError("The data service took too long to answer. Please try again.") from exc
+        if status >= 400 and not headers.get("X-Allow-Negative-Stock"):
+            try: text = json.loads(payload.decode("utf-8")).get("error", "")
+            except Exception: text = ""
+            # Negative stock: ask the user (callback set by the window); when confirmed, send the same request again.
+            if str(text).startswith("[NEGATIVE_STOCK] ") and self.confirm_negative_stock:
+                if self.confirm_negative_stock(text[len("[NEGATIVE_STOCK] "):]):
+                    headers["X-Allow-Negative-Stock"] = "1"
+                    self.clear_cache()
+                    status, payload = self._send(method, path, data, headers)
+                else:
+                    raise RuntimeError("Not saved: stock would go below zero.")
         if status >= 400:
             try: message = json.loads(payload.decode("utf-8")).get("error", f"HTTP Error {status}")
             except Exception: message = f"The server returned an error ({status}). Please try again."
+            message = str(message).replace("[NEGATIVE_STOCK] ", "")
             if status == 401 and path != "/api/login" and self.token:
                 self.token = None; self.clear_cache()
                 if self.on_unauthorized:
@@ -343,6 +356,7 @@ class ApiClient:
     def warehouses(self): return self.request("GET","/api/inventory/warehouses")["items"]
     def save_warehouse(self,item): return self.request("POST","/api/inventory/warehouses",item)["item"]
     def inventory_settings(self): return self.request("GET","/api/inventory/settings")
+    def inventory_brands(self): return self.request("GET","/api/inventory/brands")["items"]
     def save_inventory_settings(self,item): return self.request("POST","/api/inventory/settings",item)
     def stock_documents(self): return self.request("GET","/api/inventory/documents")["items"]
     def stock_document(self,document_id): return self.request("GET",f"/api/inventory/documents/{document_id}")
@@ -366,6 +380,7 @@ class ApiClient:
     def download_backup(self,name):
         result=self.request("GET","/api/backups/download?"+urlencode({"name":name})); result["content"]=base64.b64decode(result["content"]); return result
     def backup_folder(self): return self.request("GET","/api/backups/folder")["folder"]
+    def unbalanced_entries(self): return self.request("GET","/api/journal/unbalanced")["items"]
     def financial_config(self,year): return self.request("GET","/api/reports/financial-config?"+urlencode({"year":year}))
     def save_financial_config(self,year,config): return self.request("POST","/api/reports/financial-config",{"year":year,"config":config})
     def business_report(self,report,options): return self.request("GET","/api/reports/business?"+urlencode({"report":report,"options":json.dumps(options)}))

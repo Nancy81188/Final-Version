@@ -136,7 +136,10 @@ class FinalFeaturesMixin:
         self.pr_year = tk.StringVar(value=str(getattr(self, "current_fiscal_year", now.year))); self.pr_index = tk.StringVar(value=f"Q{(now.month - 1) // 3 + 1}")
         self.pr_group = tk.StringVar(value="Employees and Managers (separate)"); self.pr_drafts = tk.BooleanVar(value=False)
         reports = ["R10 - Quarterly withholding", "R5 - Annual employer declaration", "R6 - Individual annual statement",
-                   "NSSF - Contributions table (all employees)", "SETTLEMENT - NSSF annual reconciliation", "CEILINGS - NSSF ceilings by month"]
+                   "NSSF - Contributions table (all employees)", "SETTLEMENT - NSSF annual reconciliation", "CEILINGS - NSSF ceilings by month",
+                   "R5_BOXES - R5 official boxes (ر5)", "R10_BOXES - R10 official boxes (ر10)", "R6_LINES - R6 lines 100-360 (ر6)",
+                   "AUDIT - Audit statement R6 vs R5", "MOVEMENT - Monthly & year-to-date movement", "REGISTER - Employees register",
+                   "LEAVERS - Leavers register"]
         tk.Label(controls, text="Report", bg=LIGHT).grid(row=0, column=0, padx=4, sticky="w")
         report_box=ttk.Combobox(controls, textvariable=self.pr_report, values=reports, state="readonly", width=31); report_box.grid(row=0, column=1, padx=4)
         tk.Label(controls, text="Period", bg=LIGHT).grid(row=0, column=2, padx=4, sticky="w")
@@ -201,6 +204,8 @@ class FinalFeaturesMixin:
         return tree
 
     def show_sections(self, tree, sections):
+        from report_export import tidy_sections
+        sections = tidy_sections(sections)  # empty / all-zero columns left out on screen too
         tree.delete(*tree.get_children())
         for section in sections:
             # A heading is longer than one column: spread it over the first columns.
