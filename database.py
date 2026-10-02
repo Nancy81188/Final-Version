@@ -367,7 +367,7 @@ class Database:
                 if not self.pooled: connection.close()
 
     # Bump whenever initialize(), SCHEMA, seed accounts or its migration helpers change.
-    STARTUP_SCHEMA_VERSION = "2"
+    STARTUP_SCHEMA_VERSION = "3"
 
     @staticmethod
     def _startup_schema_signature(db):
@@ -539,7 +539,7 @@ class Database:
             import bank_rec
             bank_rec.migrate(db)
             employee_cols={row["name"] for row in db.execute("PRAGMA table_info(employees)")}
-            for column in ("nationality","father_name","mother_name","birth_date","birth_place"):
+            for column in ("nationality","father_name","mother_name","birth_date","birth_place","sex"):
                 if column not in employee_cols: db.execute(f"ALTER TABLE employees ADD COLUMN {column} TEXT")
             import chart_extra
             chart_extra.ensure_accounts(db)
@@ -2927,6 +2927,10 @@ class Database:
                     nationality,father_name,mother_name,birth_date,birth_place,
                     marital_status,spouse_works,children,employee_group,hire_date,leave_date,job_title,branch_id,currency,base_salary,salary_account,payable_account,active,created_by,created_at)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",values+(user_id,utcnow())).lastrowid; action="create"
+            if "sex" in item:
+                sex=str(item.get("sex") or "").strip().lower()
+                sex={"m":"male","male":"male","ذكر":"male","f":"female","female":"female","أنثى":"female","انثى":"female"}.get(sex,"")
+                db.execute("UPDATE employees SET sex=? WHERE id=?",(sex,saved_id))
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
                 (user_id,action,"employee",saved_id,json.dumps({"employee_number":number,"name":name}),utcnow()))
         return next(row for row in self.list_employees() if row["id"]==saved_id)

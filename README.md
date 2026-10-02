@@ -1,5 +1,12 @@
 # Saber Accounting MVP
 
+## Version 2.9.40 (employee sex for the official forms)
+
+- Employee record: new field **Sex (for official forms)** (male / female) in the employee window. It marks ذكر / أنثى on MOF R3 and CNSS 2AA, 41A and the leave notice. Existing employees keep an empty value until it is chosen; saving an employee without the field does not clear it. Arabic values (ذكر / أنثى) are accepted from imports.
+- Database: column `employees.sex` added on opening (STARTUP_SCHEMA_VERSION 3).
+- Tests: employee sex saved, changed, kept, and marked on the form. 366 tests pass.
+- Changed files: database.py, desktop.py, installer.iss, README.md, test_payroll_excel_forms.py.
+
 ## Version 2.9.39 (official payroll forms as editable Excel, filled automatically)
 
 - **Payroll > Employees > "Official Forms (Excel)"**: select an employee, choose the form and save. Five forms, laid out like the printed ones (right-to-left, A4, one page per sheet):

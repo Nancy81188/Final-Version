@@ -108,7 +108,7 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
-        self.title("Saber Accounting 2.9.39")
+        self.title("Saber Accounting 2.9.40")
         screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
         try: dpi_scale=max(1.0,min(2.0,self.winfo_fpixels("1i")/96.0))
         except tk.TclError: dpi_scale=1.0
@@ -2316,8 +2316,10 @@ class SaberApp(AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMix
         tk.Checkbutton(form,text="Spouse Works",variable=spouse_works,bg=LIGHT).grid(row=10,column=2,sticky="w")
         tk.Checkbutton(form,text="Active",variable=active,bg=LIGHT).grid(row=10,column=3,sticky="w")
         tk.Label(form,text="Payroll Group",bg=LIGHT).grid(row=11,column=0,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=employee_group,values=["employee","manager"],state="readonly",width=25).grid(row=11,column=1)
+        sex=tk.StringVar(value=data.get("sex") or "")
+        tk.Label(form,text="Sex (for official forms)",bg=LIGHT).grid(row=11,column=2,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=sex,values=["male","female"],state="readonly",width=25).grid(row=11,column=3)
         def save():
-            payload={key:var.get().strip() for key,var in fields.items()}; payload.update({"id":data.get("id"),"marital_status":marital.get(),"spouse_works":spouse_works.get(),"children":children.get(),"employee_group":employee_group.get(),"currency":currency.get(),"active":active.get()})
+            payload={key:var.get().strip() for key,var in fields.items()}; payload.update({"id":data.get("id"),"marital_status":marital.get(),"spouse_works":spouse_works.get(),"children":children.get(),"employee_group":employee_group.get(),"currency":currency.get(),"active":active.get(),"sex":sex.get()})
             try: saved=self.client.save_employee(payload)
             except Exception as exc: return messagebox.showerror("Employee",str(exc),parent=window)
             window.destroy(); self.load_payroll(); messagebox.showinfo("Employee",f'Employee {saved["employee_number"]} saved successfully')

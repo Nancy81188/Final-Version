@@ -52,5 +52,23 @@ class PayrollExcelFormsTest(unittest.TestCase):
         self.assertEqual((data["first_name"], data["last_name"], data["sex"], data["marital_status"]), ("Solo", "", "", ""))
 
 
+class EmployeeSexTest(unittest.TestCase):
+    def test_sex_is_saved_on_the_employee_and_marks_the_forms(self):
+        from database import Database
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            db = Database(Path(folder) / "c.db"); db.initialize("secret12345")
+            with db.connect() as connection: user = connection.execute("SELECT id FROM users").fetchone()[0]
+            saved = db.save_employee({"employee_number": "100000001", "full_name": "Rana Haddad", "currency": "LBP", "base_salary": "1000", "sex": "أنثى"}, user)
+            self.assertEqual(saved["sex"], "female")
+            again = db.save_employee({**saved, "sex": "male"}, user); self.assertEqual(again["sex"], "male")
+            kept = db.save_employee({k: v for k, v in again.items() if k != "sex"}, user); self.assertEqual(kept["sex"], "male")
+            data = forms.form_data(COMPANY, saved)
+            self.assertEqual(data["sex"], "female")
+            path = Path(folder) / "41a.xlsx"; forms.build_form("CNSS_41A", path, COMPANY, saved)
+            sheet = load_workbook(path).active
+            self.assertIn("X", [str(sheet.cell(14, c).value) for c in range(1, 25)])  # انثى box marked
+            if hasattr(db, "release"): db.release()
+
+
 if __name__ == "__main__":
     unittest.main()
