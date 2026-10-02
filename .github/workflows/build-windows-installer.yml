@@ -10,7 +10,8 @@ on:
       - main
 
 permissions:
-  contents: read
+  # write: only used by the last step, which publishes a Release when the workflow is run by hand on main.
+  contents: write
 
 env:
   PYTHONIOENCODING: utf-8
@@ -58,9 +59,9 @@ jobs:
       - name: Build standalone application (data service included)
         run: |
             pyinstaller --noconfirm --clean --onedir --windowed --noupx `
-            --add-data "Assets/Saber_for_Audit_logo.png;assets" --add-data "Assets/fonts;assets/fonts" --add-data "Assets/payroll_forms;Assets/payroll_forms" --add-data "Assets/ocr;ocr" `
+            --add-data "Assets/Saber_for_Audit_logo.png;assets" --add-data "Assets/user_guide.html;assets" --add-data "Assets/fonts;assets/fonts" --add-data "Assets/payroll_forms;Assets/payroll_forms" --add-data "Assets/ocr;ocr" `
             --hidden-import arabic_reshaper --hidden-import bidi --hidden-import bidi.algorithm --collect-data arabic_reshaper `
-            --hidden-import payroll_reports --hidden-import vat_return --hidden-import desktop_final --hidden-import desktop_brains --hidden-import ledger_reports --hidden-import desktop_dimensions --hidden-import desktop_stage3 --hidden-import ai_mapper --hidden-import ai_service --hidden-import pdf_import --hidden-import pypdf --hidden-import pypdfium2 --hidden-import pytesseract --collect-all pypdfium2 --collect-all pypdfium2_raw --hidden-import year_end --hidden-import cnss_forms --hidden-import cnss_forms_ui --hidden-import party_similarity --hidden-import pdf_form_editor --hidden-import desktop_assets --hidden-import report_export --hidden-import lebanese_payroll --hidden-import inventory --hidden-import fixed_assets --hidden-import desktop_inventory --hidden-import desktop_v22 --hidden-import chart_extra --hidden-import invoice_calc --hidden-import tafqeet --hidden-import business_reports --hidden-import financial_projection --hidden-import financial_statements `
+            --hidden-import payroll_reports --hidden-import vat_return --hidden-import desktop_final --hidden-import desktop_brains --hidden-import ledger_reports --hidden-import desktop_dimensions --hidden-import desktop_stage3 --hidden-import ai_mapper --hidden-import ai_service --hidden-import pdf_import --hidden-import pypdf --hidden-import pypdfium2 --hidden-import pytesseract --collect-all pypdfium2 --collect-all pypdfium2_raw --hidden-import year_end --hidden-import cnss_forms --hidden-import cnss_forms_ui --hidden-import party_similarity --hidden-import pdf_form_editor --hidden-import desktop_assets --hidden-import report_export --hidden-import payroll_excel_forms --hidden-import lebanese_payroll --hidden-import inventory --hidden-import fixed_assets --hidden-import desktop_inventory --hidden-import desktop_v22 --hidden-import chart_extra --hidden-import invoice_calc --hidden-import tafqeet --hidden-import business_reports --hidden-import financial_projection --hidden-import financial_statements --hidden-import app_runtime --hidden-import desktop_common --hidden-import desktop_invoices --hidden-import desktop_parties --hidden-import desktop_payroll --hidden-import desktop_reports --hidden-import desktop_settings --hidden-import desktop_stage3_common --hidden-import desktop_purchases --hidden-import desktop_asset_register --hidden-import desktop_expenses --hidden-import desktop_brains_common --hidden-import desktop_balance_reports `
             --name SaberAccounting run_desktop.py
 
       - name: Verify application and offline PDF reading files
@@ -92,7 +93,7 @@ jobs:
       - name: Build background backup service
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
-            --hidden-import inventory --hidden-import chart_extra --hidden-import lebanese_accounts --hidden-import lebanese_payroll `
+            --hidden-import inventory --hidden-import chart_extra --hidden-import lebanese_accounts --hidden-import lebanese_payroll --hidden-import app_runtime `
             --name SaberAccountingBackup backup_service.py
 
       - name: Make sure Inno Setup is available
@@ -113,3 +114,23 @@ jobs:
           path: installer-output/SaberAccountingSetup.exe
           if-no-files-found: error
           retention-days: 30
+
+      # 2.9.42: "Run workflow" on main also publishes a GitHub Release (vX.Y.Z) with the installer and its
+      # SHA-256. The program's update check reads the newest Release. Pushes and pull requests never publish.
+      - name: Publish release for the update check
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Select-String -Path installer.iss -Pattern '#define MyAppVersion "([^"]+)"').Matches[0].Groups[1].Value
+          $tag = "v$version"
+          $installer = "installer-output/SaberAccountingSetup.exe"
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash
+          Set-Content -Path "installer-output/SaberAccountingSetup.exe.sha256" -Value "$hash  SaberAccountingSetup.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $installer "installer-output/SaberAccountingSetup.exe.sha256" --clobber
+          } else {
+            gh release create $tag $installer "installer-output/SaberAccountingSetup.exe.sha256" --title "Saber Accounting $version" --notes "See README.md, section Version $version. SHA-256: $hash"
+          }
