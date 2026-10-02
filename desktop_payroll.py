@@ -1,5 +1,6 @@
 """Payroll and employees screens. (moved out of desktop.py in 2.9.41, unchanged)."""
 from __future__ import annotations
+import logging
 
 from desktop_common import *  # noqa: F401,F403
 
@@ -218,7 +219,7 @@ class PayrollMixin:
             window.destroy()
             if messagebox.askyesno("Official forms",f"Saved:\n{path}\n\nOpen it now?"):
                 try: os.startfile(path)
-                except Exception: pass
+                except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
         self.action_button(window,"Create Excel",make).grid(row=3,column=1,padx=10,pady=10,sticky="e")
 
     def employee_r3_worksheet(self,format_name,form="R3"):

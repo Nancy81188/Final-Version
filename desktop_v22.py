@@ -436,7 +436,7 @@ class V22Mixin:
         for col in range(2): panes.grid_columnconfigure(col, weight=1)
         panes.grid_rowconfigure(0, weight=1)
         try: self.bk_account_box["values"] = [f'{a["code"]} - {a["name_en"]}' for a in self.client.accounts() if str(a["code"]).startswith(("511", "512", "519", "53"))]
-        except Exception: pass
+        except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     def _bank_params(self):
         account = self.bk["account"].get().split(" - ", 1)[0].strip()

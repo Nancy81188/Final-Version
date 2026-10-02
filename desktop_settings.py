@@ -88,7 +88,7 @@ class SettingsMixin:
                 self.action_button(lock_bar,"Unlock",self.unlock_books).pack(side="left",padx=4)
                 self.books_lock_label=tk.Label(lock_bar,text="",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")); self.books_lock_label.pack(side="left",padx=12)
             tk.Label(backups,text="An automatic backup of this company and year is made every day when you open it (the newest 30 automatic copies are kept; manual and safety copies are never deleted). Keep a copy outside the computer too: Save Backup As... (USB / Drive).",bg=LIGHT,fg="#5f6b76",wraplength=1050,justify="left").pack(fill="x",padx=14)
-            self.backups_tree=self.table(backups,[("name","Backup File",430),("kind","Type",100),("size","Size",100),("modified","Created",170)])
+            self.backups_tree=self.table(backups,[("name","Backup File",400),("kind","Type",100),("checked","Checked",90),("size","Size",100),("modified","Created",170)])
         rate_controls=tk.Frame(rates,bg=LIGHT); rate_controls.pack(fill="x",padx=10,pady=10)
         self.rate_date=tk.StringVar(value=datetime.now().strftime("%d-%m-%Y")); self.rate_date_to=tk.StringVar(value=datetime.now().strftime("%d-%m-%Y")); self.rate_from=tk.StringVar(value="USD"); self.rate_to=tk.StringVar(value="LBP"); self.rate_value=tk.StringVar(value="1")
         tk.Label(rate_controls,text="Date From",bg=LIGHT).pack(side="left"); self.date_entry(rate_controls,self.rate_date,12).pack(side="left",padx=4)
@@ -155,7 +155,7 @@ class SettingsMixin:
             except Exception: users=[]
             self.users_tree.delete(*self.users_tree.get_children()); self.fill_users_tree(users)
         if hasattr(self,"backups_tree"):
-            for row in backups: self.backups_tree.insert("","end",iid=row["name"],values=(row["name"],row.get("kind","backup"),f'{row["size"]/1024/1024:,.2f} MB',row["modified"][:19].replace("T"," ")))
+            for row in backups: self.backups_tree.insert("","end",iid=row["name"],values=(row["name"],row.get("kind","backup"),row.get("checked","not checked"),f'{row["size"]/1024/1024:,.2f} MB',row["modified"][:19].replace("T"," ")))
         if hasattr(self,"backup_scope"): self.backup_scope.config(text=f'Backups of {getattr(self,"current_company",{}).get("name","")} - fiscal year {getattr(self,"current_fiscal_year","")}')
 
     def save_branch(self):

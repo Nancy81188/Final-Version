@@ -667,7 +667,8 @@ class OcrPageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "asset.pdf"; path.write_bytes(b"%PDF-1.4\n")
             with patch("desktop_stage3.filedialog.askopenfilename",return_value=str(path)), \
-                 patch("desktop_stage3.read_invoice_pdf",return_value=data), \
+                 patch("desktop_purchases.read_invoice_pdf",return_value=data), \
+                 patch("desktop_expenses.read_invoice_pdf",return_value=data), \
                  patch("desktop_stage3.simpledialog.askstring",return_value=None):
                 Stage3Mixin.choose_purchase_pdf(purchase)
                 Stage3Mixin.choose_expense_pdf(expense)
@@ -709,7 +710,7 @@ class OcrPageTests(unittest.TestCase):
                 {"description": "Blue pens", "quantity": 2, "unit_price": 10, "unit": "box"}],
                 "subtotal": 20, "vat": 0, "notes": "Read from PDF - please check"}
             with patch("desktop_stage3.filedialog.askopenfilename", return_value=str(path)), \
-                 patch("desktop_stage3.read_invoice_pdf", return_value=data):
+                 patch("desktop_purchases.read_invoice_pdf", return_value=data):
                 Stage3Mixin.choose_purchase_pdf(screen)
             self.assertEqual(rows[0]["item_code"], "ITM-00001")
             self.assertEqual(rows[0]["name"], "Blue pens")

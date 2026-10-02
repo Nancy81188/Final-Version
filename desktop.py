@@ -24,7 +24,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
-        self.title("Saber Accounting 2.9.41")
+        self.title(f"Saber Accounting {app_runtime.APP_VERSION}")
         screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
         try: dpi_scale=max(1.0,min(2.0,self.winfo_fpixels("1i")/96.0))
         except tk.TclError: dpi_scale=1.0
@@ -81,11 +81,44 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
         self.bind_all("<Control-f>",self.focus_page_search); self.bind_all("<Control-F>",self.focus_page_search)
         self.login_screen()
 
+    def start_update_check(self):
+        """Look for a newer version in the background (at most once a day); show a small notice if found."""
+        # Only the installed program checks (not when run from the source code or by the tests).
+        if getattr(self,"_update_checked",False) or not getattr(sys,"frozen",False) or os.environ.get("SABER_NO_UPDATE_CHECK"): return
+        self._update_checked=True; result={}
+        def work():
+            result["found"]=app_runtime.check_for_update()
+        thread=threading.Thread(target=work,name="SaberUpdateCheck",daemon=True); thread.start()
+        def poll():
+            if thread.is_alive(): self.after(1000,poll); return
+            if result.get("found"): self.show_update_notice(result["found"])
+        self.after(1000,poll)
+
+    def show_update_notice(self,found):
+        bar=getattr(self,"update_notice_bar",None)
+        if bar is None or not bar.winfo_exists(): return
+        def open_page():
+            import webbrowser
+            if found.get("url"): webbrowser.open(found["url"])
+            messagebox.showinfo("Update",f"Saber Accounting {found['version']} is available.\n\n1. Make a backup (Settings > Backup & Restore > Create Backup Now).\n2. Download SaberAccountingSetup.exe and run it; your data is kept.")
+        tk.Button(bar,text=f"New version {found['version']} available",command=open_page,bg=GOLD,fg=NAVY,border=0,padx=10,font=("Segoe UI",9,"bold")).pack(side="right",padx=8)
+
+    def open_user_guide(self):
+        """The user guide (English and Arabic) that ships with the program."""
+        path=resource_path("assets/user_guide.html")
+        try:
+            import webbrowser
+            if not Path(path).exists(): raise FileNotFoundError(str(path))
+            webbrowser.open(Path(path).resolve().as_uri())
+        except Exception as exc:
+            log.warning("User guide could not be opened", exc_info=True)
+            messagebox.showerror("Help",f"The user guide could not be opened: {exc}")
+
     def _report_callback_error(self, kind, value, tb):
         """A button or screen action failed: write the details to the log and tell the user."""
         log.error("Screen action failed", exc_info=(kind, value, tb))
         try: messagebox.showerror("Saber Accounting", f"{value}\n\nThe details were written to the log file (Settings > Backup & Restore > Open log folder).")
-        except Exception: pass
+        except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     def _style(self):
         style = ttk.Style(self)
@@ -120,7 +153,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
                         lighter = "#" + "".join(f"{min(255, int(color[i:i + 2], 16) + 28):02x}" for i in (0, 2, 4)); widget._saber_hover = lighter; widget.configure(background=lighter)
                 elif getattr(widget, "_saber_bg", None) and str(widget.cget("background")).lower() == str(getattr(widget, "_saber_hover", "")).lower():
                     widget.configure(background=widget._saber_bg)  # only undo our own highlight
-            except Exception: pass
+            except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
         self.bind_class("Button", "<Enter>", lambda e: hover(e, True), add="+"); self.bind_class("Button", "<Leave>", lambda e: hover(e, False), add="+")
 
     # ------------------------------------------------------------ mouse wheel scrolling
@@ -203,7 +236,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
         formatted=auto_dash_date(value)
         if formatted!=value:
             try: widget.delete(0,"end"); widget.insert(0,formatted); widget.icursor("end")
-            except Exception: pass
+            except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     # ------------------------------------------------------------ right-click search in any field
     def install_field_right_click(self):
@@ -218,7 +251,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
     def field_right_click(self, event):
         widget = event.widget
         try: widget.focus_set()
-        except Exception: pass
+        except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
         self.active_account_variable = getattr(widget, "_account_var", self.active_account_variable)
         # 1) a field that knows its own list (customers / suppliers, items, accounts)
         node = widget
@@ -249,7 +282,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
                 try:
                     if isinstance(self.target, ttk.Combobox): self.target.set(value); self.target.event_generate("<<ComboboxSelected>>")
                     else: self.target.delete(0, "end"); self.target.insert(0, value)
-                except Exception: pass
+                except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
         target = _FieldValue(widget)
         menu = tk.Menu(widget, tearoff=0)
         state_for = lambda allowed: "normal" if allowed else "disabled"
@@ -262,7 +295,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
             menu.add_command(label=label, state=state_for(allowed), command=lambda v=virtual: widget.event_generate(v))
         def select_all():
             try: widget.select_range(0, "end"); widget.icursor("end")
-            except Exception: pass
+            except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
         menu.add_command(label="Select all", command=select_all)
         try: menu.tk_popup(event.x_root, event.y_root)
         finally: menu.grab_release()
@@ -426,7 +459,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
         if client is None: return
         def work():
             try: client.scheduled_backup()
-            except Exception: pass
+            except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
         threading.Thread(target=work,daemon=True).start()
 
     def main_screen(self):
@@ -454,6 +487,8 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
             log.warning("Header logo could not be shown", exc_info=True)
         tk.Label(top,text=tr(lang,"title"),bg=NAVY,fg="white",font=("Segoe UI",16,"bold")).pack(side="left",padx=8,pady=12)
         tk.Label(top,text="11% VAT  |  " + " · ".join(self.currency_codes[:5]),bg=NAVY,fg=GOLD,font=("Segoe UI",10,"bold")).pack(side="right",padx=28)
+        tk.Button(top,text="Help / مساعدة",command=self.open_user_guide,bg=NAVY,fg="white",activebackground=GOLD,border=0,padx=10).pack(side="right",padx=4)
+        self.update_notice_bar=top; self.start_update_check()
         tk.Button(top,text="Switch Company / Year",command=self.company_selection_screen,bg=GOLD,fg=NAVY,border=0,padx=10,pady=5).pack(side="right",padx=5)
         self.alerts_button=tk.Button(top,text="Document Alerts",command=self.show_document_alerts,bg=NAVY,fg="white",border=1,padx=10,pady=5)
         self.alerts_button.pack(side="right",padx=5)
@@ -758,7 +793,7 @@ class SaberApp(InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, Settings
             pending=getattr(tree,"_search_after",None)
             if pending is not None:
                 try: tree.after_cancel(pending)
-                except Exception: pass
+                except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
             tree._search_after=tree.after(180,apply_search)
         tree.insert=tracked_insert
         tree.delete=tracked_delete

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 import json
 import re
@@ -32,7 +33,7 @@ class CompanyManager:
                 try:
                     with Database(self.master_path).connect() as db:
                         db.execute("INSERT INTO app_settings(key,value) VALUES('company_name','ECOLOGE LEBANON SARL') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                except Exception: pass
+                except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     # ------------------------------------------------------------ files named after the company
     @staticmethod
@@ -101,7 +102,7 @@ class CompanyManager:
                     os.replace(temporary,target)
                 except Exception:
                     try: temporary.unlink()
-                    except Exception: pass
+                    except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
                     continue
                 fiscal["database"]=str(target); self._write(data); moved.append((str(source),str(target)))
                 if source!=self.master_path.resolve():

@@ -1,5 +1,6 @@
 """Departments, projects and budgets (version 1.15)."""
 from __future__ import annotations
+import logging
 
 import tkinter as tk
 import calendar
@@ -119,7 +120,7 @@ class DimensionsMixin:
         for p in lists["projects"]:
             self.projects_tree.insert("", "end", iid=str(p["id"]), values=(p["code"], p["name"], p.get("party_name") or "", self._dd(p.get("start_date")), self._dd(p.get("end_date")), p["status"].title(), "Yes" if p["active"] else "No"))
         try: self.proj_party_box["values"] = [p["name"] for p in self.client.parties() if p["kind"] in ("customer", "both")]
-        except Exception: pass
+        except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     @staticmethod
     def _dd(value):
@@ -354,7 +355,7 @@ class DimensionsMixin:
                 saved=self.client.budgets(year,currency)
                 lines={line["account_code"]:_num(line["annual"]) or 0 for line in saved if line.get("account_code") in base_values}
                 if lines: budget_by_year[year]=lines
-        except Exception: pass  # a saved-budget lookup failure just falls back to the growth rate
+        except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)  # a saved-budget lookup failure just falls back to the growth rate
         try: projection=long_term_projection(base_values,base_year,target_date,growth_rate,budget_by_year,growth_by_year=growth_by_year)
         except ValueError as exc: return messagebox.showwarning("5-Year Projection",str(exc))
         net_rows=[]; detail=[]

@@ -47,7 +47,8 @@ def setup_logging(folder: Path | None = None) -> Path:
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s: %(message)s"))
         handler._saber = True
         root.addHandler(handler)
-        root.setLevel(logging.INFO)
+        # SABER_DEBUG_LOG=1 also writes the small errors the program ignores on purpose (for support).
+        root.setLevel(logging.DEBUG if os.environ.get("SABER_DEBUG_LOG") else logging.INFO)
 
     def excepthook(kind, value, tb):
         log.critical("Unhandled error", exc_info=(kind, value, tb))
@@ -197,3 +198,72 @@ class SingleInstance:
 
 
 INSTANCE: SingleInstance | None = None
+
+
+# ------------------------------------------------------------------ update check (2.9.42)
+APP_VERSION = "2.9.42"
+# Newest GitHub Release of the program. Another address can be put in <data folder>/update_url.txt
+# (one line), for example when the repository is private and the installers are shared elsewhere.
+DEFAULT_UPDATE_URL = "https://api.github.com/repos/Nancy81188/Final-Version/releases/latest"
+UPDATE_CHECK_HOURS = 24
+
+
+def version_tuple(text) -> tuple:
+    import re
+    numbers = re.findall(r"\d+", str(text or ""))
+    return tuple(int(n) for n in numbers[:4]) if numbers else (0,)
+
+
+def update_url(folder: Path | None = None) -> str | None:
+    override = Path(folder or data_dir()) / "update_url.txt"
+    try:
+        text = override.read_text(encoding="utf-8").strip()
+        if text.lower() == "off": return None
+        if text: return text
+    except OSError:
+        pass
+    return DEFAULT_UPDATE_URL
+
+
+def parse_release(body: dict) -> dict | None:
+    """GitHub Release ({tag_name, html_url}) or a simple file ({version, url})."""
+    version = body.get("version") or body.get("tag_name")
+    if not version: return None
+    return {"version": str(version).lstrip("vV"), "url": body.get("url") if "version" in body else body.get("html_url"),
+            "notes": (body.get("notes") or body.get("body") or "")[:500]}
+
+
+def check_for_update(current: str = APP_VERSION, folder: Path | None = None, fetch=None, force=False) -> dict | None:
+    """Returns {version, url, notes} when a newer version exists, else None. At most once a day,
+    never raises, never downloads or installs anything by itself (the user decides)."""
+    from datetime import datetime, timezone
+    folder = Path(folder or data_dir()); folder.mkdir(parents=True, exist_ok=True)
+    state_path = folder / ".update_check.json"
+    try: state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError): state = {}
+    now = datetime.now(timezone.utc)
+    if not force:
+        try:
+            if (now - datetime.fromisoformat(state["checked_at"])).total_seconds() < UPDATE_CHECK_HOURS * 3600:
+                found = state.get("found")
+                return found if found and version_tuple(found["version"]) > version_tuple(current) else None
+        except (KeyError, ValueError, TypeError):
+            pass
+    url = update_url(folder)
+    if not url: return None
+    try:
+        if fetch is None:
+            from urllib.request import Request, urlopen
+            request = Request(url, headers={"User-Agent": f"SaberAccounting/{current}", "Accept": "application/vnd.github+json"})
+            with urlopen(request, timeout=6) as response: body = json.loads(response.read().decode("utf-8"))
+        else:
+            body = fetch(url)
+        release = parse_release(body)
+    except Exception as exc:
+        log.info("Update check skipped: %s", exc)  # offline or private address: normal, not an error
+        return None
+    found = release if release and version_tuple(release["version"]) > version_tuple(current) else None
+    try: state_path.write_text(json.dumps({"checked_at": now.isoformat(), "found": found}), encoding="utf-8")
+    except OSError: pass
+    if found: log.info("Newer version available: %s", found["version"])
+    return found

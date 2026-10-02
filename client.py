@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 import json
 import base64
@@ -54,7 +55,7 @@ class ApiClient:
         connection = getattr(self._local, "connection", None); self._local.connection = None
         if connection is not None:
             try: connection.close()
-            except Exception: pass
+            except Exception: pass  # closing a connection; may run while Python shuts down
 
     def _send(self, method, path, data, headers):
         """One HTTP exchange on the kept-open connection. A connection the server already closed is
@@ -80,7 +81,7 @@ class ApiClient:
 
     def __del__(self):
         try: self._drop_connection()
-        except Exception: pass
+        except Exception: pass  # runs while Python shuts down: no logging here
 
     def _local_key(self):
         """The secret of the private data service - sent only to that exact address, never to a shared server."""
@@ -125,7 +126,7 @@ class ApiClient:
                 self.token = None; self.clear_cache()
                 if self.on_unauthorized:
                     try: self.on_unauthorized()
-                    except Exception: pass
+                    except Exception: logging.getLogger("saber.client").warning("Sign-out screen could not be shown", exc_info=True)
                 raise SessionExpired("Your session has ended. Please sign in again.")
             raise RuntimeError(message)
         result = json.loads(payload.decode("utf-8"))

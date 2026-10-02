@@ -338,7 +338,7 @@ class Database:
             connection, self._pooled_connection, self._pooled_identity = self._pooled_connection, None, None
             if connection is not None:
                 try: connection.close()
-                except Exception: pass
+                except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     @contextmanager
     def connect(self):
@@ -934,7 +934,58 @@ class Database:
             source_connection = sqlite3.connect(str(source)); target_connection = sqlite3.connect(str(target))
             try: source_connection.backup(target_connection)
             finally: target_connection.close(); source_connection.close()
+        self._check_new_backup(source, target)
         return str(target)
+
+    BACKUP_CHECKS_FILE = "backup_checks.json"
+
+    def _check_new_backup(self, source, target):
+        """2.9.42: every new backup is opened and checked at once (integrity check, same tables as the
+        original, can be read). A bad copy is set aside as .damaged (never listed, restored or counted)
+        and the backup fails loudly, so nobody relies on it."""
+        problem = None
+        try:
+            connection = sqlite3.connect(Path(target).resolve().as_uri() + "?mode=ro", uri=True)
+            try:
+                result = connection.execute("PRAGMA integrity_check").fetchone()[0]
+                if result != "ok": problem = f"integrity check: {result}"
+                copied = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+            finally: connection.close()
+            if problem is None:
+                original_connection = sqlite3.connect(Path(source).resolve().as_uri() + "?mode=ro", uri=True)
+                try: original = {row[0] for row in original_connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+                finally: original_connection.close()
+                missing = original - copied
+                if missing: problem = "missing tables: " + ", ".join(sorted(missing))
+        except sqlite3.DatabaseError as exc:
+            problem = f"cannot be opened: {exc}"
+        target = Path(target)
+        self._record_backup_check(target.parent, target.name, problem is None, problem)
+        if problem:
+            logging.getLogger("saber.backup").error("Backup %s failed its check (%s)", target.name, problem)
+            try: target.replace(target.with_name(target.name + ".damaged"))
+            except OSError: pass
+            raise RuntimeError(f"The backup could not be verified ({problem}). Your data was not changed; please try again and tell support if it repeats.")
+
+    def _record_backup_check(self, folder, name, ok, problem=None):
+        path = Path(folder) / self.BACKUP_CHECKS_FILE
+        try: checks = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, ValueError): checks = {}
+        checks[name] = {"ok": bool(ok), "checked_at": utcnow(), **({"problem": problem} if problem else {})}
+        existing = {p.name for p in Path(folder).glob("*.db")}
+        checks = {key: value for key, value in checks.items() if key in existing or key == name}
+        try:
+            temporary = path.with_name(path.name + ".tmp")
+            temporary.write_text(json.dumps(checks, indent=1), encoding="utf-8"); os.replace(temporary, path)
+        except OSError:
+            logging.getLogger("saber.backup").warning("Backup check result was not saved", exc_info=True)
+
+    def _backup_checks(self):
+        checks = {}
+        for folder in {self._backups_dir(), Path(self.path).parent / "backups"}:
+            try: checks.update(json.loads((folder / self.BACKUP_CHECKS_FILE).read_text(encoding="utf-8")))
+            except (OSError, ValueError): pass
+        return checks
 
     @staticmethod
     def _validate_backup_file(path):
@@ -958,8 +1009,8 @@ class Database:
         return files
 
     def list_backups(self):
-        files=self._backup_files()
-        return [{"name":path.name,"size":path.stat().st_size,"modified":datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+        files=self._backup_files(); checks=self._backup_checks()
+        return [{"checked":("ok" if checks[path.name].get("ok") else "FAILED") if path.name in checks else "not checked","name":path.name,"size":path.stat().st_size,"modified":datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
                  "kind":"safety" if "_safety" in path.stem else "automatic" if path.stem.endswith("_auto") else "older version" if path.name.startswith("saber_accounting_") and self.backup_label else "backup"}
                 for path in sorted(files.values(),key=lambda p:p.stat().st_mtime,reverse=True)]
 
