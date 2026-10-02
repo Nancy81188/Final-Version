@@ -53,6 +53,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         bottom = tk.Frame(page, bg=LIGHT); bottom.pack(side="bottom", fill="x", padx=10, pady=8)
         tk.Checkbutton(bottom, text="Replace ALL previous invoices (a safety backup is made first)", variable=self.import_replace, bg=LIGHT, fg=RED).pack(side="left")
         tk.Button(bottom, text="Review & Save Import", command=self.send_import, bg=GOLD, fg=NAVY, font=("Segoe UI", 10, "bold"), border=0, padx=26, pady=8).pack(side="right")
+        tk.Checkbutton(bottom, text="Save automatically after reading", variable=self.auto_upload_var(), command=self.remember_auto_upload,
+                       bg=LIGHT, fg=NAVY).pack(side="right", padx=8)
         tk.Button(bottom, text="Remove Row", command=lambda: self.import_sheet.delete_selected(), bg=RED, fg="white", border=0, padx=12, pady=8).pack(side="right", padx=6)
         self.import_status = tk.Label(bottom, text="", bg=LIGHT, fg=NAVY, font=("Segoe UI", 9, "bold")); self.import_status.pack(side="right", padx=10)
         tk.Button(bottom, text="Apply VAT A/C to selected", command=self.apply_selected_import_vat_account,
@@ -158,6 +160,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                 rows = [{**r, "source": f"Excel row {r['source_row']}"} for r in read_invoices(path, default_currency=self.currency.get(), default_kind=kind,allowed_currencies=self.currency_codes)]
         except Exception as exc: return messagebox.showerror("Import", f"The Excel file could not be read: {exc}")
         self.import_mode = "excel"; self.import_rows = rows; self.file_label.config(text=f"Excel: {path}", fg=NAVY); self.populate_import_preview()
+        if rows and auto_upload_on(self): self.after_idle(self.auto_send_import)
 
     def choose_import_pdfs(self):
         paths = filedialog.askopenfilenames(filetypes=[("PDF invoices", "*.pdf")])
@@ -177,11 +180,12 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                          "party_name": data.get("party_name") or "", "currency": data.get("currency") or self.currency.get(),
                           "subtotal": data.get("subtotal"), "vat": data.get("vat"), "total": data.get("total"),
                           "entry_type": suggested, "source": f'{data["file"]} - {data["page_range"]}',
-                           "notes": (data.get("notes", "") + "; " + type_note).strip("; "), "_path": path,
+                           "notes": (data.get("notes", "") + "; " + type_note).strip("; "), "_path": path, "_items": data.get("items") or [],
                            "_asset_name":asset_details["name"],"_asset_date":asset_details["acquired_on"],
                            "_asset_currency":asset_details["currency"],"_asset_cost":asset_details["cost"]})
         self.import_mode = "pdf"; self.import_rows = rows
         self.file_label.config(text=f"{len(paths)} PDF file(s). Confirm each Type and amount; VAT 0 if none. Expenses are paid transactions.", fg=NAVY); self.populate_import_preview()
+        if rows and auto_upload_on(self): self.after_idle(self.auto_send_import)
 
     def populate_import_preview(self):
         self.import_sheet.clear(); selected = self.import_view_currency.get()
@@ -201,8 +205,67 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
     def import_cell_changed_display(self, row):
         row["_display"] = {k: (f"{float(row[k]):,.2f}" if row.get(k) not in (None, "") else "") for k in ("subtotal", "vat", "total", "deductible", "non_deductible")}
 
-    def send_import(self):
+    def auto_send_import(self):
+        """2.9.50: called right after reading the file - rows that are complete are saved and posted at once
+        (no confirmation questions); rows that need a correction stay in the preview with the reason."""
         rows = self.import_sheet.ordered()
+        if not rows or self.import_replace.get(): return  # replacing all previous invoices always needs the explicit button
+        default = self.import_type.get() if self.import_type.get() in TYPES else "Purchases"
+        for r in rows:
+            if self.import_mode == "pdf" and r.get("entry_type") not in TYPES: r["entry_type"] = default
+        ready, waiting = self.split_ready_import_rows(rows)
+        for iid in self.import_sheet.rows: self.import_sheet.refresh(iid)
+        if not ready:
+            self.import_status.config(text=f"Not saved automatically: {len(waiting)} row(s) need a check (see Check column), then press Review & Save Import")
+            return
+        return self.send_import(auto=True, rows=ready)
+
+    def split_ready_import_rows(self, rows):
+        """Rows that can be posted without a question, and the others (their Check note says why)."""
+        ready = []; waiting = []
+        for r in rows:
+            problems = []
+            if not r.get("party_name"): problems.append("customer / supplier")
+            if r.get("total") in (None, ""): problems.append("total")
+            if self.import_mode == "pdf":
+                if not r.get("invoice_number"): problems.append("invoice number")
+                if not r.get("invoice_date"): problems.append("date")
+                if r.get("subtotal") in (None, "") or r.get("vat") in (None, ""): problems.append("subtotal / VAT")
+                elif r.get("total") not in (None, "") and abs(r["subtotal"] + r["vat"] - r["total"]) > max(0.05, abs(r["total"]) * 0.005): problems.append("subtotal + VAT differ from the total")
+                if r.get("entry_type") in ("Assets", "Expenses"): problems.append(f"{r['entry_type']} rows need the account review")
+                elif not str(r.get("expense_account") or "").startswith("7" if r.get("entry_type") == "Sales" else "6"): problems.append("cost / revenue account")
+            if problems:
+                r["notes"] = ("Not saved automatically - check: " + ", ".join(problems) + ". " + str(r.get("notes") or "")).strip()
+                waiting.append(r)
+            else: ready.append(r)
+        return ready, waiting
+
+    def _post_pdf_purchase_with_items(self, r):
+        """A purchase PDF whose item lines were read: missing items are created in Inventory and received in stock."""
+        items = [it for it in (r.get("_items") or []) if it.get("description") and it.get("quantity")]
+        subtotal = float(r.get("subtotal") or 0); vat = float(r.get("vat") or 0)
+        if not items or not subtotal or abs(sum(float(it.get("total") or 0) for it in items) - subtotal) > max(0.05, subtotal * 0.01): return None
+        rate = round(vat / subtotal * 100, 4) if subtotal else 0
+        lines = []; remaining_subtotal = round(subtotal, 2); remaining_vat = round(vat, 2)
+        for index, it in enumerate(items):
+            item = self.client.find_or_create_item(it["description"], it.get("unit") or "unit", None, None)
+            last = index == len(items) - 1
+            line_subtotal = remaining_subtotal if last else round(float(it["total"]), 2)
+            line_vat = remaining_vat if last else round(line_subtotal * rate / 100, 2)
+            remaining_subtotal = round(remaining_subtotal - line_subtotal, 2); remaining_vat = round(remaining_vat - line_vat, 2)
+            lines.append({"item_code": item["sku"], "description": item.get("name") or it["description"], "quantity": float(it["quantity"]), "unit": item.get("unit") or "unit",
+                          "unit_price": round(line_subtotal / float(it["quantity"]), 6), "discount_percent": 0, "vat_rate": rate, "warehouse": "MAIN",
+                          "deductible_subtotal": line_subtotal, "vat": line_vat})
+        invoice = {"invoice_number": r["invoice_number"], "invoice_date": r["invoice_date"], "party_name": r["party_name"], "kind": "purchases",
+                   "currency": r["currency"], "status": "posted", "source_file": r.get("source") or "PDF import",
+                   "expense_account": str(r.get("expense_account") or "601100000").split(" - ", 1)[0].strip(),
+                   "vat_account": str(r.get("vat_account") or "442660000").split(" - ", 1)[0].strip(), "vat_use": "mixed"}
+        account = str(r.get("supplier_account") or "").split(" - ", 1)[0].strip()
+        if account.startswith("40") and account != "401": invoice["supplier_account"] = account
+        return self.client.create_manual_invoice(invoice, lines)["invoice_id"]
+
+    def send_import(self, auto=False, rows=None):
+        rows = rows if rows is not None else self.import_sheet.ordered()
         if not rows: return messagebox.showwarning("Import", "Choose an Excel or PDF file first")
         asset_rows=[r for r in rows if self.import_mode=="pdf" and r.get("entry_type")=="Assets"]
         if asset_rows:
@@ -253,7 +316,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             if self.import_replace.get() and any(r["entry_type"]=="Expenses" for r in rows):
                 return messagebox.showwarning("Import","Replace ALL previous invoices cannot be used with PDF expense rows. Uncheck Replace to import paid expenses")
             counts = ", ".join(f"{label}: {sum(r['entry_type']==label for r in rows)}" for label in TYPES if any(r["entry_type"]==label for r in rows))
-            if not messagebox.askyesno("Confirm PDF types",f"Review the Type of every PDF row before posting.\n{counts}\n\nExpenses are recorded as PAID from the selected payment account; Purchases are supplier invoices and Assets require a fixed-asset account.\n\nAre these types and accounts correct?"):
+            if not auto and not messagebox.askyesno("Confirm PDF types",f"Review the Type of every PDF row before posting.\n{counts}\n\nExpenses are recorded as PAID from the selected payment account; Purchases are supplier invoices and Assets require a fixed-asset account.\n\nAre these types and accounts correct?"):
                 return
         if self.import_replace.get() and not messagebox.askyesno("Replace previous data", "ALL previous invoices will be removed and replaced. A safety backup is made first. Continue?"): return
         done = 0; errors = []; completed = []
@@ -267,6 +330,17 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                 completed.extend(r for index,r in enumerate(rows) if index not in failed)
             elif self.import_mode == "pdf":
                 invoice_rows = [r for r in rows if r["entry_type"]!="Expenses"]
+                if not self.import_replace.get():  # 2.9.50: read item lines -> items created and received in stock
+                    with_items = []
+                    for r in [r for r in invoice_rows if r["entry_type"] == "Purchases" and r.get("_items")]:
+                        try: invoice_id = self._post_pdf_purchase_with_items(r)
+                        except Exception as exc:
+                            errors.append(f"{r['line']}: {exc}"); with_items.append(r); continue
+                        if invoice_id is None: continue
+                        with_items.append(r); done += 1; completed.append(r)
+                        try: self.client.upload_attachment(invoice_id, Path(r["_path"]).name, "application/pdf", Path(r["_path"]).read_bytes())
+                        except Exception as exc: errors.append(f"{r['line']}: invoice POSTED (ID {invoice_id}), PDF attachment failed: {exc}. Attach it manually; do not re-import")
+                    invoice_rows = [r for r in invoice_rows if not any(r is w for w in with_items)]
                 items=[]
                 for r in invoice_rows:
                     row_kind,row_type=TYPES[r["entry_type"]]
@@ -308,7 +382,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                     except Exception as exc: errors.append(f"{r['line']}: expense POSTED (ID {expense_id}), PDF attachment failed: {exc}. Attach it manually; do not re-import")
         except Exception as exc:
             return messagebox.showerror("Import",f"{exc}\n\nThe import result may be uncertain. Check posted invoices before retrying, to avoid duplicates.")
-        remaining = [r for r in rows if id(r) not in {id(item) for item in completed}]
+        remaining = [r for r in self.import_sheet.ordered() if id(r) not in {id(item) for item in completed}]
         message = f"{done} {'PDF document(s)' if self.import_mode=='pdf' else self.import_type.get().lower()} imported." + (f"\n\n{len(errors)} issue(s):\n" + "\n".join(errors[:12]) if errors else "")
         if remaining and done: message += f"\n\n{len(remaining)} unfinished row(s) kept in the preview for correction."
         (messagebox.showwarning if errors else messagebox.showinfo)("Import", message)

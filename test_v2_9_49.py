@@ -42,7 +42,7 @@ class VatOfficialFormTest(unittest.TestCase):
         self.doc("P-2", "purchases", 300000, vat_use="mixed")                                        # use cannot be determined
         result, sections, boxes = self.form()
         ratio = Decimal(str(result["deduction_ratio"]))
-        self.assertEqual(ratio, Decimal("0.6667"))  # 1,000,000 / (1,000,000 + 500,000): outside the scope is in the denominator
+        self.assertEqual(ratio, Decimal("0.666667"))  # 1,000,000 / (1,000,000 + 500,000): outside the scope is in the denominator
         self.assertEqual((boxes["100"][3], boxes["100"][4]), (Decimal(1000000), Decimal(110000)))
         self.assertEqual(boxes["150"][3], Decimal(500000))
         self.assertEqual((boxes["600"][3], boxes["600"][4]), (Decimal(200000), Decimal(22000)))

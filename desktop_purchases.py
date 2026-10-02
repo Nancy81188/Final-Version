@@ -106,6 +106,8 @@ class PurchasesMixin:
         self.action_button(r5, "Upload PDF", self.choose_purchase_pdf).pack(side="left", padx=3)
         self.action_button(r5, "Free PDF Read", self.ai_read_purchase_pdf).pack(side="left", padx=3)
         self.action_button(r5, "Attachments", lambda: self.purchase_attachments()).pack(side="left", padx=3)
+        tk.Checkbutton(r5, text="Save automatically after upload", variable=self.auto_upload_var(), bg=LIGHT, fg=NAVY,
+                       command=self.remember_auto_upload).pack(side="left", padx=6)
         f["pdf_label"].pack(side="left", padx=8)
         cost = tk.LabelFrame(cost_parent or page, text="Cost on Purchase (customs / freight / insurance) for the selected purchase", bg=LIGHT, padx=8, pady=4); cost.pack(fill="x", padx=8, pady=3)
         f["lc"] = {k: tk.StringVar() for k in ("freight", "insurance", "customs_duties", "broker_fees", "other_costs", "import_vat", "customs_declaration_no", "party_name")}
@@ -324,6 +326,7 @@ class PurchasesMixin:
                                   (f"; Suggested Type: {suggestion} (review before Save)" if suggestion else
                                    "; Type unclear; review Purchases vs Assets before Save") +
                                   f"; {item_note}; PDF attaches when you press Save", fg=NAVY)
+            if not f["id"] and auto_upload_on(self): self.after_idle(self.auto_save_purchase_upload)
         else:
             item_note = self.add_purchase_pdf_items({"items": [], "subtotal": None})
             f["pdf_label"].config(text=f"{Path(path).name}: {item_note}; attachment saves with purchase on Save", fg=NAVY)
@@ -334,6 +337,8 @@ class PurchasesMixin:
         if f["items_sheet"].ordered():
             return "existing item lines kept; review them before Save"
         items = data.get("items") or []
+        if not items and auto_upload_on(self):
+            return "no item line read from the PDF; the invoice is posted on its amount (add item lines and Save to move stock)"
         if not items:
             name = simpledialog.askstring(
                 "Purchase PDF item",
@@ -392,6 +397,7 @@ class PurchasesMixin:
             item_note = self.add_purchase_pdf_items(data)
             self.purchase_amounts_changed("none")
             f["pdf_label"].config(text=f"Local preview of page 1: {Path(path).name} — {item_note}; PDF attaches on Save",fg=NAVY)
+            if not f["id"] and auto_upload_on(self): self.after_idle(self.auto_save_purchase_upload)
         self.run_ai_task(lambda key:read_ai_pdf(path,key),show)
 
     def ai_read_sales_pdf(self):
@@ -482,7 +488,42 @@ class PurchasesMixin:
                 "non_deductible_subtotal": exempt, "vat_rate": rate, "vat": vat}
         return invoice, [line]
 
-    def save_purchase(self):
+    # ------------------------------------------------------------ 2.9.50: upload = saved, posted and in stock
+    def auto_upload_var(self):
+        if getattr(self, "_auto_upload", None) is None:
+            import app_runtime, json as _json
+            try: value = bool(_json.loads((app_runtime.data_dir() / "upload_settings.json").read_text(encoding="utf-8")).get("auto_save", True))
+            except Exception: value = True
+            self._auto_upload = tk.BooleanVar(master=self, value=value)
+        return self._auto_upload
+
+    def remember_auto_upload(self):
+        import app_runtime, json as _json
+        try: (app_runtime.data_dir() / "upload_settings.json").write_text(_json.dumps({"auto_save": bool(auto_upload_on(self))}), encoding="utf-8")
+        except OSError: pass
+
+    def purchase_upload_missing(self):
+        f = self.purchase_form; v = f["vars"]; missing = []
+        if not v["supplier"].get().strip(): missing.append("supplier")
+        if not v["number"].get().strip(): missing.append("invoice number")
+        if not v["date"].get().strip(): missing.append("date")
+        if not (_num(v["taxable"].get()) or _num(v["exempt"].get())): missing.append("amount")
+        if v["vat"].get().strip() == "": missing.append("VAT (type 0 if none)")
+        suggestion = f.get("pdf_suggested_type")
+        if suggestion and suggestion != v["type"].get(): missing.append(f"type check (the PDF looks like {suggestion})")
+        return missing
+
+    def auto_save_purchase_upload(self):
+        """After an upload: save, post the entry and receive the items at once when everything needed was read."""
+        f = self.purchase_form
+        if f.get("id"): return
+        missing = self.purchase_upload_missing()
+        if missing:
+            f["pdf_label"].config(text=f"Not saved automatically - complete: {', '.join(missing)}; then press Save Purchase", fg=RED)
+            return
+        self.save_purchase(auto=True)
+
+    def save_purchase(self, auto=False):
         f = self.purchase_form
         pending_id = f.get("pdf_pending_invoice_id")
         if pending_id and f.get("id") == pending_id and f.get("pdf"):
@@ -532,7 +573,11 @@ class PurchasesMixin:
                 return messagebox.showwarning("Purchases",
                     f"Purchase {invoice_id} is SAVED, but the PDF attachment failed: {exc}\n"
                     "Press Save again to retry ONLY the PDF; the purchase and its items will not be posted twice.")
-        messagebox.showinfo("Purchases", "Purchase invoice saved" + (" with its PDF" if f["pdf"] else ""))
+        if auto:
+            messagebox.showinfo("Purchases", f"Uploaded invoice {invoice['invoice_number']} saved automatically: journal entry INV-{invoice_id} posted"
+                                + (", items received in stock" if len(lines) > 1 or lines[0].get("item_code") else "") + (" and PDF attached." if f["pdf"] else "."))
+        else:
+            messagebox.showinfo("Purchases", "Purchase invoice saved" + (" with its PDF" if f["pdf"] else ""))
         self.new_purchase(); self.load_purchases(); self.load_invoices(); self.load_journal(); self.load_trial()
 
     def purchase_rows_list(self):

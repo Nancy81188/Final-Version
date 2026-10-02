@@ -20,8 +20,9 @@ from desktop_payroll import PayrollMixin
 from desktop_reports import ReportsMixin
 from desktop_settings import SettingsMixin
 from desktop_payroll_sheet import PayrollSheetMixin
+from desktop_projection import ProjectionMixin
 
-class SaberApp(PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
+class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()

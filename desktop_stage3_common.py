@@ -35,3 +35,10 @@ def _dd(value):
         try: return datetime.strptime(text, pattern).strftime("%d-%m-%Y")
         except ValueError: pass
     return text
+
+
+def auto_upload_on(app):
+    """2.9.50: 'Save automatically after upload' ticked (screens built without it keep the old manual flow)."""
+    var = getattr(app, "auto_upload_var", None)
+    try: return bool(var().get()) if callable(var) else False
+    except Exception: return False

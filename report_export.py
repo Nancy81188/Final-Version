@@ -423,9 +423,33 @@ def export_sections_excel(path, title, meta, sections):
                 widths[column] = max(widths.get(column, 10), min(65, len(_formatted(value)) + 2))
             ws.row_dimensions[row].height = min(400, height)
             row += 1
+        if section.get("chart"):
+            row = _excel_chart(ws, row, section["chart"])
     for column, value in widths.items(): ws.column_dimensions[get_column_letter(column)].width = value
     ws.sheet_view.showGridLines = True
     wb.save(path)
+
+
+def _excel_chart(ws, row, spec):
+    """Chart data under the table and a native Excel 3D column chart next to it. Returns the next free row."""
+    from openpyxl.chart import BarChart3D, Reference
+    series = list(spec.get("series") or []); categories = list(spec.get("categories") or [])
+    if not series or not categories: return row
+    row += 1; first = row
+    ws.cell(row, 1, "Chart data").font = Font(italic=True, color="44546A")
+    for column, name in enumerate(categories, 2): ws.cell(row, column, str(name)).font = Font(bold=True)
+    for index, name in enumerate(series):
+        ws.cell(row + 1 + index, 1, str(name))
+        values = list(spec.get("values")[index]) if index < len(spec.get("values") or []) else []
+        for column in range(len(categories)):
+            value = values[column] if column < len(values) else 0
+            ws.cell(row + 1 + index, column + 2, float(value or 0)).number_format = "#,##0"
+    last = row + len(series)
+    chart = BarChart3D(); chart.title = spec.get("title") or None; chart.height = 9; chart.width = 22
+    chart.add_data(Reference(ws, min_col=1, max_col=len(categories) + 1, min_row=first + 1, max_row=last), from_rows=True, titles_from_data=True)
+    chart.set_categories(Reference(ws, min_col=2, max_col=len(categories) + 1, min_row=first, max_row=first))
+    ws.add_chart(chart, f"A{last + 2}")
+    return last + 2 + 19
 
 
 def export_sections_pdf(path, title, meta, sections):
@@ -461,6 +485,11 @@ def export_sections_pdf(path, title, meta, sections):
                     story.append(Spacer(1, 2*mm))
             story.append(Spacer(1, 3*mm))
             continue
+        if section.get("chart"):  # 2.9.50: 3D bar chart drawn above the table
+            import chart3d
+            from reportlab.platypus import KeepTogether
+            heading = story.pop()  # the heading stays on the same page as its chart
+            story += [KeepTogether([heading, chart3d.reportlab_drawing(chart3d.chart_from_spec(section["chart"]), available)]), Spacer(1, 3*mm)]
         headers = section["headers"]; count = len(headers)
         if not count:
             continue

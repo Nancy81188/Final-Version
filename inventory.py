@@ -648,28 +648,34 @@ def build_report(database, report, options):
     if options.get("item_id") and not first_item: raise ValueError("Choose a valid Item From")
     if options.get("item_to_id") and not last_item: raise ValueError("Choose a valid Item To")
     if first_item and last_item and first_item["sku"]>last_item["sku"]: raise ValueError("Item From must be before Item To")
-    filters = [f"{label}: {options[key]}" for key, label in (("category", "Category"), ("subcategory", "Subcategory"), ("brand", "Brand"), ("unit", "Unit"), ("supplier_name", "Supplier"),
-               ("project_name", "Project"), ("branch_name", "Branch")) if options.get(key)]
-    brand_filter = str(options.get("brand") or "").strip()
-    project_filter = int(options["project_id"]) if str(options.get("project_id") or "").isdigit() else None
-    branch_filter = int(options["branch_id"]) if str(options.get("branch_id") or "").isdigit() else None
+    def many(key):
+        """2.9.50: a filter holds one value or a list of values (any combination)."""
+        value = options.get(key)
+        values = value if isinstance(value, (list, tuple, set)) else [value]
+        return [str(v).strip() for v in values if str(v if v is not None else "").strip()]
+    def many_ids(key): return {int(v) for v in many(key) if v.isdigit()}
+    filters = [f"{label}: {', '.join(many(key))}" for key, label in (("category", "Category"), ("subcategory", "Subcategory"), ("brand", "Brand"), ("unit", "Unit"), ("supplier_name", "Supplier"),
+               ("project_name", "Project"), ("branch_name", "Branch")) if many(key)]
+    brand_filter = {v.casefold() for v in many("brand")}
+    project_filter = many_ids("project_id")
+    branch_filter = many_ids("branch_id")
     def document_ok(row):
         """Project / branch of the stock document (movement reports)."""
-        return (not project_filter or row.get("project_id") == project_filter) and (not branch_filter or row.get("branch_id") == branch_filter)
+        return (not project_filter or row.get("project_id") in project_filter) and (not branch_filter or row.get("branch_id") in branch_filter)
     wanted = lambda item_id: not options.get("item_id") or int(options["item_id"]) == item_id
-    category = str(options.get("category") or "").strip(); subcategory = str(options.get("subcategory") or "").strip()
-    unit_filter = str(options.get("unit") or "").strip(); supplier_filter = str(options.get("supplier_id") or "").strip()
+    category = set(many("category")); subcategory = set(many("subcategory"))
+    unit_filter = set(many("unit")); supplier_filter = set(many("supplier_id")); supplier_names = set(many("supplier_name"))
     listed = {i["id"]: i for i in list_items(database)} if supplier_filter else {}
     def in_category(item_id):
         item = items[item_id]
         if first_item and not (first_item["sku"]<=item["sku"]<=last_item["sku"]): return False
-        if category and (item.get("category") or "") != category: return False
-        if subcategory and (item.get("subcategory") or "") != subcategory: return False
-        if unit_filter and (item.get("unit") or "") != unit_filter: return False
-        if brand_filter and (item.get("brand") or "").casefold() != brand_filter.casefold(): return False
+        if category and (item.get("category") or "") not in category: return False
+        if subcategory and (item.get("subcategory") or "") not in subcategory: return False
+        if unit_filter and (item.get("unit") or "") not in unit_filter: return False
+        if brand_filter and (item.get("brand") or "").casefold() not in brand_filter: return False
         if supplier_filter:
             data = listed.get(item_id, {})
-            if str(item.get("supplier_id") or "") != supplier_filter and data.get("supplier_name") != options.get("supplier_name"): return False
+            if str(item.get("supplier_id") or "") not in supplier_filter and data.get("supplier_name") not in supplier_names: return False
         return True
     if report in ("turnover", "supplier_stock", "count_variances"):
         return additional_inventory_report(database, report, options, items, warehouses, in_category, currency, method, date_from, date_to, warehouse, company)

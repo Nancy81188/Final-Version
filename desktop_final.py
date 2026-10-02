@@ -443,6 +443,10 @@ class FinalFeaturesMixin:
         self.action_button(actions, "Filing Worksheet Excel", lambda: self.export_vat_filing_worksheet("xlsx")).pack(side="left", padx=3)
         tk.Button(actions, text="Official Form Q1-2 (PDF)", command=lambda: self.export_vat_official_form("pdf"), bg=GOLD, fg=NAVY, border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(actions, "Official Form Excel", lambda: self.export_vat_official_form("xlsx")).pack(side="left", padx=3)
+        actions2 = tk.Frame(page, bg=LIGHT); actions2.pack(fill="x", padx=10, pady=(3, 0))
+        tk.Button(actions2, text="Taux Récupérable (PDF)", command=lambda: self.export_vat_recoverable_rate("pdf"), bg=GOLD, fg=NAVY, border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        self.action_button(actions2, "Taux Récupérable Excel", lambda: self.export_vat_recoverable_rate("xlsx")).pack(side="left", padx=3)
+        tk.Label(actions2, text="Calcul du taux récupérable (Art. 31): revenues taxable / exempt, recoverable and non-recoverable VAT, VAT payable.", bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
         self.vat_headline = tk.Label(page, text="Choose the year and quarter, then press Generate.", bg=LIGHT, fg=NAVY, font=("Segoe UI", 11, "bold"), anchor="w", justify="left")
         self.vat_headline.pack(fill="x", padx=12, pady=(8, 0))
         self.vat_note = tk.Label(page, text="", bg=LIGHT, fg=MUTED, anchor="w", justify="left"); self.vat_note.pack(fill="x", padx=12)
@@ -597,6 +601,15 @@ class FinalFeaturesMixin:
         except Exception as exc: return messagebox.showwarning("Quarterly VAT", str(exc))
         self.save_sections(f"VAT periodic declaration Q1-2 - Q{result['quarter']} {result['year']} | التصريح الدوري", meta, sections,
                            f"VAT_Q1-2_Q{result['quarter']}_{result['year']}", format_name)
+
+    def export_vat_recoverable_rate(self, format_name):
+        """The accountants' 'Calcul du taux récupérable' worksheet for the quarter (2.9.50)."""
+        result = getattr(self, "vat_return_result", None)
+        if not result: return messagebox.showwarning("Quarterly VAT", "Generate the return first")
+        try: meta, sections = vat_rules.recoverable_rate_sheet(result, self.client.settings())
+        except Exception as exc: return messagebox.showwarning("Quarterly VAT", str(exc))
+        self.save_sections(f"CALCUL DU TAUX RECUPERABLE - Q{result['quarter']} {result['year']}", meta, sections,
+                           f"Taux_Recuperable_Q{result['quarter']}_{result['year']}", format_name)
 
     def edit_vat_filing_worksheet(self):
         result=getattr(self,"vat_return_result",None)

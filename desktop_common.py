@@ -20,6 +20,7 @@ from client import ApiClient
 from i18n import tr
 from report_export import export_excel, export_invoice_pdf, export_pdf, print_rows
 from party_similarity import similar_parties
+from multi_select import MultiSelect, chosen_values  # 2.9.50: pick any combination in filters
 
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"
 SALE_TREATMENTS={"Taxable 11%":"standard","Zero-rated (export)":"zero_rated","Exempt (Art. 16-17)":"exempt","Out of scope":"out_of_scope"}

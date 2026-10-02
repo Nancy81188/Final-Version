@@ -6,6 +6,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 from desktop_brains import EditableSheet
+from multi_select import MultiSelect, chosen_values
 
 NAVY, GOLD, LIGHT = "#071b2e", "#c9a96a", "#f3f6f8"
 RED, MUTED = "#8B1E1E", "#5f6b76"
@@ -356,17 +357,17 @@ class InventoryMixin:
             widget.bind("<Return>", lambda event, box=widget, var=variable: self.select_report_item(event, box, var))
         bar2 = tk.Frame(page, bg=LIGHT); bar2.pack(fill="x", padx=8); self.ir_controls_row = bar2
         tk.Label(bar2, text="Category", bg=LIGHT).pack(side="left")
-        self.ir_category_box = ttk.Combobox(bar2, textvariable=self.ir_category, state="readonly", width=14); self.ir_category_box.pack(side="left", padx=(4, 8))
+        self.ir_category_box = MultiSelect(bar2, self.ir_category, width=14, title="Category", bg=LIGHT); self.ir_category_box.pack(side="left", padx=(4, 8))
         self.ir_subcategory = tk.StringVar(value="All"); self.ir_unit = tk.StringVar(value="All"); self.ir_supplier = tk.StringVar(value="All")
         bar3 = tk.Frame(page, bg=LIGHT); bar3.pack(fill="x", padx=8, pady=(4, 0), after=bar2)
-        tk.Label(bar3, text="Subcategory", bg=LIGHT).pack(side="left"); self.ir_subcategory_box = ttk.Combobox(bar3, textvariable=self.ir_subcategory, state="readonly", width=14); self.ir_subcategory_box.pack(side="left", padx=(4, 8))
-        tk.Label(bar3, text="Unit", bg=LIGHT).pack(side="left"); self.ir_unit_box = ttk.Combobox(bar3, textvariable=self.ir_unit, state="readonly", width=8); self.ir_unit_box.pack(side="left", padx=(4, 8))
-        tk.Label(bar3, text="Supplier", bg=LIGHT).pack(side="left"); self.ir_supplier_box = ttk.Combobox(bar3, textvariable=self.ir_supplier, state="readonly", width=22); self.ir_supplier_box.pack(side="left", padx=(4, 8))
+        tk.Label(bar3, text="Subcategory", bg=LIGHT).pack(side="left"); self.ir_subcategory_box = MultiSelect(bar3, self.ir_subcategory, width=14, title="Subcategory", bg=LIGHT); self.ir_subcategory_box.pack(side="left", padx=(4, 8))
+        tk.Label(bar3, text="Unit", bg=LIGHT).pack(side="left"); self.ir_unit_box = MultiSelect(bar3, self.ir_unit, width=8, title="Unit", bg=LIGHT); self.ir_unit_box.pack(side="left", padx=(4, 8))
+        tk.Label(bar3, text="Supplier", bg=LIGHT).pack(side="left"); self.ir_supplier_box = MultiSelect(bar3, self.ir_supplier, width=22, title="Supplier", bg=LIGHT); self.ir_supplier_box.pack(side="left", padx=(4, 8))
         self.ir_brand = tk.StringVar(value="All"); self.ir_project = tk.StringVar(value="All"); self.ir_branch = tk.StringVar(value="All"); self.ir_filter_groups = {}
         for key, label, variable, width in (("brand", "Brand", self.ir_brand, 14), ("project", "Project", self.ir_project, 18), ("branch", "Branch", self.ir_branch, 14)):
             group = tk.Frame(bar3, bg=LIGHT); group.pack(side="left"); self.ir_filter_groups[key] = group
             tk.Label(group, text=label, bg=LIGHT).pack(side="left")
-            box = ttk.Combobox(group, textvariable=variable, state="readonly", width=width); box.pack(side="left", padx=(4, 8)); setattr(self, f"ir_{key}_box", box)
+            box = MultiSelect(group, variable, width=width, title=label, bg=LIGHT); box.pack(side="left", padx=(4, 8)); setattr(self, f"ir_{key}_box", box)
         self.inventory_report_selected()
         tk.Label(bar2, text="Slow-moving days", bg=LIGHT).pack(side="left"); tk.Entry(bar2, textvariable=self.ir_days, width=5).pack(side="left", padx=4)
         tk.Checkbutton(bar2, text="Include zero stock", variable=self.ir_zero, bg=LIGHT).pack(side="left", padx=6)
@@ -419,18 +420,21 @@ class InventoryMixin:
             if not to_item: raise ValueError("Choose a valid Item To")
             if not options.get("item_id"): raise ValueError("Choose Item From before Item To")
             options["item_to_id"] = to_item["id"]
-        if self.ir_category.get() not in ("", "All"): options["category"] = self.ir_category.get()
-        if self.ir_subcategory.get() not in ("", "All"): options["subcategory"] = self.ir_subcategory.get()
-        if self.ir_unit.get() not in ("", "All"): options["unit"] = self.ir_unit.get()
-        if getattr(self, "ir_brand", None) and self.ir_brand.get() not in ("", "All"): options["brand"] = self.ir_brand.get()
-        if getattr(self, "ir_project", None) and self.ir_project.get() not in ("", "All"):
-            project = next((p for p in getattr(self, "inventory_projects", []) if self.ir_project.get().startswith(f'{p["code"]} - ')), None)
-            if project: options["project_id"] = project["id"]; options["project_name"] = project["name"]
-        if getattr(self, "ir_branch", None) and self.ir_branch.get() not in ("", "All"):
-            branch = next((b for b in getattr(self, "inventory_branches", []) if b["name"] == self.ir_branch.get()), None)
-            if branch: options["branch_id"] = branch["id"]; options["branch_name"] = branch["name"]
-        supplier = getattr(self, "ir_supplier_map", {}).get(self.ir_supplier.get())
-        if supplier: options["supplier_id"] = supplier["id"]; options["supplier_name"] = supplier["name"]
+        # 2.9.50: every filter below can hold several values (any combination); one value is sent as before
+        def pick(values): return values[0] if len(values) == 1 else values
+        for key, variable in (("category", self.ir_category), ("subcategory", self.ir_subcategory), ("unit", self.ir_unit), ("brand", getattr(self, "ir_brand", None))):
+            values = chosen_values(variable.get()) if variable is not None else []
+            if values: options[key] = pick(values)
+        if getattr(self, "ir_project", None):
+            projects = [p for p in getattr(self, "inventory_projects", []) if any(v.startswith(f'{p["code"]} - ') or v == p["code"] for v in chosen_values(self.ir_project.get()))]
+            if projects: options["project_id"] = pick([p["id"] for p in projects]); options["project_name"] = ", ".join(p["name"] for p in projects)
+        if getattr(self, "ir_branch", None):
+            wanted = {v.casefold() for v in chosen_values(self.ir_branch.get())}
+            branches = [b for b in getattr(self, "inventory_branches", []) if b["name"].casefold() in wanted]
+            if branches: options["branch_id"] = pick([b["id"] for b in branches]); options["branch_name"] = ", ".join(b["name"] for b in branches)
+        suppliers = [getattr(self, "ir_supplier_map", {}).get(name) for name in chosen_values(self.ir_supplier.get())]
+        suppliers = [s for s in suppliers if s]
+        if suppliers: options["supplier_id"] = pick([s["id"] for s in suppliers]); options["supplier_name"] = pick([s["name"] for s in suppliers])
         method = {"Weighted average": "average", "FIFO": "fifo"}.get(self.ir_method.get())
         if method: options["method"] = method
         return options

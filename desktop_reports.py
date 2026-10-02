@@ -312,7 +312,7 @@ class ReportsMixin:
         self.build_financial_filter_row()
         nested=ttk.Notebook(self.reports_tab); nested.pack(fill="both",expand=True,padx=10,pady=(0,10)); self.financial_notebook=nested
         gl=tk.Frame(nested,bg=LIGHT); bs=tk.Frame(nested,bg=LIGHT); vat=tk.Frame(nested,bg=LIGHT); cash=tk.Frame(nested,bg=LIGHT); cash_outlook=tk.Frame(nested,bg=LIGHT); aging=self.ageing_tab; comparative=tk.Frame(nested,bg=LIGHT)
-        nested.add(gl,text="General Ledger"); nested.add(bs,text="Balance Sheet"); nested.add(vat,text="Lebanese VAT Report"); nested.add(cash,text="Cash Flow"); nested.add(cash_outlook,text="Cash Flow Outlook"); nested.add(comparative,text="Comparative P&L"); self.ageing_page=aging; self.build_budget_page(nested); self.build_business_reports_page(nested)
+        nested.add(gl,text="General Ledger"); nested.add(bs,text="Balance Sheet"); nested.add(vat,text="Lebanese VAT Report"); nested.add(cash,text="Cash Flow"); nested.add(cash_outlook,text="Cash Flow Outlook"); nested.add(comparative,text="Comparative P&L"); self.ageing_page=aging; self.build_budget_page(nested); self.build_projection_page(nested); self.build_business_reports_page(nested)
         self.ledger_tree=self.table(gl,[("date","Date",95),("entry","Entry",90),("account","Account",85),("currency","Currency",70),("name","Account Name",180),("description","Description",200),("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
         self.report_buttons(gl,"ledger")
         self.balance_tree=self.table(bs,[("type","Type",90),("account","Account",90),("currency","Currency",80),("name","Account Name",280),("debit","Debit",120),("credit","Credit",120),("balance","Balance",130)])
@@ -384,10 +384,9 @@ class ReportsMixin:
         for key in shown:
             label,_field=FIN_FILTERS[key]
             tk.Label(self.fin_filter_row,text=label,bg=LIGHT).pack(side="left")
-            box=ttk.Combobox(self.fin_filter_row,textvariable=self.fin_filters[key],values=["All"],width=22 if key=="party" else 15)
+            box=MultiSelect(self.fin_filter_row,self.fin_filters[key],width=22 if key=="party" else 15,on_change=self.load_financial_reports,title=label,bg=LIGHT)
             box.pack(side="left",padx=(4,10)); self.fin_filter_boxes[key]=box
-            box.bind("<<ComboboxSelected>>",lambda _e:self.load_financial_reports())
-        tk.Label(self.fin_filter_row,text="Filters apply to the General Ledger lines.",bg=LIGHT,fg=MUTED).pack(side="left",padx=6)
+        tk.Label(self.fin_filter_row,text="Click a filter to tick one or several values. Filters apply to the General Ledger lines.",bg=LIGHT,fg=MUTED).pack(side="left",padx=6)
 
     def refresh_financial_filter_choices(self,rows):
         for key,box in getattr(self,"fin_filter_boxes",{}).items():
@@ -397,8 +396,8 @@ class ReportsMixin:
 
     def financial_filter_ok(self,row):
         for key in self.shown_financial_filters():
-            wanted=self.fin_filters[key].get().strip()
-            if wanted and wanted!="All" and str(row.get(FIN_FILTERS[key][1]) or "").casefold()!=wanted.casefold(): return False
+            wanted={value.casefold() for value in chosen_values(self.fin_filters[key].get())}
+            if wanted and str(row.get(FIN_FILTERS[key][1]) or "").strip().casefold() not in wanted: return False
         return True
 
     def choose_financial_filters(self):

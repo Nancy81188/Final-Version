@@ -162,22 +162,30 @@ def _classify(doc):
     return result
 
 
-def _turnover(db, start, end, include_review, rates):
-    """Turnover in LBP for the partial deduction ratio (Art. 31, note of form Q11-2):
-    revenues giving the right of deduction (taxable + zero-rated) / total revenues (+ exempt + outside the scope)."""
-    documents, _skipped, _review = _documents(db, start, end, None, include_review)
-    taxable = ZERO; exempt = ZERO
+def _sales_detail(documents, rates):
+    """Sales in LBP split as in the recoverable-rate worksheet: taxable, export / zero-rated, exempt, outside the scope."""
+    detail = {"taxable": ZERO, "export": ZERO, "exempt": ZERO, "out": ZERO}
     for doc in documents:
         if doc["category"] != "sales": continue
         parts = _classify(doc); rate = rates(doc["currency"], doc["date"])
-        taxable += (parts.get("sales_base", ZERO) + parts.get("sales_zero", ZERO)) * rate
-        exempt += (parts.get("sales_exempt", ZERO) + parts.get("sales_out", ZERO)) * rate
-    return taxable, exempt
+        detail["taxable"] += parts.get("sales_base", ZERO) * rate; detail["export"] += parts.get("sales_zero", ZERO) * rate
+        detail["exempt"] += parts.get("sales_exempt", ZERO) * rate; detail["out"] += parts.get("sales_out", ZERO) * rate
+    return detail
+
+
+def _turnover(db, start, end, include_review, rates, detail_out=None):
+    """Turnover in LBP for the partial deduction ratio (Art. 31, note of form Q11-2):
+    revenues giving the right of deduction (taxable + zero-rated) / total revenues (+ exempt + outside the scope)."""
+    documents, _skipped, _review = _documents(db, start, end, None, include_review)
+    detail = _sales_detail(documents, rates)
+    if detail_out is not None: detail_out.update(detail)
+    return detail["taxable"] + detail["export"], detail["exempt"] + detail["out"]
 
 
 def _ratio(taxable, exempt):
     total = taxable + exempt
-    return Decimal("1") if total <= 0 or exempt <= 0 else (taxable / total).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    # 2.9.50: six decimals, as the accountants' worksheet (the rate rounded to 0.01% moved the recoverable VAT by hundreds of LBP)
+    return Decimal("1") if total <= 0 or exempt <= 0 else (taxable / total).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
 
 def build_vat_return(db, year, quarter, currency=None, include_review=False, previous_year_db=None, credit_brought_forward=None, refund_requested=None):
@@ -193,10 +201,12 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
     to_lbp = lambda amount, code, day: _lbp(Decimal(amount) * rate_of(code, day))
     # ---- partial deduction ratio (Art. 31): provisional for Q1-Q3, final annual ratio in Q4
     year_start = f"{int(year)}-01-01"; year_end = f"{int(year)}-12-31"
-    ytd_taxable, ytd_exempt = _turnover(db, year_start, end, include_review, rate_of)
+    ytd_detail = {}
+    ytd_taxable, ytd_exempt = _turnover(db, year_start, end, include_review, rate_of, ytd_detail)
     provisional = db.vat_provisional_ratio(year)
     if int(quarter) == 4:
-        final_taxable, final_exempt = _turnover(db, year_start, year_end, include_review, rate_of)
+        final_detail = {}
+        final_taxable, final_exempt = _turnover(db, year_start, year_end, include_review, rate_of, final_detail)
         ratio = _ratio(final_taxable, final_exempt); ratio_source = "final annual ratio"
     elif provisional is not None: ratio = provisional; ratio_source = "provisional ratio set for the year"
     else: ratio = _ratio(ytd_taxable, ytd_exempt); ratio_source = "year-to-date turnover"
@@ -278,7 +288,7 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
     changed = bool(saved) and (_lbp(saved["net_lbp"]) != _lbp(totals_lbp["net"]) or _lbp(saved["credit_brought_forward_lbp"]) != credit_bf)
     return {"year": int(year), "quarter": int(quarter), "date_from": start, "date_to": end, "due_date": due_date(year, quarter), "currency_filter": currency or "All",
         "include_review": bool(include_review), "per_currency": per_currency, "totals_lbp": totals_lbp,
-        "deduction_ratio": ratio, "ratio_source": ratio_source, "ytd_turnover_lbp": {"taxable": ytd_taxable, "exempt": ytd_exempt}, "annual_adjustment_detail": adjustment_detail,
+        "deduction_ratio": ratio, "ratio_source": ratio_source, "ytd_turnover_lbp": {"taxable": ytd_taxable, "exempt": ytd_exempt}, "ytd_turnover_detail": ytd_detail if int(quarter) != 4 else final_detail, "annual_adjustment_detail": adjustment_detail,
         "credit_brought_forward_lbp": credit_bf, "credit_source": source, "net_after_credit_lbp": net_after_credit,
         "payable_lbp": payable, "refund_requested_lbp": refund, "credit_carried_forward_lbp": credit_cf, "documents": documents, "adjustments": adjustments,
         "skipped": skipped, "review_excluded": review_excluded, "warnings": warnings, "saved": saved, "changed_since_saved": changed,
@@ -570,6 +580,81 @@ def official_form(result, company):
                 {"heading": "Q13-2 Annex - ten largest suppliers | أكبر عشرة موردين", "fixed": True, "headers": ["#", "Supplier | المورد", "MOF No. | رقم التسجيل", "Purchases (LBP)"], "rows": top(suppliers), "total_rows": []},
                 {"heading": "Q13-2 Annex - ten largest customers | أكبر عشرة زبائن", "fixed": True, "headers": ["#", "Customer | الزبون", "MOF No. | رقم التسجيل", "Sales (LBP)"], "rows": top(customers), "total_rows": []}]
     return head, sections
+
+
+def recoverable_rate_sheet(result, company):
+    """'Calcul du taux récupérable' in the layout of the accountants' worksheet (PROGRAMME CALCUL TAUX RECUPERABLE TVA):
+    revenue accounts split taxable / exempt, the recoverable rate (Art. 31), then the VAT on fixed assets, goods, packaging
+    and overheads split into recoverable and non-recoverable, VAT collected and VAT payable (negative = credit).
+    VAT on goods / assets / expenses whose use is "taxable" or "export" is 100% recoverable, "mixed" use x rate,
+    "exempt" use or non-deductible = 0%. Amounts in LBP."""
+    if result.get("currency_filter") != "All" or result.get("include_review"):
+        raise ValueError("The recoverable rate sheet requires All Currencies and excludes Review documents")
+    D = lambda v: Decimal(str(v or 0)); ratio = D(result["deduction_ratio"]); totals = {k: D(v) for k, v in result["totals_lbp"].items()}
+    quarter = {"taxable": ZERO, "export": ZERO, "exempt": ZERO, "out": ZERO}
+    for doc in result.get("documents", []):
+        if doc["category"] != "sales": continue
+        parts = _classify({**doc, "base": D(doc["base"]), "exempt": D(doc["exempt"]), "vat": D(doc["vat"])}); rate = D(doc.get("lbp_rate") or 1)
+        quarter["taxable"] += parts.get("sales_base", ZERO) * rate; quarter["export"] += parts.get("sales_zero", ZERO) * rate
+        quarter["exempt"] += parts.get("sales_exempt", ZERO) * rate; quarter["out"] += parts.get("sales_out", ZERO) * rate
+    year = {k: D(v) for k, v in (result.get("ytd_turnover_detail") or {}).items()} or dict(quarter)
+    m = lambda v: _lbp(v)
+    def produits(values):
+        taxable = values.get("taxable", ZERO) + values.get("export", ZERO); exempt = values.get("exempt", ZERO) + values.get("out", ZERO)
+        return taxable, exempt, taxable + exempt
+    q_tax, q_exe, q_all = produits(quarter); y_tax, y_exe, y_all = produits(year)
+    rows = [["VENTES MARCHANDISES TAXABLES", "مبيعات خاضعة", m(quarter["taxable"]), m(year.get("taxable"))],
+            ["VENTES MARCHANDISES EXPORT", "مبيعات تصدير (معفاة مع حق الحسم)", m(quarter["export"]), m(year.get("export"))],
+            ["VENTES MARCHANDISES (FREE ZONE)", "مبيعات منطقة حرة", 0, 0],
+            ["VENTES IMMOBILISATIONS TAXABLES", "مبيع أصول ثابتة خاضعة", 0, 0],
+            ["DIVERS TAXABLES", "مختلف خاضع", 0, 0],
+            ["TOTAL PRODUITS TAXABLES", "مجموع الإيرادات الخاضعة", m(q_tax), m(y_tax)],
+            ["VENTES MARCHANDISES EXEMPTES", "مبيعات معفاة", m(quarter["exempt"]), m(year.get("exempt"))],
+            ["VENTES MARCHANDISES HORS TAXES", "مبيعات خارج نطاق الضريبة", m(quarter["out"]), m(year.get("out"))],
+            ["VENTES IMMOBILISATIONS EXEMPTES", "مبيع أصول ثابتة غير خاضعة", 0, 0],
+            ["DIVERS EXEMPTES", "مختلف معفى", 0, 0],
+            ["TOTAL PRODUITS EXEMPTES", "مجموع الإيرادات المعفاة", m(q_exe), m(y_exe)],
+            ["TOTAL PRODUITS", "مجموع الإيرادات", m(q_all), m(y_all)]]
+    quarter_rate = (q_tax / q_all) if q_all > 0 else Decimal("1")
+    rate_rows = [["TAUX DU TRIMESTRE (taxables / total)", "نسبة الفصل", f"{quarter_rate * 100:.4f}%"],
+                 ["TAUX RECUPERABLE APPLIQUE", "النسبة المطبقة (المادة 31)", f"{ratio * 100:.4f}%"],
+                 ["Base du taux appliqué", "أساس النسبة", result.get("ratio_source", "")]]
+    groups = {"assets": 0, "purchases": 1, "customs": 1, "packaging": 2, "expenses": 3}
+    lines = [[ZERO, ZERO, ZERO] for _ in range(4)]  # initial, recoverable, non recoverable
+    for doc in result.get("documents", []):
+        if doc["category"] == "sales": continue
+        index = groups.get(doc["category"], 3); rate = D(doc.get("lbp_rate") or 1)
+        vat = D(doc["vat"]) * rate
+        if doc.get("treatment") == "reverse_charge" and not D(doc["vat"]):
+            vat = ((D(doc["base"]) + D(doc["exempt"])) * RATE).quantize(CENT, rounding=ROUND_HALF_UP) * rate
+        blocked = not doc.get("recoverable", True) or doc.get("use") == "exempt"
+        share = ZERO if blocked else (ratio if doc.get("use") == "mixed" else Decimal("1"))
+        lines[index][0] += vat; lines[index][1] += vat * share; lines[index][2] += vat * (1 - share)
+    labels = (("TVA SUR ACQUISITION IMMOBILISATIONS", "ضريبة على شراء أصول ثابتة"), ("TVA SUR ACHATS MARCHANDISES", "ضريبة على شراء البضائع"),
+              ("TVA SUR ACHATS EMBALLAGES", "ضريبة على شراء التوضيب"), ("TVA SUR FRAIS GENERAUX", "ضريبة على المصاريف العامة"))
+    vat_rows = [[en, ar, m(a), m(b), m(c)] for (en, ar), (a, b, c) in zip(labels, lines)]
+    extra = totals.get("adj_input", ZERO) + totals.get("annual_adjustment", ZERO)
+    if extra: vat_rows.append(["REGULARISATIONS (ajustements / Art. 32)", "تسويات", m(extra), m(extra), 0])
+    initial = sum((l[0] for l in lines), ZERO) + extra; recoverable = sum((l[1] for l in lines), ZERO) + extra
+    vat_rows.append(["TOTAL", "المجموع", m(initial), m(recoverable), m(initial - recoverable)])
+    collected = totals.get("total_output", ZERO); to_pay = collected - recoverable
+    credit_bf = D(result.get("credit_brought_forward_lbp"))
+    pay_rows = [["TVA COLLECTEES", "الضريبة المحصلة", m(collected)],
+                ["TVA RECUPERABLE", "الضريبة القابلة للاسترداد", m(recoverable)],
+                ["TVA A PAYER (négatif = crédit)", "الضريبة المستحقة (سالب = رصيد دائن)", m(to_pay)],
+                ["Crédit reporté du trimestre précédent", "الرصيد المدور من الفترة السابقة", m(credit_bf)],
+                ["NET A PAYER", "الصافي المتوجب", m(D(result.get("payable_lbp")))],
+                ["CREDIT A REPORTER", "رصيد مدور", m(D(result.get("credit_carried_forward_lbp")))]]
+    meta = [f"SOCIETE: {company.get('company_name') or '-'}     N° TVA: {company.get('company_mof') or '-'}",
+            f"PERIODE: {result['quarter']} EME TRIMESTRE {result['year']} ({display_date(result['date_from'])} - {display_date(result['date_to'])})     Montants en LBP",
+            "Use per document: taxable / export = 100% recoverable, mixed = x rate, exempt or non-deductible = 0%."]
+    sections = [{"heading": "DETAILS COMPTES PRODUITS | تفاصيل حسابات الإيرادات", "fixed": True,
+                 "headers": ["Compte", "البيان", "Trimestre (LBP)", "Cumul année - base du taux (LBP)"], "rows": rows, "total_rows": [5, 10, 11]},
+                {"heading": "TAUX RECUPERABLE | نسبة الاسترداد", "fixed": True, "headers": ["", "البيان", "Taux"], "rows": rate_rows, "total_rows": [1]},
+                {"heading": "CALCUL DE LA TVA A RECUPERER | احتساب الضريبة القابلة للاسترداد", "fixed": True,
+                 "headers": ["", "البيان", "Montant initial", "Récupérable", "Non récupérable"], "rows": vat_rows, "total_rows": [len(vat_rows) - 1]},
+                {"heading": "TVA A PAYER | الضريبة المتوجبة", "fixed": True, "headers": ["", "البيان", "Montant (LBP)"], "rows": pay_rows, "total_rows": [2, 4]}]
+    return meta, sections
 
 
 def json_ready(value):
