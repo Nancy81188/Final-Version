@@ -4,6 +4,11 @@ from __future__ import annotations
 from desktop_common import *  # noqa: F401,F403
 
 
+MUTED = "#5f6b76"
+FIN_FILTERS = {"branch": ("Branch", "branch_name"), "project": ("Project", "project_code"), "department": ("Department", "department_code"),
+               "party": ("Customer / Supplier", "party_name"), "section": ("Section", "journal_category")}
+
+
 class ReportsMixin:
     def build_journal(self):
         filters=tk.Frame(self.journal_tab,bg=LIGHT); filters.pack(fill="x",padx=10,pady=(10,0))
@@ -40,6 +45,7 @@ class ReportsMixin:
         self.action_button(actions,"Export PDF",lambda:self.journal_report("pdf")).pack(side="left",padx=4)
         self.action_button(actions,"Print",lambda:self.journal_report("print")).pack(side="left",padx=4)
         self.action_button(actions,"Check Balance",self.check_unbalanced_entries).pack(side="left",padx=4)
+        tk.Button(actions,text="Edit Selected Entry",command=self.edit_journal_selection,bg=GOLD,fg=NAVY,border=0,padx=14,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
         tk.Button(actions,text="Delete Selected Voucher",command=self.delete_selected_journal_voucher,bg="#6B1010",fg="white",border=0,padx=14,pady=7).pack(side="left",padx=4)
         self.journal_totals=tk.Label(actions,text="Debit: 0.00   Credit: 0.00",bg=LIGHT,font=("Segoe UI",10,"bold"))
         self.journal_totals.pack(side="left",padx=15)
@@ -48,6 +54,7 @@ class ReportsMixin:
             ("source","Source",75),("reference","Reference",75),("currency","Currency",70),
             ("account","Account",85),("account_name","Account Name",190),("party","Customer / Supplier",165),
             ("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
+        self.journal_tree.bind("<Double-1>",self.edit_journal_selection)  # double-click a line: edit its entry
         self.load_journal()
 
     def check_unbalanced_entries(self):
@@ -298,6 +305,11 @@ class ReportsMixin:
         tk.Label(controls,text="Account From:",bg=LIGHT).pack(side="left"); self.account_search_box(controls,self.report_account_from,16).pack(side="left",padx=(4,6))
         tk.Label(controls,text="To:",bg=LIGHT).pack(side="left"); self.account_search_box(controls,self.report_account_to,16).pack(side="left",padx=(4,10))
         tk.Button(controls,text="Apply",command=self.load_financial_reports,bg=GOLD,fg=NAVY,border=0,padx=15,pady=6).pack(side="left")
+        tk.Button(controls,text="Choose filters...",command=self.choose_financial_filters,bg=NAVY,fg="white",border=0,padx=10,pady=6).pack(side="left",padx=6)
+        # 2.9.49: optional filters - only the ones ticked in "Choose filters..." appear (kept on this computer).
+        self.fin_filter_row=tk.Frame(self.reports_tab,bg=LIGHT); self.fin_filter_row.pack(fill="x",padx=10,pady=(0,4))
+        self.fin_filters={key:tk.StringVar(value="All") for key in FIN_FILTERS}; self.fin_filter_boxes={}
+        self.build_financial_filter_row()
         nested=ttk.Notebook(self.reports_tab); nested.pack(fill="both",expand=True,padx=10,pady=(0,10)); self.financial_notebook=nested
         gl=tk.Frame(nested,bg=LIGHT); bs=tk.Frame(nested,bg=LIGHT); vat=tk.Frame(nested,bg=LIGHT); cash=tk.Frame(nested,bg=LIGHT); cash_outlook=tk.Frame(nested,bg=LIGHT); aging=self.ageing_tab; comparative=tk.Frame(nested,bg=LIGHT)
         nested.add(gl,text="General Ledger"); nested.add(bs,text="Balance Sheet"); nested.add(vat,text="Lebanese VAT Report"); nested.add(cash,text="Cash Flow"); nested.add(cash_outlook,text="Cash Flow Outlook"); nested.add(comparative,text="Comparative P&L"); self.ageing_page=aging; self.build_budget_page(nested); self.build_business_reports_page(nested)
@@ -354,6 +366,58 @@ class ReportsMixin:
         self.load_ageing_report()
         self.load_cashflow_outlook()
 
+    # ------------------------------------------------------------ optional filters (2.9.49)
+    def _financial_filter_file(self):
+        import app_runtime
+        return app_runtime.data_dir()/"report_filters.json"
+
+    def shown_financial_filters(self):
+        try: chosen=json.loads(self._financial_filter_file().read_text(encoding="utf-8"))
+        except Exception: chosen=["branch","party"]
+        return [key for key in FIN_FILTERS if key in chosen]
+
+    def build_financial_filter_row(self):
+        for child in self.fin_filter_row.winfo_children(): child.destroy()
+        shown=self.shown_financial_filters(); self.fin_filter_boxes={}
+        if not shown:
+            tk.Label(self.fin_filter_row,text="No filters chosen (Choose filters... to add Branch, Project, Department, Customer / Supplier, Section).",bg=LIGHT,fg=MUTED).pack(side="left"); return
+        for key in shown:
+            label,_field=FIN_FILTERS[key]
+            tk.Label(self.fin_filter_row,text=label,bg=LIGHT).pack(side="left")
+            box=ttk.Combobox(self.fin_filter_row,textvariable=self.fin_filters[key],values=["All"],width=22 if key=="party" else 15)
+            box.pack(side="left",padx=(4,10)); self.fin_filter_boxes[key]=box
+            box.bind("<<ComboboxSelected>>",lambda _e:self.load_financial_reports())
+        tk.Label(self.fin_filter_row,text="Filters apply to the General Ledger lines.",bg=LIGHT,fg=MUTED).pack(side="left",padx=6)
+
+    def refresh_financial_filter_choices(self,rows):
+        for key,box in getattr(self,"fin_filter_boxes",{}).items():
+            field=FIN_FILTERS[key][1]
+            values=sorted({str(row.get(field) or "") for row in rows if str(row.get(field) or "").strip()},key=str.casefold)
+            if box.winfo_exists(): box["values"]=["All"]+values
+
+    def financial_filter_ok(self,row):
+        for key in self.shown_financial_filters():
+            wanted=self.fin_filters[key].get().strip()
+            if wanted and wanted!="All" and str(row.get(FIN_FILTERS[key][1]) or "").casefold()!=wanted.casefold(): return False
+        return True
+
+    def choose_financial_filters(self):
+        window=tk.Toplevel(self); window.title("Choose filters"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        shown=set(self.shown_financial_filters()); flags={key:tk.BooleanVar(value=key in shown) for key in FIN_FILTERS}
+        tk.Label(window,text="Tick the filters you want to see above the financial reports:",bg=LIGHT,fg=NAVY,font=("Segoe UI",10,"bold")).pack(anchor="w",padx=14,pady=(12,6))
+        for key,(label,_field) in FIN_FILTERS.items(): tk.Checkbutton(window,text=label,variable=flags[key],bg=LIGHT).pack(anchor="w",padx=24)
+        def save():
+            chosen=[key for key,var in flags.items() if var.get()]
+            try: self._financial_filter_file().write_text(json.dumps(chosen),encoding="utf-8")
+            except OSError as exc: return messagebox.showerror("Filters",str(exc),parent=window)
+            for key in FIN_FILTERS:
+                if key not in chosen: self.fin_filters[key].set("All")
+            window.destroy(); self.build_financial_filter_row(); self.load_financial_reports()
+        buttons=tk.Frame(window,bg=LIGHT); buttons.pack(pady=12)
+        tk.Button(buttons,text="Save",command=save,bg=GOLD,fg=NAVY,border=0,padx=20,pady=6,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
+        tk.Button(buttons,text="Cancel",command=window.destroy,bg=NAVY,fg="white",border=0,padx=14,pady=6).pack(side="left",padx=4)
+        window.bind("<Escape>",lambda _e:window.destroy())
+
     def report_buttons(self,parent,report):
         frame=tk.Frame(parent,bg=LIGHT); frame.pack(pady=(0,8))
         self.action_button(frame,"Excel",lambda:self.financial_report_export(report,"xlsx")).pack(side="left",padx=4)
@@ -385,7 +449,8 @@ class ReportsMixin:
             digits=int(''.join(c for c in str(code) if c.isdigit()) or 0)
             low=int(''.join(c for c in account_from if c.isdigit()) or 0); high=int(''.join(c for c in account_to if c.isdigit()) or 999999999999)
             return low<=digits<=high
-        self.ledger_rows=[row for row in ledger["items"] if in_account_range(row["account_code"])]; self.balance_rows=[row for row in balance if in_account_range(row["code"])]; self.vat_rows=vat["items"]; self.cash_rows=cash; self.comparative_rows=comparative["items"]
+        self.refresh_financial_filter_choices(ledger["items"])
+        self.ledger_rows=[row for row in ledger["items"] if in_account_range(row["account_code"]) and self.financial_filter_ok(row)]; self.balance_rows=[row for row in balance if in_account_range(row["code"])]; self.vat_rows=vat["items"]; self.cash_rows=cash; self.comparative_rows=comparative["items"]
         self.ledger_tree.delete(*self.ledger_tree.get_children()); self.balance_tree.delete(*self.balance_tree.get_children()); self.vat_tree.delete(*self.vat_tree.get_children()); self.cash_tree.delete(*self.cash_tree.get_children()); self.comparative_tree.delete(*self.comparative_tree.get_children())
         for r in self.ledger_rows: self.ledger_tree.insert("","end",values=(r["entry_date"],r["entry_number"],r["account_code"],r["currency"],r["account_name"],r["description"],f'{r["debit"]:,.2f}',f'{r["credit"]:,.2f}',f'{r["balance"]:,.2f}'))
         for r in balance: self.balance_tree.insert("","end",values=(r["type"],r["code"],r["currency"],r["name_en"],f'{r["debit"]:,.2f}',f'{r["credit"]:,.2f}',f'{r["balance"]:,.2f}'))

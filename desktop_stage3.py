@@ -363,6 +363,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         type_box.pack(side="left", padx=(0, 8)); type_box.bind("<<ComboboxSelected>>", lambda _e: self.payment_type_changed(form))
         form["party_box"] = ttk.Combobox(row, textvariable=v["party"], width=24); form["party_box"].pack(side="left", padx=(4, 10))
         form["party_box"].bind("<KeyRelease>", lambda e: self.filter_payment_parties(form, e)); form["party_box"].bind("<<ComboboxSelected>>", lambda _e: self.payment_party_chosen(form))
+        form["party_box"].bind("<FocusOut>", lambda _e: self.payment_party_chosen(form), add="+"); form["party_box"].bind("<Return>", lambda _e: self.payment_party_chosen(form), add="+")
         tk.Label(row, text="Currency", bg=LIGHT).pack(side="left")
         ttk.Combobox(row, textvariable=v["currency"], values=self.currency_codes, state="readonly", width=6).pack(side="left", padx=(4, 10))
         tk.Label(row, text="Amount", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left"); tk.Entry(row, textvariable=v["amount"], width=14, font=("Segoe UI", 10, "bold")).pack(side="left", padx=4)
@@ -416,7 +417,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             form["party_box"].after_idle(lambda: form["party_box"].event_generate("<Down>"))
 
     def payment_type_changed(self, form):
-        form["vars"]["party"].set(""); self.filter_payment_parties(form)
+        form.pop("_chosen_party_id", None); form["vars"]["party"].set(""); self.filter_payment_parties(form)
         if "alloc_sheet" in form: form["alloc_sheet"].clear(); form["alloc_info"].config(text="Choose the customer / supplier to see the open invoices")
         form["balance"].config(text="")
 
@@ -465,9 +466,38 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         for iid, row in form["alloc_sheet"].rows.items(): row["allocate"] = 0; row["_display"]["allocate"] = ""; form["alloc_sheet"].refresh(iid)
         self.update_allocation_info(form)
 
+    def resolve_payment_party(self, form, refresh=True):
+        """2.9.48: find the customer / supplier from what is in the box - the full list text, the name alone,
+        the account number, or a part of the name that matches one party only. A party created after the
+        screen was opened is found too (the list is reloaded once)."""
+        text = str(form["vars"]["party"].get() or "").strip()
+        if not text: return None
+        for attempt in (0, 1):
+            party_map = form.get("party_map", {})
+            if text in party_map: return party_map[text]
+            folded = text.casefold(); name_part = text.split(" | ", 1)[0].strip().casefold()
+            exact = [(k, p) for k, p in party_map.items() if p["name"].strip().casefold() in (folded, name_part)
+                     or str(p.get("account_number") or "").casefold() == folded]
+            if not exact:
+                exact = [(k, p) for k, p in party_map.items() if folded in k.casefold()]
+            if len(exact) == 1:
+                form["vars"]["party"].set(exact[0][0]); return exact[0][1]
+            if len(exact) > 1:
+                raise ValueError("More than one customer / supplier matches '" + text + "':\n" + "\n".join(k for k, _p in exact[:8]) + "\n\nChoose one from the list.")
+            if attempt or not refresh: break
+            try:
+                parties = self.client.parties()
+                form["party_map"] = {f'{p["name"]} | {p.get("account_number") or ""}': p for p in parties}
+                form["party_box"]["values"] = list(form["party_map"])
+            except Exception: break
+        return None
+
     def payment_party_chosen(self, form):
-        party = form.get("party_map", {}).get(form["vars"]["party"].get())
+        try: party = self.resolve_payment_party(form)
+        except ValueError: party = None
         if not party: return
+        if form.get("_chosen_party_id") == party["id"] and form.get("_chosen_party_text") == form["vars"]["party"].get(): return  # same party: keep the allocations typed
+        form["_chosen_party_id"] = party["id"]; form["_chosen_party_text"] = form["vars"]["party"].get()
         self.load_open_documents(form, party)
         if party.get("currency"): form["vars"]["currency"].set(party["currency"])
         account = party.get("account_number")
@@ -483,7 +513,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         except Exception: form["balance"].config(text=f"Account {account}")
 
     def new_payment(self, form):
-        form["id"] = None; v = form["vars"]
+        form["id"] = None; v = form["vars"]; form.pop("_chosen_party_id", None)
         for key in ("party", "amount", "reference", "description", "bank_commission", "exchange_difference"): v[key].set("")
         if "alloc_sheet" in form: form["alloc_sheet"].clear(); form["alloc_info"].config(text="Choose the customer / supplier to see the open invoices")
         v["date"].set(self.fiscal_today()); v["method"].set("Cash"); form["department"].set("(none)"); form["project"].set("(none)"); form["balance"].config(text="")
@@ -491,8 +521,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         except Exception: v["number"].set("")
 
     def payment_payload(self, form):
-        v = form["vars"]; party = form.get("party_map", {}).get(v["party"].get())
-        if not party: raise ValueError("Choose the customer / supplier from the list")
+        v = form["vars"]; party = self.resolve_payment_party(form)
+        if not party: raise ValueError(f"Customer / supplier '{v['party'].get().strip()}' was not found. Choose it from the list (type a part of the name, then pick it).")
         amount = _num(v["amount"].get(), None)
         if not amount or amount <= 0: raise ValueError("Enter an amount above zero")
         datetime.strptime(v["date"].get().strip(), "%d-%m-%Y")
@@ -538,6 +568,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             try: existing = self.client.payment_allocations(row["id"])
             except Exception: existing = []
             self.load_open_documents(form, party, existing)
+            form["_chosen_party_id"] = party["id"]; form["_chosen_party_text"] = form["vars"]["party"].get()
 
     def delete_payment(self, form):
         if not form["id"]: return messagebox.showwarning("Payment & Receipt", "Double-click a saved line to open it first")

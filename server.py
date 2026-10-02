@@ -753,6 +753,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                 result=self.company_manager.refresh_opening(company_id,body.get("source_year"),user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)
+        if path == "/api/invoices/payment-entries":
+            try: return self._json(200, self.db.create_missing_invoice_payments(user["id"]))
+            except Exception as exc: return self._json(400, {"error": str(exc)})
         if path == "/api/invoices/manual":
             invoice = body.get("invoice", {})
             items = body.get("items", [])
@@ -860,7 +863,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200, {"invoice": updated})
         if path.startswith("/api/accounts/"):
             code=path.rsplit("/",1)[-1]
-            try: account=self.db.rename_account(code,self._body().get("name_en"),user["id"])
+            body=self._body()
+            try: account=self.db.rename_account(code,body.get("name_en"),user["id"],body.get("name_fr"),body.get("name_ar"),body.get("type"))
             except KeyError: return self._json(404,{"error":"Account not found"})
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,{"account":account})

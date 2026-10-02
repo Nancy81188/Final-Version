@@ -21,9 +21,11 @@ class InvoicesMixin:
         tk.Button(invoice_actions,text="Add Item",command=self.add_item_to_selected_invoice,bg=NAVY,fg="white",border=0,padx=18,pady=7).pack(side="left",padx=4)
         tk.Button(invoice_actions,text="Edit Selected",command=self.edit_selected_invoice,bg=GOLD,fg=NAVY,
                   font=("Segoe UI",9,"bold"),border=0,padx=20,pady=7).pack(side="left",padx=4)
+        tk.Button(invoice_actions,text="Create Missing Payment Entries",command=self.create_missing_payment_entries,bg=GOLD,fg=NAVY,
+                  font=("Segoe UI",9,"bold"),border=0,padx=14,pady=7).pack(side="left",padx=4)
         lifecycle=tk.Frame(self.invoices_tab,bg=LIGHT); lifecycle.pack(fill="x",anchor="w",pady=(0,8))
         self.action_button(lifecycle,"Duplicate",self.duplicate_selected_invoice).pack(side="left",padx=4)
-        self.action_button(lifecycle,"Create Return / Credit Note",self.return_selected_invoice).pack(side="left",padx=4)
+        self.action_button(lifecycle,"Create Return (goods back)",self.return_selected_invoice).pack(side="left",padx=4)
         tk.Button(lifecycle,text="Cancel Invoice",command=self.cancel_selected_invoice,bg="#8B1E1E",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
         tk.Button(lifecycle,text="Delete Selected",command=self.delete_selected_invoice,bg="#6B1010",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
         self.action_button(lifecycle,"Attach PDF / Image",self.attach_to_selected_invoice).pack(side="left",padx=4)
@@ -34,6 +36,19 @@ class InvoicesMixin:
         self.action_button(lifecycle,"VAT Treatment",self.vat_classification_dialog).pack(side="left",padx=4)
         self.invoice_tree.bind("<Double-1>",lambda _event:self.edit_selected_invoice())
         self.load_invoices()
+
+    def create_missing_payment_entries(self):
+        """Invoices uploaded before 2.9.47 as paid in cash / bank: make their settlement entries now."""
+        if not messagebox.askyesno("Payment entries","Create the payment entry (Dr cash or bank / Cr customer, or Dr supplier / Cr cash or bank) "
+                                   "for every invoice marked as paid that does not have one yet?\n\nCash goes to 531 and other methods to 512, "
+                                   "unless an account was chosen on the invoice (Edit Selected > Cash / Bank Account)."): return
+        try: result=self.client.create_missing_invoice_payments()
+        except Exception as exc: return messagebox.showerror("Payment entries",str(exc))
+        text=f'{len(result["created"])} payment entr{"y" if len(result["created"])==1 else "ies"} created.'
+        if result["skipped"]:
+            text+="\n\nNot done (locked or closed period, or other reason):\n"+"\n".join(f'{s["invoice_number"]}: {s["reason"]}' for s in result["skipped"][:15])
+        messagebox.showinfo("Payment entries",text)
+        self.load_invoices(); self.load_journal(); self.load_trial()
 
     def load_invoices(self):
         try: rows=self.client.invoices(); rates=self.client.exchange_rates()
@@ -119,6 +134,7 @@ class InvoicesMixin:
             "due_date":tk.StringVar(value=row.get("due_date") or ""),
             "amount_paid":tk.StringVar(value=row.get("amount_paid") or "0"),
             "payment_method":tk.StringVar(value=row.get("payment_method") or "Cash"),
+            "cash_account":tk.StringVar(value=row.get("payment_account") or ""),
             "description":tk.StringVar(value=row.get("description") or ""),
             "branch":tk.StringVar(value=row.get("branch_name") or "Head Office"),
         }
@@ -128,7 +144,7 @@ class InvoicesMixin:
             ("Before VAT Deductible","deductible_subtotal"),("Before VAT Non-Deductible","non_deductible_subtotal"),("VAT","vat"),("Total","total"),
             ("Supplier Account","supplier_account"),("VAT Account","vat_account"),
             ("Expense Account","expense_account"),("Expense Account without VAT","expense_no_vat_account"),("Status","status"),
-            ("Payment Method","payment_method"),("Amount Paid","amount_paid"),("Due Date (DD-MM-YYYY)","due_date"),
+            ("Payment Method","payment_method"),("Amount Paid","amount_paid"),("Cash / Bank Account (paid)","cash_account"),("Due Date (DD-MM-YYYY)","due_date"),
         ]
         for index,(label,key) in enumerate(fields):
             grid_row=index//2; grid_column=(index%2)*2
@@ -140,7 +156,14 @@ class InvoicesMixin:
             elif key=="status":
                 widget=ttk.Combobox(window,textvariable=variables[key],values=["posted","review"],state="readonly",width=24)
             elif key=="payment_method":
-                widget=ttk.Combobox(window,textvariable=variables[key],values=["Cash","Bank Transfer","Cheque","Card","Other"],state="readonly",width=24)
+                widget=ttk.Combobox(window,textvariable=variables[key],values=["On Account (Not Cash)","Cash","Bank Transfer","Cheque","Card","Other"],state="readonly",width=24)
+            elif key=="cash_account":
+                frame=tk.Frame(window,bg=LIGHT)
+                self.account_search_box(frame,variables[key],16,replace_on_focus=True).pack(side="left")
+                tk.Button(frame,text="Find",command=lambda v=variables[key]:self.open_account_lookup(v,include_groups=True),
+                          bg=NAVY,fg="white",border=0,padx=6,pady=2).pack(side="left",padx=(3,0))
+                tk.Label(frame,text="empty: 531 cash / 512 bank",bg=LIGHT,fg="#5f6b76").pack(side="left",padx=(5,0))
+                widget=frame
             elif key=="branch":
                 widget=self.branch_selector(window,variables[key],24,False)
             elif key in ("supplier_account","vat_account","expense_account","expense_no_vat_account"):
@@ -234,10 +257,19 @@ class InvoicesMixin:
             messagebox.showinfo("Cancel Invoice","Invoice cancelled and reversing journal entry created")
         tk.Button(window,text="Confirm Cancellation",command=confirm,bg="#8B1E1E",fg="white",border=0,padx=18,pady=7).grid(row=1,column=0,columnspan=2,pady=12)
 
-    def return_selected_invoice(self):
-        invoice_id=self.selected_invoice_id()
-        if invoice_id is None: return
-        summary=self.invoice_rows.get(str(invoice_id),{})
+    def return_open_sales_invoice(self):
+        """Sales Invoice screen: return goods of the invoice that is open (2.9.49)."""
+        if not getattr(self,"sales_edit_id",None): return messagebox.showwarning("Return","Open the posted invoice first (Find), then press Return.")
+        return self.return_selected_invoice(self.sales_edit_id)
+
+    def return_selected_invoice(self,invoice_id=None):
+        if invoice_id is None:
+            invoice_id=self.selected_invoice_id()
+            if invoice_id is None: return
+            summary=self.invoice_rows.get(str(invoice_id),{})
+        else:
+            try: summary=next((r for r in self.client.invoices() if r["id"]==int(invoice_id)),{})
+            except Exception as exc: return messagebox.showerror("Return",str(exc))
         if summary.get("status")!="posted":
             return messagebox.showwarning("Return / Credit Note","Only a posted invoice can be returned. Cancellation is a separate action.")
         if summary.get("doc_subtype")=="credit_note":
@@ -248,12 +280,12 @@ class InvoicesMixin:
         return_request_id=str(uuid.uuid4())
         if not items:
             return messagebox.showwarning("Return / Credit Note","This invoice has no item lines, so a quantity-reviewed return cannot be safely created.")
-        is_sale=invoice.get("kind")=="sale"; title="Sales Return / Credit Note" if is_sale else "Purchase Return / Supplier Credit Note"
+        is_sale=invoice.get("kind")=="sale"; title="Sales Return (goods back)" if is_sale else "Purchase Return (goods back to the supplier)"
         window=tk.Toplevel(self); window.title(title); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
         tk.Label(window,text=f"Return against {invoice['invoice_number']} — {invoice.get('party_name') or ''}",
                  bg=LIGHT,font=("Segoe UI",10,"bold")).pack(anchor="w",padx=12,pady=(12,4))
         tk.Label(window,text="Enter quantities to return. Value and VAT are calculated proportionally from the posted lines.\n"
-                 "This creates a linked credit note only; it does not refund cash or allocate a payment.",
+                 "The goods go back into stock (or out to the supplier). No cash is refunded and no payment is allocated.",
                  bg=LIGHT,fg="#5f6b76",justify="left").pack(anchor="w",padx=12,pady=(0,8))
         date_line=tk.Frame(window,bg=LIGHT); date_line.pack(anchor="w",padx=12,pady=4)
         tk.Label(date_line,text="Return date (DD-MM-YYYY)",bg=LIGHT).pack(side="left")
@@ -285,7 +317,7 @@ class InvoicesMixin:
                     out.set(f"{preview_value(record,qty,limit):,.2f}")
                 except (ValueError,ZeroDivisionError): out.set("Review quantity")
             var.trace_add("write",update_amount)
-        total_label=tk.StringVar(value="Total credit note: 0.00 "+str(invoice.get("currency") or ""))
+        total_label=tk.StringVar(value="Total return: 0.00 "+str(invoice.get("currency") or ""))
         tk.Label(window,textvariable=total_label,bg=LIGHT,fg=NAVY,font=("Segoe UI",10,"bold")).pack(anchor="e",padx=16,pady=4)
         def update_total(*_args):
             try:
@@ -294,7 +326,7 @@ class InvoicesMixin:
                     qty=float(var.get() or 0)
                     if qty<0 or qty>available: raise ValueError
                     total+=preview_value(line,qty,available)
-                total_label.set(f"Total credit note: {total:,.2f} {invoice.get('currency') or ''}")
+                total_label.set(f"Total return: {total:,.2f} {invoice.get('currency') or ''}")
             except (ValueError,ZeroDivisionError): total_label.set("Correct quantities to see the credit-note total")
         for var,_,_ in qty_vars.values(): var.trace_add("write",update_total)
         def save_return():
@@ -412,18 +444,19 @@ class InvoicesMixin:
                   "kind":"purchases","currency":"USD","deductible_subtotal":"0","non_deductible_subtotal":"0","vat":"0","total":"0",
                   "supplier_account":"4011","vat_account":"442660000","expense_account":"601100000",
                   "expense_no_vat_account":"601100001",
-                  "description":"","branch":"Head Office","due_date":"","payment_method":"Cash","amount_paid":"0"}
+                  "description":"","branch":"Head Office","due_date":"","payment_method":"Cash","amount_paid":"0","cash_account":""}
         variables={key:tk.StringVar(value=value) for key,value in defaults.items()}
         fields=[("Invoice Number","invoice_number"),("Date (DD-MM-YYYY)","invoice_date"),("Customer / Supplier","party_name"),
                 ("Description","description"),("Branch","branch"),("Type","kind"),("Currency","currency"),("Before VAT Deductible","deductible_subtotal"),("Before VAT Non-Deductible","non_deductible_subtotal"),("VAT","vat"),("Total","total"),
                 ("Supplier Account (C - Credit)","supplier_account"),("VAT Account (D - Debit)","vat_account"),("Expense Account (D - Debit)","expense_account"),("Expense without VAT","expense_no_vat_account"),
-                ("Due Date (DD-MM-YYYY)","due_date"),("Payment Method","payment_method"),("Paid Amount","amount_paid")]
+                ("Due Date (DD-MM-YYYY)","due_date"),("Payment Method","payment_method"),("Paid Amount","amount_paid"),("Cash / Bank Account (paid)","cash_account")]
         for index,(label,key) in enumerate(fields):
             rr=index//2; cc=(index%2)*2
             tk.Label(form,text=label,bg=LIGHT).grid(row=rr,column=cc,sticky="w",padx=(14,5),pady=7)
             if key=="kind": widget=ttk.Combobox(form,textvariable=variables[key],values=["assets","expenses","purchases","sales"],state="readonly",width=24)
             elif key=="currency": widget=ttk.Combobox(form,textvariable=variables[key],values=self.currency_codes,state="readonly",width=24)
-            elif key=="payment_method": widget=ttk.Combobox(form,textvariable=variables[key],values=["Cash","Bank Transfer","Cheque","Card","Other"],state="readonly",width=24)
+            elif key=="payment_method": widget=ttk.Combobox(form,textvariable=variables[key],values=["On Account (Not Cash)","Cash","Bank Transfer","Cheque","Card","Other"],state="readonly",width=24)
+            elif key=="cash_account": widget=self.account_search_box(form,variables[key],24)
             elif key=="branch": widget=self.branch_selector(form,variables[key],24,False)
             elif key in ("supplier_account","vat_account","expense_account","expense_no_vat_account"): widget=self.account_search_box(form,variables[key],24)
             elif key in ("invoice_date","due_date"): widget=self.date_entry(form,variables[key],27)
@@ -445,7 +478,7 @@ class InvoicesMixin:
             except Exception as exc: return messagebox.showerror("Invoices",str(exc),parent=window)
             window.destroy(); self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial(); self.load_statement_parties()
             messagebox.showinfo("Invoices","Invoice row added successfully")
-        tk.Button(form,text="Save Invoice",command=save,bg=GOLD,fg=NAVY,font=("Segoe UI",10,"bold"),border=0,padx=24,pady=8).grid(row=9,column=0,columnspan=4,pady=16)
+        tk.Button(form,text="Save Invoice",command=save,bg=GOLD,fg=NAVY,font=("Segoe UI",10,"bold"),border=0,padx=24,pady=8).grid(row=10,column=0,columnspan=4,pady=16)
 
     def add_item_to_selected_invoice(self):
         selected=self.invoice_tree.selection()
@@ -533,6 +566,8 @@ class InvoicesMixin:
         vat_row=tk.Frame(invoice_details,bg=LIGHT); vat_row.pack(anchor="w",fill="x",pady=(1,0))
         tk.Label(vat_row,text="Branch",bg=LIGHT).pack(side="left"); self.branch_selector(vat_row,self.sales_branch,14,False).pack(side="left",padx=(4,10))
         tk.Label(vat_row,text="Amount Paid",bg=LIGHT).pack(side="left"); tk.Entry(vat_row,textvariable=self.sales_amount_paid,width=10).pack(side="left",padx=(4,10))
+        self.sales_cash_account=tk.StringVar()
+        tk.Label(vat_row,text="Paid into",bg=LIGHT).pack(side="left"); self.account_search_box(vat_row,self.sales_cash_account,12).pack(side="left",padx=(4,10))
         self.sales_treatment=tk.StringVar(value="Taxable 11%")
         tk.Label(vat_row,text="VAT Treatment",bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left",padx=(6,4))
         treatment_box=ttk.Combobox(vat_row,textvariable=self.sales_treatment,values=list(SALE_TREATMENTS),state="readonly",width=19); treatment_box.pack(side="left")
@@ -551,6 +586,7 @@ class InvoicesMixin:
         tk.Button(toolbar,text="Delete Line",command=self.remove_sales_item,bg="#8B1E1E",fg="white",border=0,padx=10,pady=4).pack(side="left",padx=2)
         tk.Button(toolbar,text="Save",command=lambda:self.save_sales_invoice(True),bg=NAVY,fg="white",font=("Segoe UI",10,"bold"),border=0,padx=14,pady=4).pack(side="left",padx=(8,2))
         tk.Button(toolbar,text="Delete",command=self.delete_sales_invoice,bg="#8B1E1E",fg="white",border=0,padx=12,pady=4).pack(side="left",padx=2)
+        tk.Button(toolbar,text="Return (goods back)",command=self.return_open_sales_invoice,bg=GOLD,fg=NAVY,font=("Segoe UI",9,"bold"),border=0,padx=10,pady=4).pack(side="left",padx=2)
         self.action_button(toolbar,"Duplicate",self.duplicate_sales_invoice).pack(side="left",padx=(8,2))
         for text,command in (("Print Preview",lambda:self.sales_invoice_pdf("preview")),("PDF",lambda:self.sales_invoice_pdf("pdf")),("Print",lambda:self.sales_invoice_pdf("print")),
                              ("Excel",lambda:self.sales_entry_report("xlsx"))):
@@ -753,7 +789,7 @@ class InvoicesMixin:
         if confirm and self.sales_items and not messagebox.askyesno("Sales Invoice","Start a new invoice? Lines that are not saved will be cleared."): return
         self.sales_edit_id=None; self.sales_items=[]; self.sales_sheet.delete(*self.sales_sheet.get_children())
         self._sales_loaded_state=None
-        self.sales_party.set(""); self.sales_supplier_account.set(""); self.sales_amount_paid.set("0"); self.sales_due_date.set(""); self.sales_open_choice.set("")
+        self.sales_party.set(""); self.sales_supplier_account.set(""); self.sales_amount_paid.set("0"); getattr(self,"sales_cash_account",tk.StringVar()).set(""); self.sales_due_date.set(""); self.sales_open_choice.set("")
         self.sales_doc_type.set("Invoice"); self.sales_category.set("Services")
         self.sales_category_box["values"]=["Goods","Products","Services"]
         self.sales_revenue_caption.config(text="Revenue Account")
@@ -990,6 +1026,7 @@ class InvoicesMixin:
         self.sales_department.set(next((f'{d["code"]} - {d["name"]}' for d in lists["departments"] if d["id"]==detail.get("department_id")),"(none)"))
         self.sales_project.set(next((f'{p["code"]} - {p["name"]}' for p in lists["projects"] if p["id"]==detail.get("project_id")),"(none)"))
         self.sales_treatment.set(next((k for k,v in SALE_TREATMENTS.items() if v==(detail.get("vat_treatment") or "standard")),"Taxable 11%"))
+        self.sales_cash_account.set(detail.get("payment_account") or "")
         self.sales_amount_paid.set(str(detail.get("amount_paid") or 0)); self.sales_due_date.set(safe_display_date(detail.get("due_date")) if detail.get("due_date") else "")
         self.sales_doc_type.set({"credit_note":"Credit Note","debit_note":"Debit Note"}.get(detail.get("doc_subtype") or "invoice","Invoice"))
         self.sales_revenue_caption.config(text="Discount Account" if self.sales_doc_type.get()=="Credit Note" else "Revenue Account")
@@ -1035,6 +1072,7 @@ class InvoicesMixin:
                  "expense_account":self.sales_expense_account.get().split(" - ",1)[0].strip() or self.default_sales_posting_account(),
                  "supplier_side":self.sales_supplier_side.get(),"vat_side":self.sales_vat_side.get(),"expense_side":self.sales_expense_side.get(),
                  "due_date":self.sales_due_date.get().strip(),"payment_method":self.sales_payment_method.get(),"amount_paid":self.sales_amount_paid.get().strip().replace(",","") or "0",
+                 "cash_account":self.sales_cash_account.get().split(" - ",1)[0].strip(),
                  "branch":self.sales_branch.get(),"status":"posted" if post else "review","source_file":"Sales Invoice","source_row":None,
                  "department":self.dimension_code(self.sales_department.get()),"project":self.dimension_code(self.sales_project.get()),
                  "vat_treatment":SALE_TREATMENTS.get(self.sales_treatment.get(),"standard"),

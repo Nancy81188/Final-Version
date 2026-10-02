@@ -15,14 +15,12 @@ class PayrollMixin:
         employee_actions=tk.Frame(employees,bg=LIGHT); employee_actions.pack(fill="x",padx=10,pady=8)
         self.action_button(employee_actions,"New Employee",lambda:self.employee_dialog()).pack(side="left",padx=4)
         self.action_button(employee_actions,"Edit Selected",self.edit_selected_employee).pack(side="left",padx=4)
-        self.action_button(employee_actions,"R3 Registration Worksheet",lambda:self.employee_r3_worksheet("preview")).pack(side="left",padx=4)
-        self.action_button(employee_actions,"R3-1 Worksheet",lambda:self.employee_r3_worksheet("preview","R3-1")).pack(side="left",padx=4)
+        # 2.9.49 (owner request): the R3 / R3-1 worksheets and CNSS Employee Forms buttons are removed; the same forms are in "Official Forms (Excel)".
         
         nssf_forms=tk.Frame(employees,bg=LIGHT); nssf_forms.pack(fill="x",padx=10,pady=(0,5))
         tk.Label(nssf_forms,text="NSSF employee forms:",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
         self.action_button(nssf_forms,"Employment Declaration Worksheet",lambda:self.employee_nssf_declaration("hire","preview")).pack(side="left",padx=4)
         self.action_button(nssf_forms,"Termination Declaration Worksheet",lambda:self.employee_nssf_declaration("leave","preview")).pack(side="left",padx=4)
-        self.action_button(employee_actions,"CNSS Employee Forms",lambda:self.open_cnss_form("cnss_r3", self._selected_employee_id())).pack(side="left",padx=4)
         tk.Button(employee_actions,text="Official Forms (Excel)",command=self.official_excel_form,bg=GOLD,fg=NAVY,border=0,padx=12,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
         self.action_button(employee_actions,"Refresh",self.load_payroll).pack(side="left",padx=4)
         self.employee_tree=self.table(employees,[("number","Employee ID",105),("name","Employee Name",220),("job","Job Title",150),
@@ -311,7 +309,7 @@ class PayrollMixin:
         except Exception as exc: return messagebox.showerror("Payroll",str(exc))
         if hasattr(self,"cnss_employee_combo"): self.refresh_cnss_employee_options()
         self.employee_tree.delete(*self.employee_tree.get_children())
-        for row in self.employee_rows: self.employee_tree.insert("","end",iid=str(row["id"]),values=(row["employee_number"],row["full_name"],row["job_title"],safe_display_date(row.get("hire_date")),safe_display_date(row.get("leave_date")),row.get("branch_name") or "",row["currency"],row["base_salary"],row["nssf_number"],"Yes" if row["active"] else "No"))
+        for row in self.employee_rows: self.employee_tree.insert("","end",iid=str(row["id"]),values=(row["employee_number"],row["full_name"],"" if str(row.get("job_title") or "").strip().lower() in ("","none") else row["job_title"],safe_display_date(row.get("hire_date")),safe_display_date(row.get("leave_date")),row.get("branch_name") or "",row["currency"],row["base_salary"],row["nssf_number"],"Yes" if row["active"] else "No"))
         self.payroll_employee_map={f'{row["employee_number"]} - {row["full_name"]}':row for row in self.employee_rows if row["active"]}
         self.payroll_employee_combo["values"]=list(self.payroll_employee_map)
         if not self.payroll_employee.get() and self.payroll_employee_map: self.payroll_employee.set(next(iter(self.payroll_employee_map))); self.payroll_employee_chosen()

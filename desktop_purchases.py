@@ -102,6 +102,7 @@ class PurchasesMixin:
         self.action_button(r4, "New", self.new_purchase).pack(side="left", padx=(0, 3))
         tk.Button(r4, text="Save Purchase", command=self.save_purchase, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         tk.Button(r4, text="Delete", command=self.delete_purchase, bg=RED, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)
+        tk.Button(r4, text="Return (goods back)", command=self.return_open_purchase, bg=GOLD, fg=NAVY, border=0, padx=10, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(r5, "Upload PDF", self.choose_purchase_pdf).pack(side="left", padx=3)
         self.action_button(r5, "Free PDF Read", self.ai_read_purchase_pdf).pack(side="left", padx=3)
         self.action_button(r5, "Attachments", lambda: self.purchase_attachments()).pack(side="left", padx=3)
@@ -190,6 +191,12 @@ class PurchasesMixin:
         from desktop import row_matches_search
         f = self.purchase_form; typed = f["find"].get().strip(); choices = list(f.get("find_map", {}))
         f["find_box"]["values"] = [c for c in choices if row_matches_search((c,),typed)]
+
+    def return_open_purchase(self):
+        """Purchases screen: send goods of the open purchase invoice back to the supplier (2.9.49)."""
+        invoice_id = getattr(self, "purchase_form", {}).get("id")
+        if not invoice_id: return messagebox.showwarning("Return", "Open the posted purchase invoice first (Find), then press Return.")
+        return self.return_selected_invoice(invoice_id)
 
     def purchase_found(self):
         f = self.purchase_form; invoice_id = f.get("find_map", {}).get(f["find"].get())

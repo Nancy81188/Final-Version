@@ -338,12 +338,13 @@ def _is_blank_or_zero(value):
 def tidy_sections(sections):
     """2.9.45 report check-up: easier to read without changing any figure.
 
-    Columns that are empty or zero on every line are left out (the first two columns - code and name - always
-    stay). Sections marked "fixed" (official layouts such as R5 / R6 boxes) keep every column."""
+    Only sections marked "compact" (the payroll worksheets) leave out the columns that are empty or zero on every
+    line (the first two columns always stay). Every other report - financial statements, ledgers, trial balance,
+    VAT, inventory - keeps all its columns exactly as before (2.9.49, owner request)."""
     tidy = []
     for section in sections or []:
         headers = list(section.get("headers") or []); rows = [list(r) for r in section.get("rows") or []]
-        if section.get("narrative") or section.get("fixed") or len(headers) <= 3 or not rows:
+        if not section.get("compact") or section.get("narrative") or section.get("fixed") or len(headers) <= 3 or not rows:
             tidy.append(section); continue
         keep = [i for i in range(len(headers)) if i < 2 or not all(_is_blank_or_zero(r[i] if i < len(r) else None) for r in rows)]
         if len(keep) == len(headers): tidy.append(section); continue

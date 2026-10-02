@@ -139,11 +139,14 @@ class BalanceReportsMixin:
         result = state.get("result") or {}
         detailed = result.get("title", "").startswith(("Statement", "Detailed"))
         if detailed and len(values) > 1 and values[1] and values[1] not in ("Voucher",):
+            self._opening_from_state = state
             return self.open_transaction(str(values[1]))
         code = str(values[0]).strip()
         if code and code.replace(".", "").isdigit():  # trial balance line: open the statement of that account in a new tab
             v = state["vars"]; v["account_from"].set(code); v["account_to"].set(code); state["flags"]["detailed"].set(True)
+            parent = state["notebook"].select()
             self.run_balance_report(state); state["flags"]["detailed"].set(state["statement"])
+            state.setdefault("parents", {})[state["notebook"].select()] = parent  # Escape comes back to the trial balance
 
     def open_transaction(self, entry_number):
         try: rows = [r for r in self.client.journal() if r["entry_number"] == entry_number]
@@ -159,31 +162,91 @@ class BalanceReportsMixin:
         tree.pack(fill="both", expand=True, padx=10)
         tk.Label(window, text=f'Total  Debit {sum(float(r["debit"] or 0) for r in rows):,.2f}   Credit {sum(float(r["credit"] or 0) for r in rows):,.2f}  {first["currency"]}', bg=LIGHT, fg=NAVY).pack(anchor="e", padx=10)
         buttons = tk.Frame(window, bg=LIGHT); buttons.pack(pady=8)
-        source, source_id = first.get("source_type"), first.get("source_id")
-        def open_source():
-            window.destroy()
-            try:
-                if source == "journal_voucher" and not source_id: self.select_main_tab(self.manual_tab); self.open_voucher(first["entry_id"]); return
-                if source in ("invoice", "journal_voucher") and source_id:
-                    invoice = next((r for r in self.client.invoices() if r["id"] == source_id), None)
-                    if invoice and invoice["kind"] == "sale" and hasattr(self, "sales_open_map"):
-                        self.select_main_tab(self.sales_tab); self.load_sales_customer_list()
-                        key = next((k for k, r in self.sales_open_map.items() if r["id"] == source_id), None)
-                        if key: self.sales_open_choice.set(key); self.open_sales_invoice(); return
-                    if invoice and hasattr(self, "purchase_form"):
-                        self.select_main_tab(self.purchases_tab); self.load_purchases(); f = self.purchase_form
+        def edit(_event=None):
+            window.destroy(); self.open_entry_source(first, return_state)
+        return_state = getattr(self, "_opening_from_state", None); self._opening_from_state = None
+        tk.Button(buttons, text="Edit this entry", command=edit, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
+        tk.Button(buttons, text="Close (Esc)", command=window.destroy, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=4)
+        tree.bind("<Double-1>", edit); window.bind("<Escape>", lambda _e: window.destroy()); window.bind("<Return>", edit)
+        window.focus_set()
+        return window
+
+    # ------------------------------------------------------------ open an entry in the screen where it can be edited (2.9.47)
+    def go_to_main_tab(self, page):
+        """Show a main tab even when it is outside the visible group of tabs."""
+        try: self.select_main_tab(page)
+        except tk.TclError:
+            index = self.main_tab_pages.index(page); self.show_tab_window(max(0, index - 2), index); self.highlight_main_tab()
+
+    def open_entry_source(self, first, return_state=None):
+        """Open the document behind a journal entry where it can be changed. With return_state (a trial balance /
+        statement), Escape on that screen comes back to the same report tab, refreshed."""
+        source, source_id, entry_id = first.get("source_type"), first.get("source_id"), first.get("entry_id")
+        self._report_return = return_state
+        try:
+            if source in ("invoice", "invoice_payment", "journal_voucher") and source_id:
+                invoice = next((r for r in self.client.invoices() if r["id"] == source_id), None)
+                if invoice:
+                    if invoice["kind"] == "sale" and invoice.get("source_file") == "Sales Invoice" and hasattr(self, "sales_tab"):
+                        self.go_to_main_tab(self.sales_tab); self.load_sales_customer_list()
+                        key = next((k for k, r in getattr(self, "sales_open_map", {}).items() if r["id"] == source_id), None)
+                        if key: self.sales_open_choice.set(key); self.open_sales_invoice(); return True
+                    if invoice["kind"] != "sale" and hasattr(self, "purchases_tab"):
+                        self.go_to_main_tab(self.purchases_tab); self.load_purchases(); f = getattr(self, "purchase_form", {})
                         key = next((k for k, i in f.get("find_map", {}).items() if i == source_id), None)
-                        if key: f["find"].set(key); self.purchase_found(); return
-                if source == "payment" and hasattr(self, "payment_forms"):
-                    self.select_main_tab(self.transactions_tab); self.load_transactions()
-                    for form in self.payment_forms.values():
-                        if str(source_id) in form.get("rows", {}): form["tree"].selection_set(str(source_id)); self.edit_payment(form); return
-                if source == "expense" and hasattr(self, "expense_form"):
-                    self.select_main_tab(self.purchases_tab); self.load_expenses(); self.expense_form["tree"].selection_set(str(source_id)); self.edit_expense(); return
-                messagebox.showinfo("Transaction", "This transaction has no editing screen (opening, closing or automatic entry)")
-            except Exception as exc: messagebox.showerror("Transaction", str(exc))
-        tk.Button(buttons, text="Open in its screen", command=open_source, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
-        tk.Button(buttons, text="Close", command=window.destroy, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=4)
+                        if key: f["find"].set(key); self.purchase_found(); return True
+                    # Uploaded data (imported / manual rows): the invoice edit window.
+                    self.go_to_main_tab(self.invoices_tab); self.load_invoices()
+                    if self.invoice_tree.exists(str(source_id)):
+                        self.invoice_tree.selection_set(str(source_id)); self.invoice_tree.see(str(source_id)); self.edit_selected_invoice(); return True
+            if source == "journal_voucher" or (source in (None, "", "manual") and entry_id):
+                self.go_to_main_tab(self.manual_tab); self.open_voucher(entry_id); return True
+            if source == "payment" and hasattr(self, "transactions_tab"):
+                self.go_to_main_tab(self.transactions_tab); self.load_transactions()
+                for form in getattr(self, "payment_forms", {}).values():
+                    if str(source_id) in form.get("rows", {}): form["tree"].selection_set(str(source_id)); self.edit_payment(form); return True
+            if source == "expense" and hasattr(self, "purchases_tab"):
+                self.go_to_main_tab(self.purchases_tab); self.load_expenses(); self.expense_form["tree"].selection_set(str(source_id)); self.edit_expense(); return True
+            if source == "payroll" and hasattr(self, "payroll_tab"):
+                self.go_to_main_tab(self.payroll_tab)
+                messagebox.showinfo("Transaction", "Payroll entries come from the payroll: posted payroll is changed by a new payroll or a journal voucher."); return True
+            self._report_return = None
+            messagebox.showinfo("Transaction", "This entry is made automatically (opening, closing, depreciation or stock variation) and has no editing screen. Correct it with a Journal Voucher.")
+        except Exception as exc:
+            self._report_return = None; messagebox.showerror("Transaction", str(exc))
+        return False
+
+    def edit_journal_selection(self, _event=None):
+        """General Journal: open the selected entry in its editing screen."""
+        selected = self.journal_tree.selection()
+        if not selected: return messagebox.showwarning("General Journal", "Select a line of the entry you want to edit")
+        number = str(self.journal_tree.item(selected[0], "values")[0])
+        try: rows = [r for r in self.client.journal() if r["entry_number"] == number]
+        except Exception as exc: return messagebox.showerror("General Journal", str(exc))
+        if not rows: return messagebox.showinfo("General Journal", f"{number} was not found")
+        return self.open_entry_source(rows[0])
+
+    # ------------------------------------------------------------ Escape in the trial balance / statement (2.9.47)
+    def report_escape(self, state):
+        """Step back one level without closing anything: a statement opened from a line goes back to the line's
+        report, a report goes back to Options. The open tabs (the layout) stay as they are."""
+        if not state: return "break"
+        notebook = state["notebook"]; current = notebook.select()
+        if not current or current == str(state["options_page"]): return "break"
+        parent = state.get("parents", {}).get(current)
+        notebook.select(parent if parent in notebook.tabs() else state["options_page"])
+        return "break"
+
+    def return_to_report(self):
+        """Escape on an editing screen opened from a report: back to that report tab, refreshed."""
+        state = getattr(self, "_report_return", None); self._report_return = None
+        if not state: return None
+        tab = self.statement_tab if state.get("statement") else self.trial_tab
+        self.go_to_main_tab(self.account_reports_tab)
+        try: tab.master.select(tab)
+        except (tk.TclError, AttributeError): pass
+        if state.get("result") is not None: self.run_balance_report(state, refresh=True)
+        return "break"
 
     def balance_party_search(self, v):
         from desktop import row_matches_search
@@ -245,6 +308,7 @@ class BalanceReportsMixin:
     # ---- tabs
     def build_trial(self):
         self.trial_state = self.build_balance_panel(self.trial_tab, statement=False)
+        self.bind_report_escape()
         self.trial_rows = []
 
     def load_trial(self):
@@ -254,17 +318,23 @@ class BalanceReportsMixin:
     def build_statement(self):
         self.statement_state = self.build_balance_panel(self.statement_tab, statement=True)
         self.load_statement_parties()
+        self.bind_report_escape()
+
+    def bind_report_escape(self):
         if not getattr(self,"_statement_escape_bound",False):
             self.bind("<Escape>",self.statement_escape,add="+")
             self._statement_escape_bound=True
 
     def statement_escape(self,event):
-        widget=event.widget
-        while widget is not None:
-            if widget is self.statement_tab:
-                self.show_tab_window(0,0)
-                return "break"
-            widget=getattr(widget,"master",None)
+        """Escape: inside the trial balance / statement, step back one level (layout kept); on a screen opened
+        from a report line, go back to that report."""
+        for state_name, tab_name in (("statement_state","statement_tab"),("trial_state","trial_tab")):
+            tab=getattr(self,tab_name,None); widget=event.widget
+            while widget is not None and tab is not None:
+                if widget is tab: return self.report_escape(getattr(self,state_name,None))
+                widget=getattr(widget,"master",None)
+        if getattr(self,"_report_return",None): return self.return_to_report()
+        return None
 
     def load_statement_parties(self):
         state = getattr(self, "statement_state", None)

@@ -441,6 +441,8 @@ class FinalFeaturesMixin:
         self.action_button(actions, "Filing Worksheet PDF", lambda: self.export_vat_filing_worksheet("pdf")).pack(side="left", padx=3)
         self.action_button(actions, "Open / Fill VAT PDF", self.edit_vat_filing_worksheet).pack(side="left", padx=3)
         self.action_button(actions, "Filing Worksheet Excel", lambda: self.export_vat_filing_worksheet("xlsx")).pack(side="left", padx=3)
+        tk.Button(actions, text="Official Form Q1-2 (PDF)", command=lambda: self.export_vat_official_form("pdf"), bg=GOLD, fg=NAVY, border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        self.action_button(actions, "Official Form Excel", lambda: self.export_vat_official_form("xlsx")).pack(side="left", padx=3)
         self.vat_headline = tk.Label(page, text="Choose the year and quarter, then press Generate.", bg=LIGHT, fg=NAVY, font=("Segoe UI", 11, "bold"), anchor="w", justify="left")
         self.vat_headline.pack(fill="x", padx=12, pady=(8, 0))
         self.vat_note = tk.Label(page, text="", bg=LIGHT, fg=MUTED, anchor="w", justify="left"); self.vat_note.pack(fill="x", padx=12)
@@ -586,6 +588,15 @@ class FinalFeaturesMixin:
         except Exception as exc: return messagebox.showwarning("Quarterly VAT", str(exc))
         self.save_sections(f"Quarterly VAT filing worksheet - Q{result['quarter']} {result['year']}",
                            notices, sections, f"VAT_Filing_Worksheet_Q{result['quarter']}_{result['year']}", format_name)
+
+    def export_vat_official_form(self, format_name):
+        """Q1-2 with annexes Q11-2 (partial deduction, Art. 31) and Q13-2 (largest suppliers / customers)."""
+        result = getattr(self, "vat_return_result", None)
+        if not result: return messagebox.showwarning("Quarterly VAT", "Generate the return first")
+        try: meta, sections = vat_rules.official_form(result, self.client.settings())
+        except Exception as exc: return messagebox.showwarning("Quarterly VAT", str(exc))
+        self.save_sections(f"VAT periodic declaration Q1-2 - Q{result['quarter']} {result['year']} | التصريح الدوري", meta, sections,
+                           f"VAT_Q1-2_Q{result['quarter']}_{result['year']}", format_name)
 
     def edit_vat_filing_worksheet(self):
         result=getattr(self,"vat_return_result",None)

@@ -70,7 +70,7 @@ def _documents(db, start, end, currency, include_review):
     statuses = ("posted", "review") if include_review else ("posted",)
     documents = []; skipped = []; review_excluded = 0
     with db.connect() as connection:
-        invoices = [dict(row) for row in connection.execute("""SELECT i.*,p.name party_name FROM invoices i
+        invoices = [dict(row) for row in connection.execute("""SELECT i.*,p.name party_name,COALESCE(NULLIF(p.mof_number,''),p.tax_number) party_mof FROM invoices i
             LEFT JOIN parties p ON p.id=i.party_id WHERE i.status NOT IN ('cancelled','deleted')""")]
         expenses = [dict(row) for row in connection.execute("SELECT * FROM expenses")]
     for row in invoices:
@@ -86,6 +86,7 @@ def _documents(db, start, end, currency, include_review):
         elif row.get("entry_type") == "expenses": category = "expenses"
         else: category = "purchases"
         documents.append({"source": "invoice", "id": row["id"], "date": day, "number": row["invoice_number"], "party": row.get("party_name") or "",
+            "party_id": row.get("party_id"), "party_mof": row.get("party_mof") or "",
             "category": category, "currency": row["currency"], "base": _money(row.get("deductible_subtotal") or row.get("subtotal")),
             "exempt": _money(row.get("non_deductible_subtotal")), "vat": _money(row.get("vat")), "status": row["status"],
             "recoverable": category == "sales" or bool(int(row.get("vat_recoverable") if row.get("vat_recoverable") is not None else 1)),
@@ -162,14 +163,15 @@ def _classify(doc):
 
 
 def _turnover(db, start, end, include_review, rates):
-    """Turnover in LBP for the partial deduction ratio: (taxable + zero-rated) / (taxable + zero-rated + exempt)."""
+    """Turnover in LBP for the partial deduction ratio (Art. 31, note of form Q11-2):
+    revenues giving the right of deduction (taxable + zero-rated) / total revenues (+ exempt + outside the scope)."""
     documents, _skipped, _review = _documents(db, start, end, None, include_review)
     taxable = ZERO; exempt = ZERO
     for doc in documents:
         if doc["category"] != "sales": continue
         parts = _classify(doc); rate = rates(doc["currency"], doc["date"])
         taxable += (parts.get("sales_base", ZERO) + parts.get("sales_zero", ZERO)) * rate
-        exempt += parts.get("sales_exempt", ZERO) * rate
+        exempt += (parts.get("sales_exempt", ZERO) + parts.get("sales_out", ZERO)) * rate
     return taxable, exempt
 
 
@@ -479,6 +481,95 @@ def filing_worksheet(result, company):
         group("VAT balance and credit / الرصيد الضريبي (published Q1-2 specimen)",
               ("E1", "F1", "F2", "F3", "F4"), ("E1", "F2", "F4")),
     ]
+
+
+def official_form(result, company):
+    """The return in the layout of the Ministry's periodic declaration Q1-2, with its annexes Q11-2 (partial right of
+    deduction, Art. 31: deductible VAT on mixed purchases = VAT x ratio) and Q13-2 (ten largest suppliers and customers).
+    Amounts in LBP. Boxes that Saber does not record separately (advances, tax withheld at source, sales of fixed assets,
+    penalties) show 0 and are filled by hand when they apply."""
+    if result.get("currency_filter") != "All" or result.get("include_review"):
+        raise ValueError("The official form requires All Currencies and excludes Review documents")
+    D = lambda v: Decimal(str(v or 0)); ratio = D(result["deduction_ratio"]); totals = {k: D(v) for k, v in result["totals_lbp"].items()}
+    box = {code: [ZERO, ZERO, ZERO] for code in (100, 110, 120, 130, 140, 150, 160, 156, 170, 180, 190, 200, 210, 220, 230, 240, 250)}
+    annex = {code: [ZERO, ZERO] for code in (600, 610, 620, 630, 460, 560, 660, 670, 680, 690, 700, 710)}
+    groups = {"purchases": (600, 610, 620), "customs": (600, 610, 620), "expenses": (460, 560, 660), "assets": (680, 690, 700)}
+    suppliers = {}; customers = {}
+    for doc in result.get("documents", []):
+        rate = D(doc.get("lbp_rate") or 1); base = D(doc["base"]) * rate; exempt = D(doc["exempt"]) * rate; vat = D(doc["vat"]) * rate
+        if doc["category"] == "sales":
+            treatment = doc.get("treatment") or "standard"
+            if treatment == "zero_rated": box[130][0] += base + exempt
+            elif treatment == "exempt": box[140][0] += base + exempt
+            elif treatment == "out_of_scope": box[150][0] += base + exempt
+            else: box[100][0] += base; box[100][1] += vat; box[140][0] += exempt
+            key = (doc.get("party") or "-", doc.get("party_mof") or ""); customers[key] = customers.get(key, ZERO) + base + exempt
+            continue
+        only, never, mixed = groups.get(doc["category"], groups["purchases"])
+        blocked = not doc.get("recoverable", True) or doc.get("use") == "exempt"
+        line = never if blocked else (mixed if doc.get("use") == "mixed" else only)
+        annex[line][0] += base + exempt
+        if not blocked: annex[line][1] += vat * (ratio if line == mixed else 1)
+        if doc.get("source") == "invoice":
+            key = (doc.get("party") or "-", doc.get("party_mof") or ""); suppliers[key] = suppliers.get(key, ZERO) + base + exempt
+    for total, parts in ((630, (600, 610, 620)), (670, (460, 560, 660)), (710, (680, 690, 700))):
+        annex[total] = [sum((annex[p][i] for p in parts), ZERO) for i in (0, 1)]
+    box[170][1] = totals.get("reverse_output", ZERO); box[180][1] = totals.get("adj_output", ZERO)
+    box[190] = [sum((box[c][i] for c in (100, 110, 120, 130, 140, 150, 160, 156, 170, 180)), ZERO) for i in (0, 1, 2)]
+    box[200] = [annex[630][0], ZERO, annex[630][1]]; box[210] = [annex[670][0], ZERO, annex[670][1]]; box[230] = [annex[710][0], ZERO, annex[710][1]]
+    box[250] = [sum((box[c][i] for c in (200, 210, 220, 230, 240)), ZERO) for i in (0, 1, 2)]
+    m = lambda v: _lbp(v)
+    labels = ((100, "صافي الإيرادات الخاضعة", "Net taxable revenues"), (110, "سلفات مقبوضة عن عمليات خاضعة", "Advances received on taxable operations"),
+              (120, "صافي الإيرادات الخاضعة المحتسبة ضريبتها مسبقاً لدى المنبع", "Taxable revenues with VAT already withheld at source"),
+              (130, "صافي الإيرادات المعفاة مع حق الحسم", "Exempt revenues with right of deduction (zero-rated)"),
+              (140, "صافي الإيرادات المعفاة دون حق الحسم", "Exempt revenues without right of deduction"),
+              (150, "صافي الإيرادات الخارجة عن نطاق الضريبة", "Revenues outside the scope of VAT"), (160, "صافي مبيع أصول ثابتة خاضعة", "Sales of taxable fixed assets"),
+              (156, "صافي مبيع أصول ثابتة غير خاضعة", "Sales of non-taxable fixed assets"), (170, "ضريبة مستحقة للدفع عن مبالغ مستحقة لغير المقيمين", "VAT due on amounts owed to non-residents"),
+              (180, "مختلف", "Other / adjustments"), (190, "المجموع", "Total"),
+              (200, "صافي المشتريات (+/- التغيير في المخزون)", "Net purchases"), (210, "صافي الأعباء", "Net charges (expenses)"),
+              (220, "سلفات مدفوعة عن عمليات خاضعة", "Advances paid on taxable operations"), (230, "صافي مشتريات أصول ثابتة", "Net purchases of fixed assets"),
+              (240, "مبالغ مشتريات محتسبة ضريبتها مسبقاً لدى المنبع", "Purchases with VAT withheld at source"), (250, "المجموع", "Total"))
+    q12 = [[str(c), en, ar, m(box[c][0]), m(box[c][1]) if c < 200 else "", m(box[c][2]) if c >= 200 else ""] for c, ar, en in labels]
+    credit_bf = D(result.get("credit_brought_forward_lbp")); payable = D(result.get("payable_lbp")); credit_cf = D(result.get("credit_carried_forward_lbp"))
+    settlement = [["300", "Tax payable", "الضريبة المستحقة للدفع", m(totals["total_output"])],
+                  ["310", "Less: credit brought forward from the previous period", "تنزيل: الرصيد المدور من الفترة الضريبية السابقة", m(credit_bf)],
+                  ["330", "Less: deductible VAT for the current period", "تنزيل: ضريبة قابلة للحسم عن الفترة الحالية", m(totals["total_input"])],
+                  ["340", "Net tax payable", "صافي الضريبة المستحقة للدفع", m(payable)],
+                  ["350", "Credit carried forward, refundable", "رصيد مدور قابل للإسترداد", m(credit_cf)],
+                  ["355", "Amount offset (refund request)", "المبلغ الذي أجري به مقاصة", m(D(result.get("refund_requested_lbp")))],
+                  ["360-368", "Penalties (fill in when applicable)", "الغرامات", 0],
+                  ["370", "Total due", "إجمالي المتوجب دفعه", m(payable)]]
+    a_labels = ((600, "Purchases used only for operations giving the right of deduction", "المشتريات المستعملة فقط لعمليات تتيح حق الحسم"),
+                (610, "Purchases used only for operations not giving the right of deduction", "المشتريات المستعملة فقط لعمليات لا تتيح حق الحسم"),
+                (620, "Purchases whose use cannot be determined *", "المشتريات التي لا يمكن تحديد وجهة استعمالها"), (630, "Total (600+610+620)", "المجموع"),
+                (460, "Charges used only for operations giving the right of deduction", "الأعباء المستعملة فقط لعمليات تتيح حق الحسم"),
+                (560, "Charges used only for operations not giving the right of deduction", "الأعباء المستعملة فقط لعمليات لا تتيح حق الحسم"),
+                (660, "Charges whose use cannot be determined *", "الأعباء التي لا يمكن تحديد وجهة استعمالها"), (670, "Total (460+560+660)", "المجموع"),
+                (680, "Fixed assets used only for operations giving the right of deduction", "الأصول الثابتة المستعملة فقط لعمليات تتيح حق الحسم"),
+                (690, "Fixed assets used only for operations not giving the right of deduction", "الأصول الثابتة المستعملة فقط لعمليات لا تتيح حق الحسم"),
+                (700, "Fixed assets whose use cannot be determined *", "الأصول الثابتة التي لا يمكن تحديد وجهة استعمالها"), (710, "Total (680+690+700)", "المجموع"))
+    q11 = [[str(c), en, ar, m(annex[c][0]), m(annex[c][1]) if c not in (610, 560, 690) else ""] for c, en, ar in a_labels]
+    turnover = result.get("ytd_turnover_lbp") or {}
+    ratio_rows = [["Revenues giving the right of deduction (100+120+130+160+180)", "الإيرادات التي تتيح حق الحسم", m(D(turnover.get("taxable")))],
+                  ["Total revenues (100+120+130+140+150+160+156+180)", "إجمالي الإيرادات", m(D(turnover.get("taxable")) + D(turnover.get("exempt")))],
+                  ["Deduction ratio applied (Art. 31)", "نسبة الحسم", f"{ratio * 100:.2f}% ({result.get('ratio_source', '')})"],
+                  ["* Deductible VAT on 620 / 660 / 700 = VAT paid x ratio", "الضريبة القابلة للحسم = الضريبة المدفوعة x النسبة", ""]]
+    def top(data):
+        rows = sorted(data.items(), key=lambda pair: -pair[1])[:10]
+        return [[str(i), name, mof, m(value)] for i, ((name, mof), value) in enumerate(rows, 1)] or [["-", "None in this period", "", 0]]
+    head = [f"Company: {company.get('company_name') or '-'}     VAT registration No.: {company.get('company_mof') or '-'}",
+            f"Period: Q{result['quarter']} {result['year']} ({display_date(result['date_from'])} to {display_date(result['date_to'])})     Filing due: {display_date(result['due_date'])}     Amounts in LBP",
+            "Prepared from posted documents in the layout of the periodic declaration Q1-2 and its annexes Q11-2 and Q13-2. Check against the form issued by the Ministry before filing."]
+    sections = [{"heading": "Q1-2 Periodic declaration | ق1-2 التصريح الدوري - Revenues and purchases", "fixed": True,
+                 "headers": ["Box | الخانة", "Item", "البيان", "(1) Amount | المبلغ", "(2) VAT due | الضريبة المستحقة", "(3) Deductible VAT | الضريبة القابلة للحسم"],
+                 "rows": q12, "total_rows": [10, 16]},
+                {"heading": "Q1-2 Settlement | التسوية", "fixed": True, "headers": ["Box | الخانة", "Item", "البيان", "Amount (LBP) | المبلغ"], "rows": settlement, "total_rows": [3, 7]},
+                {"heading": "Q11-2 Annex - partial right of deduction (Art. 31) | ملحق التصريح الدوري لحق الحسم الجزئي", "fixed": True,
+                 "headers": ["Box | الخانة", "Item", "البيان", "(1) Amount | المبلغ", "(2) Deductible VAT | الضريبة القابلة للحسم"], "rows": q11, "total_rows": [3, 7, 11]},
+                {"heading": "Deduction ratio | نسبة الحسم", "fixed": True, "headers": ["Item", "البيان", "Value"], "rows": ratio_rows, "total_rows": []},
+                {"heading": "Q13-2 Annex - ten largest suppliers | أكبر عشرة موردين", "fixed": True, "headers": ["#", "Supplier | المورد", "MOF No. | رقم التسجيل", "Purchases (LBP)"], "rows": top(suppliers), "total_rows": []},
+                {"heading": "Q13-2 Annex - ten largest customers | أكبر عشرة زبائن", "fixed": True, "headers": ["#", "Customer | الزبون", "MOF No. | رقم التسجيل", "Sales (LBP)"], "rows": top(customers), "total_rows": []}]
+    return head, sections
 
 
 def json_ready(value):

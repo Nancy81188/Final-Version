@@ -79,8 +79,9 @@ def formatted_user_date(value):
 
 def safe_display_date(value):
     """Show a saved date as DD-MM-YYYY; keep the original text if it is in another format."""
+    if value is None or str(value).strip().lower() in ("", "none", "null", "nan"): return ""
     try: return formatted_user_date(value)
-    except (ValueError, TypeError): return "" if value is None else str(value)
+    except (ValueError, TypeError): return str(value)
 
 def natural_sort_value(value):
     text=str(value or "").strip()

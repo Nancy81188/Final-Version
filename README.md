@@ -1,5 +1,35 @@
 # Saber Accounting MVP
 
+## Version 2.9.49 (VAT form Q1-2 with Art. 31 annex, returns from the invoice screens, voucher edit, report filters)
+
+- **VAT: "Official Form Q1-2 (PDF)" / "Official Form Excel"** (Quarterly VAT). The return in the layout of the Ministry's periodic declaration: boxes 100-190 (revenues: amount / VAT due), 200-250 (purchases, charges, fixed assets: amount / deductible VAT), settlement 300-370; annex **Q11-2** partial right of deduction (boxes 600-710): purchases, charges and fixed assets used only for deductible operations, only for non-deductible operations, and whose use cannot be determined - for these the deductible VAT = VAT paid x ratio (Art. 31), computed automatically; annex **Q13-2** ten largest suppliers and customers with their MOF numbers. Boxes Saber does not record separately (advances, withholding at source, fixed-asset sales, penalties) show 0 to be completed by hand.
+- **Deduction ratio corrected to the form's definition:** total revenues now include revenues outside the scope of VAT (box 150), as the note of Q11-2 states (revenues giving the right of deduction / total revenues). Before, they were left out, which gave a ratio that was too high when such revenues existed.
+- **Return (goods back)** buttons on the Sales Invoice and Purchases screens, for the invoice that is open (the same quantity-reviewed return as in Uploaded Data; stock moves back).
+- **Journal Voucher: "Edit..."** opens a searchable list of saved vouchers; double-click / Enter opens one to change, then Save.
+- **Financial Reports: "Choose filters..."** - tick which filters appear (Branch, Project, Department, Customer / Supplier, Section); they filter the General Ledger. The choice is kept on this computer.
+- **Reports keep all their columns again** (owner request): only the payroll worksheets hide all-zero columns; financial statements, ledgers, trial balance, VAT and inventory are as before 2.9.45.
+- Payroll > Employees: the R3 / R3-1 worksheet and CNSS Employee Forms buttons are removed (the forms remain in "Official Forms (Excel)"); empty dates and job titles no longer show "None".
+- Tests: new `test_v2_9_49.py` (form boxes, annex and partial deduction, ratio with out-of-scope revenues, largest suppliers, all-currencies rule, columns kept, journal project / department). 438 tests pass.
+- Changed files: vat_return.py, desktop_final.py, desktop_invoices.py, desktop_purchases.py, desktop_brains.py, desktop_reports.py, desktop_payroll.py, desktop_common.py, report_export.py, payroll_reports.py, database.py, app_runtime.py, installer.iss, README.md, test_v2_9_49.py (new), test_inventory_v2_9_45.py.
+
+## Version 2.9.48 (Payment & Receipt: customer / supplier always found)
+
+- Saving a receipt or payment said "Choose the customer / supplier from the list" even with a customer chosen: the box had to hold exactly "Name | account number", so a typed name, or a customer created after the screen was opened, was refused. Saber now finds the party from the full text, the name alone, the account number, or a part of the name that matches one party only (the list is reloaded once for new parties). When several match, it lists them. The box then shows the full choice and the open invoices load (leaving the box with the same party keeps the allocations already typed).
+- Tests: new `test_payment_party.py`. 434 tests pass.
+- Changed files: desktop_stage3.py, app_runtime.py, installer.iss, README.md, test_payment_party.py (new).
+
+## Version 2.9.47 (cash invoices settled, edit entries, chart of accounts edit, Escape in reports)
+
+- **Invoices paid on the spot now post their payment.** When an invoice (uploaded, added as a row, or from the Sales Invoice screen) has a payment method other than "On Account" and an Amount Paid, Saber makes the settlement entry `PINV-<id>`: sale Dr cash / bank - Cr customer; purchase Dr supplier - Cr cash / bank. Before, the amount was only stored and the customer / supplier stayed open in the ledger.
+- **Choose the account:** new field "Cash / Bank Account (paid)" in Edit Selected and Add Invoice Row, and "Paid into" on the Sales Invoice screen. Empty = 531 for Cash, 512 for the other methods. The choice is kept with the invoice (`invoices.payment_account`). Editing the invoice rebuilds the entry; On Account / zero paid removes it; cancelling or deleting the invoice removes it.
+- **Invoices uploaded before this version:** Uploaded Data > "Create Missing Payment Entries" makes the missing entries once (invoices in a locked or closed period are listed and left as they are).
+- **General Journal: "Edit Selected Entry"** (or double-click a line) opens the entry where it can be changed: Journal Voucher, Sales Invoice, Purchases, Uploaded Data edit window, Payment & Receipt or Expense. Automatic entries (opening, closing, depreciation, stock variation) say so and are corrected with a Journal Voucher.
+- **Chart of accounts: "Edit Selected Account"** (or double-click / Enter) opens a window with the English, French and Arabic names and the type, and a **Save** button (Enter saves, Escape cancels). Each change is in the audit log.
+- **Trial Balance / Statement of Account:** Escape now steps back one level and closes nothing (a statement opened from a trial balance line goes back to that trial balance; a report goes back to Options). It no longer jumps to the Dashboard. A transaction window has "Edit this entry" (or double-click / Enter) and Escape closes it. After editing an entry opened from a report, Escape returns to the same report tab, refreshed.
+- Uploaded Data: "Create Return / Credit Note" renamed "Create Return (goods back)".
+- Tests: new `test_v2_9_47.py` (cash sale and bank purchase entries with the chosen account, on account / unpaid none, edit / cancel / delete follow the invoice, customer balance settled, missing entries created once and locked periods skipped, account names and type saved and checked, the account edit window, journal edit). The statement navigation test now checks the new Escape. 431 tests pass.
+- Changed files: database.py, server.py, client.py, desktop_invoices.py, desktop_settings.py, desktop_reports.py, desktop_balance_reports.py, app_runtime.py, installer.iss, README.md, test_v2_9_47.py (new), test_statement_navigation.py.
+
 ## Version 2.9.46 (Windows build: every program file included automatically)
 
 - The 2.9.45 build failed only because GitHub still had the 2.9.43 workflow (uploading files does not replace the `.github` folder), so the new payroll modules were missing from the build and the safety test stopped it.

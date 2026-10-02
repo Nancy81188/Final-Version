@@ -220,6 +220,7 @@ def build_payroll_report(db, report="R10", period_type="quarterly", year=None, i
         sections.append({"heading": "Grand total", "headers": ["Group", "Employees", "Gross", "Income Tax", "Retro Tax", employee_label, "Employer NSSF"],
                          "rows": [[r[0], r[1]] + [_lbp(x) for x in r[2:]] for r in rows], "total_rows": [len(rows) - 1]})
     sections.append(settings_section)
+    for section in sections: section.setdefault("compact", True)  # payroll worksheets: hide all-zero columns
     meta = [f"Company: {company.get('company_name') or '-'}   MOF No.: {company.get('company_mof') or '-'}",
             f"Period: {label} ({_display(start)} to {_display(end)})   Amounts in LBP",
             "Source: " + ("posted and draft payroll (draft figures are not final)" if include_drafts else "posted payroll only"),

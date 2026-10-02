@@ -15,12 +15,13 @@ class SettingsMixin:
         tk.Entry(controls,textvariable=self.new_account_parent,width=9).pack(side="left",padx=3)
         ttk.Combobox(controls,textvariable=self.new_account_type,values=["asset","liability","equity","income","expense"],state="readonly",width=9).pack(side="left",padx=3)
         self.action_button(controls,"Create Account",self.save_new_account).pack(side="left",padx=5)
-        self.action_button(controls,"Edit Selected Name",self.rename_selected_account).pack(side="left",padx=5)
+        tk.Button(controls,text="Edit Selected Account",command=self.edit_selected_account,bg=GOLD,fg=NAVY,border=0,padx=12,pady=6,font=("Segoe UI",9,"bold")).pack(side="left",padx=5)
         self.action_button(controls,tr(self.language.get(),"refresh"),self.load_accounts).pack(side="right")
         self.accounts_tree=self.table(self.accounts_tab,[
             ("code","Account",100),("parent","Parent",80),("english","English",270),
             ("french","French",270),("arabic","Arabic",270),("type","Type",90)])
-        self.accounts_tree.bind("<Double-1>",lambda _event:self.load_selected_account_name())
+        self.accounts_tree.bind("<Double-1>",lambda _event:self.edit_selected_account())
+        self.accounts_tree.bind("<Return>",lambda _event:self.edit_selected_account())
         self.load_accounts()
 
     def save_new_account(self):
@@ -42,6 +43,33 @@ class SettingsMixin:
         selected=self.accounts_tree.selection()
         if not selected: return
         values=self.accounts_tree.item(selected[0],"values"); self.new_account_code.set(values[0]); self.new_account_name.set(values[2])
+
+    def edit_selected_account(self):
+        """Edit the selected account in its own window: names (English / French / Arabic) and type, then Save."""
+        selected=self.accounts_tree.selection()
+        if not selected: return messagebox.showwarning("Chart of Accounts","Select an account first (click it), then Edit")
+        values=self.accounts_tree.item(selected[0],"values"); code=str(values[0])
+        window=tk.Toplevel(self); window.title(f"Edit account {code}"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        fields={"name_en":tk.StringVar(value=values[2]),"name_fr":tk.StringVar(value=values[3]),"name_ar":tk.StringVar(value=values[4]),"type":tk.StringVar(value=values[5])}
+        tk.Label(window,text=f"Account {code}"+(f"   (parent {values[1]})" if values[1] else ""),bg=LIGHT,fg=NAVY,font=("Segoe UI",11,"bold")).grid(row=0,column=0,columnspan=2,padx=14,pady=(12,6),sticky="w")
+        for row,(key,label) in enumerate((("name_en","English name"),("name_fr","French name"),("name_ar","Arabic name | الاسم بالعربية")),1):
+            tk.Label(window,text=label,bg=LIGHT).grid(row=row,column=0,padx=14,pady=5,sticky="w")
+            entry=tk.Entry(window,textvariable=fields[key],width=44,justify="right" if key=="name_ar" else "left"); entry.grid(row=row,column=1,padx=14,pady=5)
+            if key=="name_en": entry.focus_set(); entry.select_range(0,"end")
+        tk.Label(window,text="Type",bg=LIGHT).grid(row=4,column=0,padx=14,pady=5,sticky="w")
+        ttk.Combobox(window,textvariable=fields["type"],values=["asset","liability","equity","income","expense"],state="readonly",width=14).grid(row=4,column=1,padx=14,pady=5,sticky="w")
+        def save(_event=None):
+            try: self.client.update_account(code,{key:var.get().strip() for key,var in fields.items()})
+            except Exception as exc: return messagebox.showerror("Chart of Accounts",str(exc),parent=window)
+            window.destroy(); self._account_cache=None; self.load_accounts()
+            for iid in self.accounts_tree.get_children():
+                if str(self.accounts_tree.item(iid,"values")[0])==code: self.accounts_tree.selection_set(iid); self.accounts_tree.see(iid); break
+            messagebox.showinfo("Chart of Accounts",f"Account {code} saved")
+        buttons=tk.Frame(window,bg=LIGHT); buttons.grid(row=5,column=0,columnspan=2,pady=12)
+        tk.Button(buttons,text="Save",command=save,bg=GOLD,fg=NAVY,border=0,padx=24,pady=7,font=("Segoe UI",10,"bold")).pack(side="left",padx=5)
+        tk.Button(buttons,text="Cancel",command=window.destroy,bg=NAVY,fg="white",border=0,padx=18,pady=7).pack(side="left",padx=5)
+        window.bind("<Return>",save); window.bind("<Escape>",lambda _e: window.destroy())
+        return window
 
     def rename_selected_account(self):
         selected=self.accounts_tree.selection()

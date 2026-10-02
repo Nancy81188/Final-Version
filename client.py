@@ -166,6 +166,7 @@ class ApiClient:
     def next_account_number(self,prefix): return self.request("GET",f"/api/accounts/next-number?{urlencode({'prefix':prefix})}")["account_number"]
     def save_account(self,item): return self.request("POST","/api/accounts",item)["account"]
     def rename_account(self,code,name): return self.request("PUT",f"/api/accounts/{code}",{"name_en":name})["account"]
+    def update_account(self,code,item): return self.request("PUT",f"/api/accounts/{code}",item)["account"]
     def parties(self): return self.request("GET", "/api/parties")["items"]
     def branches(self): return self.request("GET","/api/branches")["items"]
     def save_branch(self,name): return self.request("POST","/api/branches",{"name":name})["branch"]
@@ -192,6 +193,7 @@ class ApiClient:
     def import_invoices(self, items, replace_existing=True): return self.request("POST", "/api/invoices/import", {"items": items, "replace_existing": replace_existing})
     def create_manual_invoice(self, invoice, items): return self.request("POST", "/api/invoices/manual", {"invoice": invoice, "items": items})
     def update_invoice(self, invoice_id, invoice): return self.request("PUT", f"/api/invoices/{invoice_id}", {"invoice": invoice})
+    def create_missing_invoice_payments(self): return self.request("POST","/api/invoices/payment-entries",{})
     def delete_invoice(self,invoice_id): return self.request("DELETE",f"/api/invoices/{invoice_id}")
     def delete_journal_voucher(self,entry_id): return self.request("DELETE",f"/api/journal/{entry_id}")
     def delete_opening_voucher(self,entry_id): return self.request("DELETE",f"/api/opening-vouchers/{entry_id}")

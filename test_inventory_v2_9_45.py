@@ -144,11 +144,13 @@ class BrandAndFiltersTest(_Base):
 
 class TidyReportsTest(unittest.TestCase):
     def test_empty_and_zero_columns_are_left_out_except_fixed_layouts(self):
-        section = {"heading": "x", "headers": ["Code", "Name", "Salary", "Bonus", "Note"], "rows": [["1", "A", 10, 0, ""], ["TOTAL", "", 10, Decimal(0), None]], "total_rows": [1]}
+        section = {"heading": "x", "compact": True, "headers": ["Code", "Name", "Salary", "Bonus", "Note"], "rows": [["1", "A", 10, 0, ""], ["TOTAL", "", 10, Decimal(0), None]], "total_rows": [1]}
         tidy = tidy_sections([section])[0]
         self.assertEqual(tidy["headers"], ["Code", "Name", "Salary"]); self.assertEqual(tidy["rows"], [["1", "A", 10], ["TOTAL", "", 10]])
         self.assertEqual(tidy["hidden_columns"], ["Bonus", "Note"])
         self.assertEqual(tidy_sections([{**section, "fixed": True}])[0]["headers"], section["headers"])
+        plain = {k: v for k, v in section.items() if k != "compact"}  # financial and other reports keep every column
+        self.assertEqual(tidy_sections([plain])[0]["headers"], section["headers"])
 
 
 if __name__ == "__main__":

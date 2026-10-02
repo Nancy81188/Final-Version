@@ -180,6 +180,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
         for text, step in (("|<", "first"), ("<", "previous"), (">", "next"), (">|", "last")):
             tk.Button(bar, text=text, command=lambda s=step: self.navigate_voucher(s), bg=GOLD, fg=NAVY, border=0, width=3, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="New", command=self.new_manual_voucher, bg="white", fg=NAVY, border=0, padx=12).pack(side="left", padx=(12, 2), pady=4)
+        tk.Button(bar, text="Edit...", command=self.choose_voucher_to_edit, bg="white", fg=NAVY, border=0, padx=12, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="Save", command=self.save_manual_invoice, bg=GOLD, fg=NAVY, border=0, padx=14, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="Automatic DOE", command=self.show_doe_page, bg=GOLD, fg=NAVY, border=0, padx=8).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="Delete", command=self.delete_current_voucher, bg=RED, fg="white", border=0, padx=12).pack(side="left", padx=2, pady=4)
@@ -437,6 +438,38 @@ class BrainsScreensMixin(BalanceReportsMixin):
         return totals["voucher"]["D"], totals["voucher"]["C"]
 
     # ---- voucher list, navigation, open, save
+    def choose_voucher_to_edit(self):
+        """2.9.49: list of saved vouchers; double-click / Enter opens one here to change it, then Save."""
+        self.load_manual_vouchers()
+        window = tk.Toplevel(self); window.title("Open a voucher to edit"); window.configure(bg=LIGHT); window.transient(self)
+        self.fit_dialog(window, 900, 520, 600, 320)
+        search = tk.StringVar(); top = tk.Frame(window, bg=LIGHT); top.pack(fill="x", padx=10, pady=8)
+        tk.Label(top, text="Search (number, date, description, amount)", bg=LIGHT).pack(side="left")
+        entry = tk.Entry(top, textvariable=search, width=40); entry.pack(side="left", padx=6); entry.focus_set()
+        tree = ttk.Treeview(window, columns=("number", "date", "description", "amount"), show="headings", height=16)
+        for key, label, width in (("number", "Number", 140), ("date", "Date", 95), ("description", "Description", 420), ("amount", "Amount", 150)):
+            tree.heading(key, text=label); tree.column(key, width=width, anchor="e" if key == "amount" else "w")
+        tree.pack(fill="both", expand=True, padx=10)
+        rows = sorted(getattr(self, "manual_voucher_rows", {}).values(), key=lambda v: self.voucher_order.index(v["id"]) if v["id"] in getattr(self, "voucher_order", []) else 0, reverse=True)
+        def fill(*_a):
+            tree.delete(*tree.get_children()); typed = search.get().strip().casefold()
+            for v in rows:
+                values = (v["number"], _date_text(v["date"]), v["description"], f'{v["debit"]:,.2f} {v["currency"]}')
+                if not typed or typed in " ".join(values).casefold(): tree.insert("", "end", iid=str(v["id"]), values=values)
+            children = tree.get_children()
+            if children: tree.selection_set(children[0]); tree.focus(children[0])
+        def open_selected(_e=None):
+            selected = tree.selection()
+            if not selected: return
+            window.destroy(); self.open_voucher(int(selected[0]))
+        search.trace_add("write", fill); fill()
+        tree.bind("<Double-1>", open_selected); tree.bind("<Return>", open_selected); entry.bind("<Return>", open_selected)
+        entry.bind("<Down>", lambda _e: (tree.focus_set(), "break")[1]); window.bind("<Escape>", lambda _e: window.destroy())
+        buttons = tk.Frame(window, bg=LIGHT); buttons.pack(pady=8)
+        tk.Button(buttons, text="Open to edit", command=open_selected, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
+        tk.Button(buttons, text="Close", command=window.destroy, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=4)
+        return window
+
     def load_manual_vouchers(self):
         if not hasattr(self, "manual_find_box"): return
         try: rows = [row for row in self.client.journal() if row.get("source_type") == "journal_voucher"]

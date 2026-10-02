@@ -315,7 +315,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
                 yield child
                 yield from descendants(child)
         account_boxes=[widget for widget in descendants(window) if getattr(widget,"_account_var",None) is not None]
-        self.assertEqual(len(account_boxes),4)
+        self.assertEqual(len(account_boxes),5)  # 2.9.47: + Cash / Bank Account (paid)
         for box in account_boxes:
             self.assertTrue(any(isinstance(child,tk.Button) and child.cget("text")=="Find" for child in box.master.winfo_children()))
             self.assertLessEqual(box.master.winfo_rootx()+box.master.winfo_width(),window.winfo_rootx()+window.winfo_width())
@@ -383,7 +383,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
             self.assertEqual(sheet.rows[iid]["account"], account_code)
             self.assertEqual(search.call_count, 4)
 
-    def test_statement_copies_account_to_second_row_and_escape_returns_dashboard(self):
+    def test_statement_copies_account_to_second_row_and_escape_keeps_the_report(self):
         app=self.app
         index=app.tab_names.index("Accounts & Statements")
         app.show_tab_window(max(0,index-5),index)
@@ -396,7 +396,8 @@ class ProgramWindowFixesTest(unittest.TestCase):
         self.assertEqual(v["account_to_name"].get(),app._all_accounts[code])
         v["account_from_box"].focus_set(); app.update()
         v["account_from_box"].event_generate("<Escape>"); app.update()
-        self.assertEqual(app.main_notebook.select(),str(app.main_tab_pages[0]))
+        # 2.9.47 (owner request): Escape on the options page stays on the statement; it no longer jumps to the dashboard.
+        self.assertEqual(app.main_notebook.select(),str(app.main_tab_pages[index]))
 
     def test_right_click_on_plain_field_offers_searches(self):
         entry = tk.Entry(self.app); shown = []

@@ -45,16 +45,33 @@ class StatementNavigationTests(unittest.TestCase):
         app.statement_account_from_changed(v)
         self.assertEqual(v["account_to"].get(),"")
 
-    def test_escape_from_nested_statement_result_returns_dashboard_only(self):
+    def test_escape_steps_back_one_level_and_keeps_the_open_tabs(self):
+        # 2.9.47 (owner request): Escape no longer jumps to the dashboard. In the statement / trial balance it goes
+        # back one level (drilled statement -> its trial balance, report -> Options) and closes nothing.
         app=BrainsScreensMixin()
-        app.statement_tab=SimpleNamespace(master=None)
-        app.show_tab_window=Mock()
-        result_widget=SimpleNamespace(master=SimpleNamespace(master=app.statement_tab))
-        self.assertEqual(app.statement_escape(SimpleNamespace(widget=result_widget)),"break")
-        app.show_tab_window.assert_called_once_with(0,0)
-        app.show_tab_window.reset_mock()
+        notebook=Mock(); notebook.tabs.return_value=("options","tb","st")
+        state={"notebook":notebook,"options_page":"options","parents":{"st":"tb"}}
+        app.statement_tab=SimpleNamespace(master=None); app.trial_tab=SimpleNamespace(master=None)
+        app.statement_state=None; app.trial_state=state; app.show_tab_window=Mock()
+        inside=SimpleNamespace(widget=SimpleNamespace(master=SimpleNamespace(master=app.trial_tab)))
+        notebook.select.return_value="st"
+        self.assertEqual(app.statement_escape(inside),"break"); notebook.select.assert_called_with("tb")
+        notebook.select.reset_mock(); notebook.select.return_value="tb"
+        self.assertEqual(app.statement_escape(inside),"break"); notebook.select.assert_called_with("options")
+        notebook.forget.assert_not_called(); app.show_tab_window.assert_not_called()
+        app._report_return=None
         self.assertIsNone(app.statement_escape(SimpleNamespace(widget=SimpleNamespace(master=None))))
-        app.show_tab_window.assert_not_called()
+
+    def test_escape_on_an_editing_screen_returns_to_the_report(self):
+        app=BrainsScreensMixin()
+        app.statement_tab=SimpleNamespace(master=Mock()); app.trial_tab=SimpleNamespace(master=Mock())
+        app.statement_state=app.trial_state=None
+        app.account_reports_tab="reports"; app.go_to_main_tab=Mock(); app.run_balance_report=Mock()
+        state={"statement":True,"result":{"title":"Statement"}}
+        app._report_return=state
+        self.assertEqual(app.statement_escape(SimpleNamespace(widget=SimpleNamespace(master=None))),"break")
+        app.go_to_main_tab.assert_called_once_with("reports"); app.statement_tab.master.select.assert_called_once_with(app.statement_tab)
+        app.run_balance_report.assert_called_once_with(state,refresh=True); self.assertIsNone(app._report_return)
 
 
 if __name__ == "__main__":

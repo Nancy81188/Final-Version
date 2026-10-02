@@ -616,6 +616,7 @@ class Database:
             for column,definition in (("doc_subtype","TEXT NOT NULL DEFAULT 'invoice'"),("invoice_discount_percent","TEXT"),("invoice_discount_amount","TEXT"),("gross_before_discount","TEXT"),("notes","TEXT")):
                 if column not in inv_cols: db.execute(f"ALTER TABLE invoices ADD COLUMN {column} {definition}")
             if "return_request_id" not in inv_cols: db.execute("ALTER TABLE invoices ADD COLUMN return_request_id TEXT")
+            if "payment_account" not in inv_cols: db.execute("ALTER TABLE invoices ADD COLUMN payment_account TEXT")
             if "is_return" not in inv_cols:
                 # 2.9.45: a return (goods back, stock moves) is told apart from a credit note (discount / price
                 # adjustment, no stock). Credit notes made by "Return" from an invoice are returns.
@@ -1303,7 +1304,65 @@ class Database:
                 db.execute("UPDATE invoices SET department_id=?,project_id=? WHERE id=?",(department_id,project_id,invoice_id))
                 db.execute("UPDATE journal_lines SET department_id=?,project_id=? WHERE entry_id=?",(department_id,project_id,entry.lastrowid))
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "import", "invoice", invoice_id, json.dumps({"source_file": item.get("source_file"), "source_row": item.get("source_row")}), utcnow()))
+            self._post_invoice_payment(db, invoice_id, user_id, item.get("cash_account"))
             return invoice_id
+
+    # 2.9.47: an invoice paid on the spot (Cash, Bank Transfer, Cheque, Card ...) gets its settlement entry:
+    # sale  Dr cash / bank - Cr customer;  purchase  Dr supplier - Cr cash / bank. Its own entry PINV-<id>.
+    PAYMENT_ACCOUNTS = {"cash": "531"}
+    BANK_ACCOUNT = "512"
+
+    def _payment_account(self, method, override=None):
+        code = str(override or "").split(" - ", 1)[0].strip()
+        if code: return code
+        return self.PAYMENT_ACCOUNTS.get(str(method or "").strip().lower(), self.BANK_ACCOUNT)
+
+    def _post_invoice_payment(self, db, invoice_id, user_id, cash_account=None):
+        db.execute("DELETE FROM journal_entries WHERE source_type='invoice_payment' AND source_id=?", (int(invoice_id),))
+        invoice = db.execute("SELECT * FROM invoices WHERE id=?", (int(invoice_id),)).fetchone()
+        if not invoice or invoice["status"] in ("cancelled", "deleted"): return None
+        method = str(invoice["payment_method"] or "").strip()
+        paid = Decimal(str(invoice["amount_paid"] or 0))
+        if paid <= 0 or not method or method.lower().startswith("on account"): return None
+        if "doc_subtype" in invoice.keys() and invoice["doc_subtype"] == "credit_note": return None
+        if str(cash_account or "").strip():
+            db.execute("UPDATE invoices SET payment_account=? WHERE id=?", (str(cash_account).split(" - ", 1)[0].strip(), int(invoice_id)))
+        stored = invoice["payment_account"] if "payment_account" in invoice.keys() else None
+        cash = self._payment_account(method, cash_account or stored)
+        db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)", (cash, "Cash" if cash == "531" else "Bank", "asset"))
+        sale = invoice["kind"] == "sale"
+        entry = db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,branch_id,created_by,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)""", (f"PINV-{int(invoice_id)}", invoice["invoice_date"], f"{method} {'received' if sale else 'paid'} - invoice {invoice['invoice_number']}",
+            "invoice_payment", int(invoice_id), invoice["currency"], invoice["branch_id"], user_id, utcnow())).lastrowid
+        lines = ((cash, paid, Decimal("0")), (invoice["supplier_account"], Decimal("0"), paid)) if sale else \
+                ((invoice["supplier_account"], paid, Decimal("0")), (cash, Decimal("0"), paid))
+        for code, debit, credit in lines:
+            db.execute("INSERT INTO journal_lines(entry_id,account_id,party_id,description,debit,credit) VALUES(?,?,?,?,?,?)",
+                (entry, self._account_id(db, code), invoice["party_id"], f"Payment {invoice['invoice_number']}", str(debit), str(credit)))
+        return entry
+
+    def create_missing_invoice_payments(self, user_id):
+        """Invoices saved before 2.9.47 as paid (Cash, Bank ...) but without a settlement entry: create it now.
+        Each invoice is done on its own; one in a locked or closed period is skipped and reported."""
+        with self.connect() as db:
+            ids = [r["id"] for r in db.execute("""SELECT i.id FROM invoices i WHERE i.status NOT IN ('cancelled','deleted')
+                AND CAST(COALESCE(i.amount_paid,'0') AS REAL)>0 AND COALESCE(i.payment_method,'')<>'' AND LOWER(i.payment_method) NOT LIKE 'on account%'
+                AND COALESCE(i.doc_subtype,'invoice')<>'credit_note'
+                AND NOT EXISTS(SELECT 1 FROM journal_entries e WHERE e.source_type='invoice_payment' AND e.source_id=i.id) ORDER BY i.id""")]
+        created, skipped = [], []
+        for invoice_id in ids:
+            try:
+                with self.connect() as db:
+                    row = db.execute("SELECT invoice_number,invoice_date FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+                    self._assert_period_open(row["invoice_date"])
+                    if self._post_invoice_payment(db, invoice_id, user_id): created.append(row["invoice_number"])
+            except Exception as exc:
+                skipped.append({"invoice_number": row["invoice_number"] if row else str(invoice_id), "reason": str(exc)})
+        if created:
+            with self.connect() as db:
+                db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
+                    (user_id, "create_missing_payments", "invoice", json.dumps({"created": created, "skipped": skipped}), utcnow()))
+        return {"created": created, "skipped": skipped}
 
     def create_manual_invoice(self, item, line_items, user_id):
         if not isinstance(line_items, list) or not line_items:
@@ -1416,7 +1475,7 @@ class Database:
             self._assert_no_active_linked_returns(db,invoice_id,"delete")
             self._assert_period_open(invoice["invoice_date"])
             details=dict(invoice)
-            db.execute("DELETE FROM journal_entries WHERE source_type IN ('invoice','journal_voucher') AND source_id=?",(int(invoice_id),))
+            db.execute("DELETE FROM journal_entries WHERE source_type IN ('invoice','journal_voucher','invoice_payment') AND source_id=?",(int(invoice_id),))
             db.execute("DELETE FROM journal_entries WHERE source_type='vat_reclass' AND entry_number=?",(f"VATND-INV-{int(invoice_id)}",))
             import inventory
             inventory.remove_invoice_documents(db,invoice_id)
@@ -1441,7 +1500,7 @@ class Database:
             import inventory
             inventory.remove_invoice_documents(db,invoice_id)
             inventory._assert_nonnegative_history(db)
-            db.execute("DELETE FROM journal_entries WHERE source_type IN ('invoice','journal_voucher','invoice_reversal') AND source_id=?",(int(invoice_id),))
+            db.execute("DELETE FROM journal_entries WHERE source_type IN ('invoice','journal_voucher','invoice_reversal','invoice_payment') AND source_id=?",(int(invoice_id),))
             db.execute("DELETE FROM journal_entries WHERE source_type='vat_reclass' AND entry_number=?",(f"VATND-INV-{int(invoice_id)}",))
             db.execute("UPDATE invoices SET status='deleted',cancelled_at=?,cancellation_reason='Deleted' WHERE id=?",(utcnow(),int(invoice_id)))
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
@@ -1786,6 +1845,7 @@ class Database:
                            (entry_id, self._account_id(db, code), party["id"], str(debit), str(credit)))
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
                        (user_id, "update", "invoice", invoice_id, json.dumps({"fields": sorted(item.keys())}), utcnow()))
+            self._post_invoice_payment(db, invoice_id, user_id, item.get("cash_account"))
             row = db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,p.name party_name,i.kind,i.currency,
                 i.subtotal,i.deductible_subtotal,i.non_deductible_subtotal,i.vat,i.total,i.status,i.currency_issue,i.supplier_account,i.vat_account,
                 i.expense_account,i.entry_type,i.debit_override,i.credit_override,i.supplier_side,i.vat_side,i.expense_side,i.expense_no_vat_account,i.expense_no_vat_side,i.source_row,i.due_date,i.payment_status,i.amount_paid,
@@ -1863,6 +1923,7 @@ class Database:
                     (reverse.lastrowid, line["account_id"], line["party_id"], line["credit"], line["debit"]))
             db.execute("UPDATE invoices SET status='cancelled',cancelled_at=?,cancellation_reason=? WHERE id=?",
                        (utcnow(), reason, invoice_id))
+            db.execute("DELETE FROM journal_entries WHERE source_type='invoice_payment' AND source_id=?", (invoice_id,))  # a void invoice has no payment
             db.execute("DELETE FROM journal_entries WHERE source_type='vat_reclass' AND entry_number=?",(f"VATND-INV-{int(invoice_id)}",))
             import inventory
             inventory.remove_invoice_documents(db,invoice_id)
@@ -2664,7 +2725,7 @@ class Database:
                 i.due_date,i.payment_status,CAST(i.amount_paid AS REAL) amount_paid,i.payment_method,i.description,i.branch_id,COALESCE(b.name,'Head Office') branch_name,
                 CAST(i.total AS REAL)-CAST(i.amount_paid AS REAL) outstanding,i.cancelled_at,i.cancellation_reason,
                 (SELECT COUNT(*) FROM invoice_attachments x WHERE x.invoice_id=i.id) attachment_count,i.vat_recoverable,i.department_id,i.project_id,i.vat_treatment,i.vat_use,
-                i.doc_subtype,i.invoice_discount_percent,i.invoice_discount_amount,i.notes,i.linked_invoice_id,COALESCE(i.is_return,0) is_return
+                i.doc_subtype,i.invoice_discount_percent,i.invoice_discount_amount,i.notes,i.linked_invoice_id,COALESCE(i.is_return,0) is_return,i.payment_account
                 FROM invoices i LEFT JOIN parties p ON p.id=i.party_id LEFT JOIN branches b ON b.id=i.branch_id ORDER BY i.id DESC LIMIT ?""", (limit,))]
 
     def list_accounts(self):
@@ -2721,16 +2782,24 @@ class Database:
                 (user_id,"save","account",json.dumps({"code":code,"name":name}),utcnow()))
         return {"code":code,"name_en":name,"type":account_type,"parent_code":parent}
 
-    def rename_account(self,code,name,user_id):
+    def rename_account(self,code,name,user_id,name_fr=None,name_ar=None,account_type=None):
+        """Edit an account: English name (required), and when given the French / Arabic names and the type."""
         code=str(code or "").strip(); name=str(name or "").strip()
         if not name: raise ValueError("Account name is required")
+        if account_type is not None and str(account_type) not in ("asset","liability","equity","income","expense"):
+            raise ValueError("Account type must be asset, liability, equity, income or expense")
         with self.connect() as db:
-            row=db.execute("SELECT code FROM accounts WHERE code=?",(code,)).fetchone()
+            row=db.execute("SELECT * FROM accounts WHERE code=?",(code,)).fetchone()
             if not row: raise KeyError(code)
-            db.execute("UPDATE accounts SET name_en=? WHERE code=?",(name,code))
+            changes={"name_en":name}
+            if name_fr is not None: changes["name_fr"]=str(name_fr).strip() or None
+            if name_ar is not None: changes["name_ar"]=str(name_ar).strip() or None
+            if account_type is not None: changes["type"]=str(account_type)
+            db.execute(f"UPDATE accounts SET {','.join(k+'=?' for k in changes)} WHERE code=?",(*changes.values(),code))
             db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
-                (user_id,"rename","account",json.dumps({"code":code,"name":name}),utcnow()))
-        return {"code":code,"name_en":name}
+                (user_id,"edit","account",json.dumps({"code":code,"before":{k:row[k] for k in changes},"after":changes},ensure_ascii=False),utcnow()))
+            saved=dict(db.execute("SELECT * FROM accounts WHERE code=?",(code,)).fetchone())
+        return saved
 
     def dashboard(self):
         with self.connect() as db:
@@ -2771,9 +2840,11 @@ class Database:
                      WHEN e.source_type='invoice' AND i.kind='sale' THEN 'Sales'
                      WHEN e.source_type='invoice' AND COALESCE(i.entry_type,i.kind)='expenses' THEN 'Expenses'
                      WHEN e.source_type='invoice' THEN 'Purchases' ELSE 'Other' END journal_category,
-                COALESCE(p.name,'') party_name,COALESCE(j.description,'') line_description,CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit,j.id line_id
+                COALESCE(p.name,'') party_name,COALESCE(j.description,'') line_description,CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit,j.id line_id,
+                COALESCE(pr.code,'') project_code,COALESCE(dp.code,'') department_code
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id
                 JOIN accounts a ON a.id=j.account_id LEFT JOIN parties p ON p.id=j.party_id LEFT JOIN branches b ON b.id=e.branch_id
+                LEFT JOIN projects pr ON pr.id=j.project_id LEFT JOIN departments dp ON dp.id=j.department_id
                 LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
                 {where_clause}
                 ORDER BY {normalized_date},e.id,j.id LIMIT ?""", parameters)]
