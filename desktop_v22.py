@@ -1,5 +1,6 @@
 """Version 2.2 screens: sales documents (debit / credit notes, duplicate, preview, import), and helpers."""
 from __future__ import annotations
+import logging
 
 import os
 import tempfile
@@ -76,7 +77,7 @@ class V22Mixin:
                 base_lbp, _ = self.exchange_equivalents(1.0, currency, rates)
                 invoice["lbp_rate"] = base_lbp
         except Exception:
-            pass
+            logging.getLogger("saber.desktop").warning("VAT in LBP could not be worked out for this invoice", exc_info=True)
         return invoice, calc["lines"]
 
     def sales_invoice_pdf(self, mode):

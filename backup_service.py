@@ -27,18 +27,33 @@ def backup_all(master_path):
     return made
 
 
+def _data_dir():
+    import app_runtime
+    return app_runtime.data_dir()
+
+
+def _main_database():
+    """The main file name used by the program; the backup service never renames anything itself."""
+    import app_runtime
+    folder = app_runtime.data_dir()
+    new, old = folder/app_runtime.MAIN_DATABASE_NAME, folder/app_runtime.OLD_MAIN_DATABASE_NAME
+    return new if new.exists() or not old.exists() else old
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--database", default=str(Path.home()/"SaberAccounting"/"saber_accounting_v0_7.db"))
+    parser.add_argument("--database", default=None, help="Main data file (default: the Saber data folder)")
     args = parser.parse_args()
-    log_dir = Path(args.database).parent
+    log_dir = Path(args.database).parent if args.database else _data_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(filename=log_dir/"backup_service.log", level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     while True:
         try:
-            for path in backup_all(args.database):
+            # Looked up every cycle: the main file may be renamed by the program (2.9.41) while this runs.
+            database = args.database or str(_main_database())
+            for path in backup_all(database):
                 logging.info("Backup created: %s", path)
         except Exception:
             logging.exception("Automatic backup cycle failed")

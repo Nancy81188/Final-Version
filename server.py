@@ -10,6 +10,8 @@ import json
 import traceback
 import sqlite3
 import tempfile
+import hmac
+import logging
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,14 +26,26 @@ import fixed_assets
 import vat_return
 
 MAX_REQUEST_BODY_BYTES = 22 * 1024 * 1024
+log = logging.getLogger("saber.server")
+KEY_HEADER = "X-Saber-Key"
 
 class ApiHandler(BaseHTTPRequestHandler):
     db: Database = None
     master_db: Database = None
     company_manager: CompanyManager = None
+    # Set for the private data service inside the desktop program: every request must carry it.
+    local_key: str | None = None
 
     def log_message(self, fmt, *args):
-        print(f"[Saber API] {self.address_string()} {fmt % args}")
+        log.debug("%s %s", self.address_string(), fmt % args)
+
+    def _key_refused(self):
+        if not self.local_key: return False
+        given = self.headers.get(KEY_HEADER, "")
+        if given and hmac.compare_digest(given.encode("utf-8"), self.local_key.encode("utf-8")): return False
+        self.close_connection = True
+        self._json(403, {"error": "This data service only answers Saber Accounting on this computer"})
+        return True
 
     # HTTP/1.1 lets the desktop program keep one connection open and reuse it for every
     # request, instead of opening a new TCP connection (and a new server thread) each time.
@@ -363,7 +377,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return self._json(200,{"name":target.name,"content":base64.b64encode(target.read_bytes()).decode("ascii")})
             except ValueError as exc: return self._json(404,{"error":str(exc)})
             except Exception:
-                traceback.print_exc()
+                log.exception("Request step failed")
                 return self._json(500,{"error":"Backup could not be downloaded"})
         if path == "/api/backups/folder": return self._json(200,{"folder":str(self.db._backups_dir())})
         if path == "/api/backups":
@@ -901,12 +915,13 @@ def _keep_alive_safe(method):
             self.close_connection=True
             self._json(400,{"error":"Request body was incomplete"})
             return
+        if self._key_refused(): return
         try:
             method(self)
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True; return
         except Exception as exc:
-            traceback.print_exc()
+            log.exception("Request failed: %s %s", self.command, urlparse(self.path).path)
             if self._responded: self.close_connection = True; return
             try: self._json(500, {"error": "The data service could not complete the request"})
             except Exception: self.close_connection = True
@@ -919,40 +934,50 @@ def _keep_alive_safe(method):
 for _verb in ("do_GET", "do_POST", "do_PUT", "do_DELETE"):
     setattr(ApiHandler, _verb, _keep_alive_safe(getattr(ApiHandler, _verb)))
 
-def run_server(host="127.0.0.1", port=8765, database="saber_accounting.db", admin_password=None, tls_cert=None, tls_key=None, allow_insecure_lan=False):
+def run_server(host="127.0.0.1", port=8765, database="saber_accounting.db", admin_password=None, tls_cert=None, tls_key=None, allow_insecure_lan=False,
+               local_key=None, on_ready=None):
+    """port=0 lets Windows choose a free port; on_ready(port) is called once requests are accepted.
+    local_key: when given, every request must send it in the X-Saber-Key header (private desktop service)."""
     if bool(tls_cert)!=bool(tls_key): raise ValueError("Provide both TLS certificate and private key")
     if host not in ("127.0.0.1","localhost","::1") and not tls_cert and not allow_insecure_lan:
         raise ValueError("Shared network access requires --tls-cert and --tls-key (or explicit --allow-insecure-lan for a trusted VPN)")
     admin_password = admin_password or os.environ.get("SABER_ADMIN_PASSWORD") or secrets.token_urlsafe(12)
     db = Database(database, pooled=True)
     db.initialize_if_needed(admin_password)
+    ApiHandler.local_key = local_key
     ApiHandler.db = db; ApiHandler.master_db=db; ApiHandler.company_manager=CompanyManager(database, pooled=True)
     # Company data lives in companies/<Company Name>/<Company Name>_<year>.db (moved there once, safely).
     try:
-        for source,target in ApiHandler.company_manager.organize_files(): print(f"Company file moved: {source} -> {target}")
-    except Exception as exc: print(f"Company files were not reorganised this time: {exc}")
+        for source,target in ApiHandler.company_manager.organize_files(): log.info("Company file moved: %s -> %s", source, target)
+    except Exception as exc: log.warning("Company files were not reorganised this time: %s", exc)
     server = ThreadingHTTPServer((host, port), ApiHandler)
     if tls_cert:
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version=ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(tls_cert,tls_key)
         server.socket=context.wrap_socket(server.socket,server_side=True)
+    port = server.server_address[1]
+    log.info("Data service running at %s://%s:%s", 'https' if tls_cert else 'http', host, port)
     print(f"Saber Accounting server running at {'https' if tls_cert else 'http'}://{host}:{port}")
     print("For a new database, sign in as admin with this one-time initial password:")
     print(admin_password)
+    if on_ready: on_ready(port)
     server.serve_forever()
 
 def main():
     parser = argparse.ArgumentParser(description="Saber Accounting shared server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--database", default=str(Path.home() / "SaberAccounting" / "saber_accounting_v0_7.db"))
+    parser.add_argument("--database", default=None, help="Main data file (default: the Saber data folder)")
     parser.add_argument("--admin-password", default=None,
                         help="Initial admin password (or set SABER_ADMIN_PASSWORD)")
     parser.add_argument("--tls-cert",help="Path to a trusted TLS certificate chain (PEM)")
     parser.add_argument("--tls-key",help="Path to the matching TLS private key (PEM)")
     parser.add_argument("--allow-insecure-lan",action="store_true",help="Explicitly permit plaintext on a trusted VPN/LAN")
     args = parser.parse_args()
+    if not args.database:
+        import app_runtime
+        args.database = str(app_runtime.main_database_path())
     Path(args.database).parent.mkdir(parents=True, exist_ok=True)
     run_server(args.host,args.port,args.database,args.admin_password,args.tls_cert,args.tls_key,args.allow_insecure_lan)
 

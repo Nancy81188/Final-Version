@@ -1,5 +1,16 @@
 # Saber Accounting MVP
 
+## Version 2.9.41 (safety and upkeep: private data service, one copy open, error log, file rename, screens split)
+
+- **Private data service:** the window and its built-in data service now talk on a **free port chosen by Windows** (no more fixed 8765, so another program using that port can no longer stop Saber from opening) and with a **secret key made at every start**. Any request without the key is refused (403), so no other program on the PC can read or change the data. The key is sent only to that private address, never to a shared server typed in the Server field.
+- **One copy open:** starting Saber a second time brings the open window to the front instead of opening a second copy on the same data.
+- **Error log:** errors are written with full details to `SaberAccounting\logs\saber.log` (5 files of 1 MB kept). A failed button or screen shows the message and writes the details to the log. New button **Settings > Backup & Restore > "Open Log Folder"**. Errors that were silently ignored are now logged (VAT in LBP not worked out for an invoice, header logo, EUR rate download).
+- **Main data file renamed** from `saber_accounting_v0_7.db` to `saber_accounting.db`, once, on the first start of 2.9.41: the file is copied with SQLite's backup, checked (integrity check, same tables), the company list is updated (a copy is kept as `companies.json.before-2.9.41`), and the old file is kept as `saber_accounting_v0_7.db.before-2.9.41`. If anything fails, the old file keeps being used and the reason is in the log. The background backup service follows the new name.
+- **desktop.py split by section, no change in behaviour:** `desktop_common.py` (shared helpers), `desktop_invoices.py`, `desktop_parties.py`, `desktop_payroll.py`, `desktop_reports.py`, `desktop_settings.py`. desktop.py goes from 3,600 to about 1,050 lines. All new modules are in the build.
+- If the first-time admin password is cancelled, the program now closes quietly instead of crashing.
+- Tests: new `test_runtime_v2_9_41.py` (free port, key refused / accepted, key never sent to other servers, one copy only, log file, safe rename incl. interrupted and damaged-file cases, screens still part of the window). 377 tests pass.
+- Changed files: app_runtime.py (new), desktop_common.py, desktop_invoices.py, desktop_parties.py, desktop_payroll.py, desktop_reports.py, desktop_settings.py (new, moved from desktop.py), desktop.py, run_desktop.py, server.py, client.py, backup_service.py, database.py, desktop_v22.py, .github/workflows/build-windows-installer.yml, installer.iss, README.md, test_runtime_v2_9_41.py (new).
+
 ## Version 2.9.40 (employee sex for the official forms)
 
 - Employee record: new field **Sex (for official forms)** (male / female) in the employee window. It marks ذكر / أنثى on MOF R3 and CNSS 2AA, 41A and the leave notice. Existing employees keep an empty value until it is chosen; saving an employee without the field does not clear it. Arabic values (ذكر / أنثى) are accepted from imports.

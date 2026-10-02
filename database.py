@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import hashlib
 import hmac
 import json
@@ -2369,8 +2370,9 @@ class Database:
                     db.execute("""INSERT INTO exchange_rates(rate_date,from_currency,to_currency,rate,created_at)
                         VALUES(?,?,?,?,?) ON CONFLICT(rate_date,from_currency,to_currency) DO NOTHING""",
                         (today,source,target,str(rate),utcnow()))
-        except Exception:
-            pass
+        except Exception as exc:
+            # No internet is normal: note it without the full details.
+            logging.getLogger("saber.database").info("Today's EUR rate was not downloaded: %s", exc)
 
     def sync_historical_exchange_rates(self):
         start=datetime(2024,1,1).date(); end=datetime.now().date(); collected={}

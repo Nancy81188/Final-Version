@@ -82,6 +82,16 @@ class ApiClient:
         try: self._drop_connection()
         except Exception: pass
 
+    def _local_key(self):
+        """The secret of the private data service - sent only to that exact address, never to a shared server."""
+        try:
+            import app_runtime
+        except ImportError:
+            return None
+        if app_runtime.LOCAL_KEY and app_runtime.LOCAL_URL and self.base_url == app_runtime.LOCAL_URL.rstrip("/"):
+            return app_runtime.LOCAL_KEY
+        return None
+
     def clear_cache(self):
         with self._cache_lock: self._cache.clear()
 
@@ -99,6 +109,8 @@ class ApiClient:
             headers["Authorization"] = f"Bearer {self.token}"
         if self.company_id: headers["X-Company-ID"]=str(self.company_id)
         if self.fiscal_year: headers["X-Fiscal-Year"]=str(self.fiscal_year)
+        key = self._local_key()
+        if key: headers["X-Saber-Key"] = key
         try:
             status, payload = self._send(method, path, data, headers)
         except URLError as exc:
