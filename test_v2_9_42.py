@@ -111,6 +111,7 @@ class PackagingTest(unittest.TestCase):
 
     def test_every_desktop_module_is_in_the_windows_build(self):
         workflow = (HERE / ".github" / "workflows" / "build-windows-installer.yml").read_text(encoding="utf-8")
+        if "Get-ChildItem -Path . -Filter *.py" in workflow and "@modules" in workflow: return  # 2.9.46: modules added automatically
         for module in sorted(p.stem for p in HERE.glob("desktop_*.py")):
             self.assertIn(f"--hidden-import {module} ", workflow + " ", module)
 

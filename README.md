@@ -1,5 +1,12 @@
 # Saber Accounting MVP
 
+## Version 2.9.46 (Windows build: every program file included automatically)
+
+- The 2.9.45 build failed only because GitHub still had the 2.9.43 workflow (uploading files does not replace the `.github` folder), so the new payroll modules were missing from the build and the safety test stopped it.
+- The build step now adds every program module of the repository by itself (all `*.py` except tests), so new files never need a workflow edit again. The list is printed in the build log. The safety test accepts this.
+- Replace `.github/workflows/build-windows-installer.yml` on GitHub once more (Edit, paste, Commit); after that, uploading the ZIP is enough.
+- Changed files: .github/workflows/build-windows-installer.yml, test_v2_9_42.py, installer.iss, app_runtime.py, README.md.
+
 ## Version 2.9.45 (negative stock alert, returns vs notes, brand, project / branch, report check-up)
 
 - **Negative stock: alert and continue.** When a sale, stock issue, transfer or cancellation would take an item below zero in a warehouse, Saber now shows the item, warehouse, date, quantity available and requested, and asks "Save anyway?". Yes saves it (the documents concerned are marked, so later work is not blocked); No saves nothing. Average and FIFO costing both handle negative stock: the missing quantity goes out at the last known cost and the next receipt in that warehouse settles it. Works from every screen (the data service asks through the X-Allow-Negative-Stock confirmation).
