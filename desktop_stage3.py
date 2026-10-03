@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from desktop_stage3_common import *  # noqa: F401,F403
 from desktop_stage3_common import _dd, _num
+from desktop_common import flow_toolbars
 from desktop_purchases import PurchasesMixin
 from desktop_asset_register import AssetRegisterMixin
 from desktop_expenses import ExpensesMixin
@@ -69,6 +70,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         self.import_check_label = tk.Label(page, text="Select a row to read its full Check note here.", bg="#fff8e6", fg=NAVY, anchor="w", justify="left", wraplength=1200)
         self.import_check_label.pack(fill="x", padx=12, pady=(0, 4), before=bottom)
         self.import_tree.bind("<<TreeviewSelect>>", lambda _e: self.show_import_check(), add="+")
+        flow_toolbars(bar, bottom)  # 2.9.59: Save button stays visible on 1366-px screens
 
     def apply_selected_import_vat_account(self):
         selected = [iid for iid in self.import_tree.get_children() if iid in self.import_tree.selection()]

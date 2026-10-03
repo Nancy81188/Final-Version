@@ -157,6 +157,11 @@ class SettingsMixin:
         tk.Label(general,text="VAT Registration Date",bg=LIGHT).grid(row=11,column=0,padx=14,pady=7,sticky="w")
         self.date_entry(general,self.company_vat_date,42).grid(row=11,column=1,padx=14,pady=7,sticky="w")
         self.action_button(general,"Save Settings",self.save_general_settings).grid(row=12,column=0,columnspan=2,pady=14)
+        import desktop_layout  # 2.9.60: menu style, kept on this computer
+        tk.Label(general,text="Screen layout (this computer)",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=13,column=0,padx=14,pady=7,sticky="w")
+        self.layout_side_menu=tk.BooleanVar(master=self,value=desktop_layout.side_menu_on())
+        tk.Checkbutton(general,text="Menu on the left, in groups (untick for the buttons above the pages)",variable=self.layout_side_menu,
+                       command=self.change_menu_layout,bg=LIGHT).grid(row=13,column=1,padx=14,pady=7,sticky="w")
         self.load_settings_pages()
 
     def load_settings_pages(self):
@@ -191,6 +196,12 @@ class SettingsMixin:
         try: branch=self.client.save_branch(self.new_branch_name.get().strip())
         except Exception as exc: return messagebox.showerror("Branches",str(exc))
         self.new_branch_name.set(""); self.load_settings_pages(); messagebox.showinfo("Branches",f'Branch {branch["name"]} saved successfully')
+
+    def change_menu_layout(self):
+        import desktop_layout
+        desktop_layout.save_layout_settings(side_menu=bool(self.layout_side_menu.get()))
+        if messagebox.askyesno("Screen layout","Saved. Re-open the screens now to see the new menu?\n(Unsaved work on other screens would be lost.)"):
+            self.after(50,self.main_screen)
 
     def create_backup(self):
         try: result=self.client.create_backup()

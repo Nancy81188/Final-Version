@@ -55,6 +55,7 @@ class ReportsMixin:
             ("account","Account",85),("account_name","Account Name",190),("party","Customer / Supplier",165),
             ("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
         self.journal_tree.bind("<Double-1>",self.edit_journal_selection)  # double-click a line: edit its entry
+        flow_toolbars(filters,finder,actions)  # 2.9.59: wrap instead of being cut off on 1366-px screens
         self.load_journal()
 
     def check_unbalanced_entries(self):
@@ -306,6 +307,7 @@ class ReportsMixin:
         tk.Label(controls,text="To:",bg=LIGHT).pack(side="left"); self.account_search_box(controls,self.report_account_to,16).pack(side="left",padx=(4,10))
         tk.Button(controls,text="Apply",command=self.load_financial_reports,bg=GOLD,fg=NAVY,border=0,padx=15,pady=6).pack(side="left")
         tk.Button(controls,text="Choose filters...",command=self.choose_financial_filters,bg=NAVY,fg="white",border=0,padx=10,pady=6).pack(side="left",padx=6)
+        flow_toolbars(controls)
         # 2.9.49: optional filters - only the ones ticked in "Choose filters..." appear (kept on this computer).
         self.fin_filter_row=tk.Frame(self.reports_tab,bg=LIGHT); self.fin_filter_row.pack(fill="x",padx=10,pady=(0,4))
         self.fin_filters={key:tk.StringVar(value="All") for key in FIN_FILTERS}; self.fin_filter_boxes={}
@@ -377,6 +379,9 @@ class ReportsMixin:
         return [key for key in FIN_FILTERS if key in chosen]
 
     def build_financial_filter_row(self):
+        self._fill_financial_filter_row(); flow_toolbars(self.fin_filter_row)  # 2.9.59: wraps on small screens
+
+    def _fill_financial_filter_row(self):
         for child in self.fin_filter_row.winfo_children(): child.destroy()
         shown=self.shown_financial_filters(); self.fin_filter_boxes={}
         if not shown:

@@ -29,6 +29,18 @@ MAX_REQUEST_BODY_BYTES = 22 * 1024 * 1024
 log = logging.getLogger("saber.server")
 KEY_HEADER = "X-Saber-Key"
 
+
+def _json_value(value):
+    """2.9.61: a value json cannot write (Decimal, date, bytes saved by an older import ...) no longer fails the whole
+    request with 'The data service could not complete the request'."""
+    from decimal import Decimal as _Decimal
+    from datetime import date as _date, datetime as _datetime
+    if isinstance(value, _Decimal): return str(value)
+    if isinstance(value, (_datetime, _date)): return value.isoformat()
+    if isinstance(value, (bytes, bytearray, memoryview)): return None
+    if isinstance(value, (set, frozenset, tuple)): return list(value)
+    return str(value)
+
 class ApiHandler(BaseHTTPRequestHandler):
     db: Database = None
     master_db: Database = None
@@ -58,7 +70,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         except (OSError, AttributeError): pass
 
     def _json(self, status, body):
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        data = json.dumps(body, ensure_ascii=False, default=_json_value).encode("utf-8")
         self._responded = True
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -177,6 +189,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 options=json.loads(self._query(parsed,"options","{}") or "{}")
                 with self.db.connect() as connection:
                     department_id,project_id=self.db._dimension_ids(connection,{"department":options.get("department"),"project":options.get("project")})
+                    # 2.9.62: several departments / projects ticked (codes); the budget needs exactly one
+                    for key,table in (("departments","department"),("projects","project")):
+                        codes=[c for c in (options.get(key) or []) if str(c).strip()]
+                        if codes: options[f"{table}_ids"]=[self.db._dimension_ids(connection,{table:code})[0 if table=="department" else 1] for code in codes]
+                if len(options.get("department_ids") or [])==1: department_id=options["department_ids"][0]
+                if len(options.get("project_ids") or [])==1: project_id=options["project_ids"][0]
                 options["department_id"]=department_id; options["project_id"]=project_id
                 return self._json(200,ledger_reports.json_ready(ledger_reports.build_account_report(self.db,options)))
             except Exception as exc: return self._json(400,{"error":str(exc)})
@@ -972,7 +990,9 @@ def _keep_alive_safe(method):
         except Exception as exc:
             log.exception("Request failed: %s %s", self.command, urlparse(self.path).path)
             if self._responded: self.close_connection = True; return
-            try: self._json(500, {"error": "The data service could not complete the request"})
+            # 2.9.61: say what failed (short), so a screenshot is enough to find the cause; full details in logs/saber.log
+            detail = f"{type(exc).__name__}: {str(exc)[:160]}".rstrip(": ")
+            try: self._json(500, {"error": f"The data service could not complete the request\n({self.command} {urlparse(self.path).path} - {detail})"})
             except Exception: self.close_connection = True
             return
         if not self._responded:

@@ -30,9 +30,9 @@ def matches(value, text):
 class MultiSelect(tk.Frame):
     """Looks like a drop-down; opens a list where several lines can be ticked, with a search box, All / Clear and OK."""
 
-    def __init__(self, master, variable, values=(), width=16, on_change=None, title="Choose", **options):
+    def __init__(self, master, variable, values=(), width=16, on_change=None, title="Choose", before_open=None, **options):
         super().__init__(master, bg=options.pop("bg", master.cget("bg") if hasattr(master, "cget") else None))
-        self._var_name = str(variable); self.values = [v for v in values if v not in ("", ALL)]; self.on_change = on_change; self.title = title
+        self._var_name = str(variable); self.values = [v for v in values if v not in ("", ALL)]; self.on_change = on_change; self.title = title; self.before_open = before_open
         if not self.text(): self.setvar(self._var_name, ALL)
         self.entry = ttk.Entry(self, textvariable=self._var_name, width=width, state="readonly", cursor="hand2")
         self.entry.pack(side="left")
@@ -62,6 +62,9 @@ class MultiSelect(tk.Frame):
 
     def open(self):
         if self.popup is not None and self.popup.winfo_exists(): self.popup.lift(); return "break"
+        if self.before_open:  # 2.9.62: e.g. reload the list of departments / projects / branches
+            try: self.before_open(self)
+            except Exception: pass
         popup = tk.Toplevel(self); self.popup = popup; popup.title(self.title); popup.transient(self.winfo_toplevel())
         popup.geometry(f"+{self.winfo_rootx()}+{self.winfo_rooty() + self.winfo_height()}")
         ticked = {v for v in self.values if v.casefold() in {c.casefold() for c in chosen_values(self.text())}}

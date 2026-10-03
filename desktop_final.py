@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 from report_export import export_sections_excel, export_sections_pdf
 import vat_return as vat_rules
 
-NAVY, GOLD, LIGHT = "#071b2e", "#c9a96a", "#f3f6f8"
+NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
 RED, AMBER, MUTED = "#8B1E1E", "#8a5a00", "#5f6b76"
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 

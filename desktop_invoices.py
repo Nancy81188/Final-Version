@@ -35,6 +35,7 @@ class InvoicesMixin:
         self.action_button(lifecycle,"VAT Deductible / Non-Deductible",self.toggle_selected_invoice_vat).pack(side="left",padx=4)
         self.action_button(lifecycle,"VAT Treatment",self.vat_classification_dialog).pack(side="left",padx=4)
         self.invoice_tree.bind("<Double-1>",lambda _event:self.edit_selected_invoice())
+        flow_toolbars(invoice_actions,lifecycle)  # 2.9.59
         self.load_invoices()
 
     def create_missing_payment_entries(self):

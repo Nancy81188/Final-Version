@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-NAVY, GOLD, LIGHT = "#071b2e", "#c9a96a", "#f3f6f8"
+NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
 TREATMENTS = {"Taxable": "standard", "Taxable 11%": "standard", "Zero-rated": "zero_rated", "Zero-rated (export)": "zero_rated", "Exempt": "exempt", "Exempt (Art. 16-17)": "exempt", "Out of scope": "out_of_scope"}
 
 

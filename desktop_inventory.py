@@ -8,8 +8,9 @@ from tkinter import filedialog, messagebox, ttk
 from desktop_brains import EditableSheet
 from multi_select import MultiSelect, chosen_values
 from inventory import ANALYSIS_DIMENSIONS
+from desktop_common import flow_toolbars
 
-NAVY, GOLD, LIGHT = "#071b2e", "#c9a96a", "#f3f6f8"
+NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
 RED, MUTED = "#8B1E1E", "#5f6b76"
 DOC_TYPES = {"Opening Stock": "opening", "Stock Receipt": "receipt", "Stock Issue": "issue", "Adjustment +": "adjustment_in", "Adjustment -": "adjustment_out", "Transfer": "transfer"}
 REPORTS = {"Inventory Summary": "summary", "Stock by Brand & Warehouse": "brands", "Stock Ageing": "ageing", "Inventory Analysis (3D)": "analysis3d", "Inventory Health": "health", "Stock Valuation": "valuation", "Stock Card": "stock_card", "Stock Movements": "movements", "Stock Turnover": "turnover", "Stock by Supplier": "supplier_stock", "Physical Count Variances": "count_variances", "Sales Margin (COGS)": "margin", "Reorder Report": "reorder", "Slow-moving Stock": "slow"}
@@ -386,6 +387,7 @@ class InventoryMixin:
             ttk.Combobox(analysis_bar, textvariable=variable, values=values, state="readonly", width=12).pack(side="left", padx=(4, 10))
         self.action_button(analysis_bar, "3D Chart", self.show_inventory_3d_chart).pack(side="left", padx=4)
         tk.Label(analysis_bar, text="Choose any 3. Stock at To date; with Month, Project or Branch: net movement From / To.", bg=LIGHT, fg=MUTED).pack(side="left", padx=6)
+        flow_toolbars(bar2, analysis_bar)  # 2.9.59 (bar / bar3 hide filters by setting, they keep pack)
         self.inventory_report_selected()
         self.ir_viewer = self.report_viewer(page)
 

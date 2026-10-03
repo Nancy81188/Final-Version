@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from desktop_brains_common import *  # noqa: F401,F403
 from desktop_brains_common import _date_text, _fmt, _num
+import logging
+from multi_select import MultiSelect, chosen_values
 
 
 class BalanceReportsMixin:
@@ -42,7 +44,7 @@ class BalanceReportsMixin:
         tk.Label(row1, text="Date From", bg=LIGHT).pack(side="left"); self.date_entry(row1, v["date_from"], 11).pack(side="left", padx=(4, 8))
         tk.Label(row1, text="To", bg=LIGHT).pack(side="left"); self.date_entry(row1, v["date_to"], 11).pack(side="left", padx=(4, 8))
         tk.Label(row1, text="Print Date", bg=LIGHT).pack(side="left"); self.date_entry(row1, v["print_date"], 11).pack(side="left", padx=(4, 8))
-        tk.Label(row1, text="Branch", bg=LIGHT).pack(side="left"); self.branch_selector(row1, v["branch"], 14, True).pack(side="left", padx=(4, 8))
+        tk.Label(row1, text="Branch", bg=LIGHT).pack(side="left"); self.branch_multi_selector(row1, v["branch"]).pack(side="left", padx=(4, 8))
         ttk.Combobox(row1, textvariable=v["posting"], values=["Posted only", "Posted + Review", "Review only"], state="readonly", width=15).pack(side="left", padx=4)
 
         options = tk.Frame(box, bg=LIGHT); options.pack(fill="x", pady=(6, 0))
@@ -184,8 +186,10 @@ class BalanceReportsMixin:
         statement), Escape on that screen comes back to the same report tab, refreshed."""
         source, source_id, entry_id = first.get("source_type"), first.get("source_id"), first.get("entry_id")
         self._report_return = return_state
+        self._opening_step = "finding the document"
         try:
             if source in ("invoice", "invoice_payment", "journal_voucher") and source_id:
+                self._opening_step = "reading the invoice list"
                 invoice = next((r for r in self.client.invoices() if r["id"] == source_id), None)
                 if invoice:
                     if invoice["kind"] == "sale" and invoice.get("source_file") == "Sales Invoice" and hasattr(self, "sales_tab"):
@@ -193,10 +197,13 @@ class BalanceReportsMixin:
                         key = next((k for k, r in getattr(self, "sales_open_map", {}).items() if r["id"] == source_id), None)
                         if key: self.sales_open_choice.set(key); self.open_sales_invoice(); return True
                     if invoice["kind"] != "sale" and hasattr(self, "purchases_tab"):
+                        self._opening_step = "opening the Purchases screen"
                         self.go_to_main_tab(self.purchases_tab); self.load_purchases(); f = getattr(self, "purchase_form", {})
                         key = next((k for k, i in f.get("find_map", {}).items() if i == source_id), None)
+                        self._opening_step = f"loading purchase {invoice.get('invoice_number')}"
                         if key: f["find"].set(key); self.purchase_found(); return True
                     # Uploaded data (imported / manual rows): the invoice edit window.
+                    self._opening_step = "opening Uploaded Data"
                     self.go_to_main_tab(self.invoices_tab); self.load_invoices()
                     if self.invoice_tree.exists(str(source_id)):
                         self.invoice_tree.selection_set(str(source_id)); self.invoice_tree.see(str(source_id)); self.edit_selected_invoice(); return True
@@ -214,7 +221,9 @@ class BalanceReportsMixin:
             self._report_return = None
             messagebox.showinfo("Transaction", "This entry is made automatically (opening, closing, depreciation or stock variation) and has no editing screen. Correct it with a Journal Voucher.")
         except Exception as exc:
-            self._report_return = None; messagebox.showerror("Transaction", str(exc))
+            self._report_return = None
+            logging.getLogger("saber.desktop").exception("Opening entry %s failed while %s", first.get("entry_number"), self._opening_step)
+            messagebox.showerror("Transaction", f"{exc}\n\nStep: {self._opening_step} ({first.get('entry_number')}).")
         return False
 
     def edit_journal_selection(self, _event=None):
@@ -270,15 +279,30 @@ class BalanceReportsMixin:
                        first_column=v["first_column"].get(), second_column=v["second_column"].get(), summary_digits=v["summary_digits"].get(),
                        currencies=[code for code, var in state["currencies"].items() if var.get()], statement=state["statement"],
                        posting_status={"Posted only": "posted", "Posted + Review": "all", "Review only": "review"}[v["posting"].get()],
-                       department=self.dimension_code(v["department"].get()), project=self.dimension_code(v["project"].get()))
+                       departments=[self.dimension_code(x) for x in chosen_values(v["department"].get())],
+                       projects=[self.dimension_code(x) for x in chosen_values(v["project"].get())])
         if len(options["currencies"]) == len(state["currencies"]): options["currencies"] = []
-        branch = self.selected_branch_id(v["branch"])
-        if branch: options["branch_id"] = branch
+        branches = chosen_values(v["branch"].get())
+        if branches:  # 2.9.62: one or several branches ticked
+            try: known = {row["name"]: row["id"] for row in self.client.branches()}
+            except Exception: known = {}
+            options["branch_ids"] = [known[name] for name in branches if name in known]
+        shown = [f"{label}: {', '.join(values)}" for label, values in (("Branch", branches), ("Department", options["departments"]), ("Project", options["projects"])) if values]
+        if shown: options["filter_text"] = "   ".join(shown)
         for key in ("date_from", "date_to", "print_date"):
             if options[key]:
                 try: datetime.strptime(options[key], "%d-%m-%Y")
                 except ValueError: raise ValueError(f"{key.replace('_', ' ').title()} must be DD-MM-YYYY")
         return options
+
+    def branch_multi_selector(self, parent, variable):
+        """2.9.62: tick one or several branches (empty = all)."""
+        def names():
+            try: return [row["name"] for row in self.client.branches()] if self.client else []
+            except Exception: return []
+        if variable.get() in ("", "All Branches"): variable.set("All")
+        def reload(box): box["values"] = names()
+        return MultiSelect(parent, variable, names(), width=16, title="Branch", before_open=reload, bg=LIGHT)
 
     def run_balance_report(self, state, refresh=False):
         try:

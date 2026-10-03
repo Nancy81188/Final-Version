@@ -17,7 +17,7 @@ from chart_extra import EXPENSE_VAT, PURCHASE_VAT, SALES_VAT
 from pdf_import import asset_pdf_details, read_invoice_pdf, read_invoice_pdf_pages
 from report_export import export_excel, export_pdf
 
-NAVY, GOLD, LIGHT = "#071b2e", "#c9a96a", "#f3f6f8"
+NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
 PURCHASE_USES = {"Mixed (partial deduction)": "mixed", "Taxable sales only (100%)": "taxable", "Exempt sales only (0%)": "exempt"}
 RED, MUTED = "#8B1E1E", "#5f6b76"
 TYPES = {"Purchases": ("purchase", "purchases"), "Sales": ("sale", "sales"), "Expenses": ("purchase", "expenses"), "Assets": ("purchase", "assets")}

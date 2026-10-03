@@ -1,5 +1,27 @@
 # Saber Accounting MVP
 
+## Version 2.9.62 (Trial Balance / Statement: tick several branches, departments, projects)
+- Trial Balance and Statement of Account: Branch, Department and Project are tick lists like the inventory filters - one, several or All. The chosen filters are printed in the report header.
+- Tests: test_v2_9_62.py.
+
+## Version 2.9.61 (clear error messages)
+- "The data service could not complete the request" now also shows which request failed and the error (for example GET /api/invoices - KeyError: 'EUR'), and opening an entry from the General Journal names the step that failed. Full details stay in SaberAccounting/logs/saber.log.
+- Values that could not be written in the answer (amount, date or file data saved by an older version) no longer stop the request.
+- Tests: test_v2_9_61.py.
+
+## Version 2.9.60 (side menu and Dashboard "Needs attention")
+- Menu on the left, in groups: Home, Sales, Purchases & Cash, Inventory, Accounting, Payroll & VAT, Settings. Click a group title to fold it. The old buttons above the pages: Settings > General Settings > Screen layout (kept on this computer).
+- Dashboard: Quick actions (Sales Invoice, Purchase / Expense, Import, Journal Voucher, Statement, Financial Reports) and a "Needs attention" list (overdue invoices, legal documents expired / expiring, unbalanced entries, last backup) with a button for each.
+- Tables fit the window: columns share the width (still resizable by dragging), so the toolbars above them wrap instead of going off the screen.
+- Tests: test_v2_9_60.py. 499 tests pass.
+
+## Version 2.9.59 (cleaner layout)
+- Dates in every table are shown DD-MM-YYYY (the data and exports keep the real date).
+- Toolbars wrap onto a second line on small screens (1366 px) instead of hiding buttons: General Journal, Uploaded Data, Import (Save button), Financial Reports, Inventory reports.
+- Amount columns (Debit, Credit, Total, VAT, Balance...) are right-aligned; table font 10 pt with taller rows.
+- One colour palette on every screen (navy #102A43, gold #B78B45, light #F4F7FA).
+- Tests: test_v2_9_59.py. 492 tests pass.
+
 ## Version 2.9.58 (sharp logo, much faster with big files, all invoices listed)
 
 - The header logo was shrunk by dropping pixels and could not be read. It is now the "SA" monogram alone, resized with filtering, in white and gold on the navy bar; the login card shows the full logo, sharp. New file brand_images.py (Pillow, already installed with ReportLab; listed in requirements.txt).

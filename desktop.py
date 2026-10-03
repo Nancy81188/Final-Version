@@ -137,14 +137,14 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         style.configure("TNotebook", background=LIGHT, borderwidth=0)
         style.configure("TNotebook.Tab", padding=(12, 9), font=("Segoe UI", 9, "bold"), background="#E5ECF2", foreground=NAVY)
         style.map("TNotebook.Tab", background=[("selected", "white"), ("active", "#D6E4ED")], foreground=[("selected", NAVY)])
-        style.configure("Treeview", rowheight=31, font=("Segoe UI", 9), background="white", fieldbackground="white", foreground=NAVY)
+        style.configure("Treeview", rowheight=31, font=("Segoe UI", 10), background="white", fieldbackground="white", foreground=NAVY)
         style.map("Treeview", background=[("selected", "#D6E4ED")], foreground=[("selected", NAVY)])
-        style.configure("Treeview.Heading", background=NAVY, foreground="white", font=("Segoe UI", 9, "bold"))
+        style.configure("Treeview.Heading", background=NAVY, foreground="white", font=("Segoe UI", 10, "bold"))
         style.map("Treeview.Heading", background=[("active", NAVY)])
         style.configure("TCombobox", padding=4)
-        style.configure("Sales.Treeview", rowheight=28, font=("Segoe UI", 9))
+        style.configure("Sales.Treeview", rowheight=28, font=("Segoe UI", 10))
         # lighter, calmer look: shorter rows (more lines on screen), soft heading, clean inputs
-        style.configure("Treeview", rowheight=26)
+        style.configure("Treeview", rowheight=27)  # 2.9.59: 10 pt text in tables
         style.configure("Treeview.Heading", background="#23405E", relief="flat", padding=(4, 5))
         style.map("Treeview.Heading", background=[("active", "#2E5277")])
         style.configure("TLabelframe", background=LIGHT); style.configure("TLabelframe.Label", background=LIGHT, foreground=NAVY, font=("Segoe UI", 9, "bold"))
@@ -514,44 +514,53 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         self.alerts_button.pack(side="right",padx=5)
         tk.Label(top,text=f'{getattr(self,"current_company",{}).get("name","")} · {getattr(self,"current_fiscal_year","")}',bg=NAVY,fg="white",font=("Segoe UI",9,"bold")).pack(side="right",padx=8)
         self.status_bar()
-        nav_outer=tk.Frame(self,bg=LIGHT); nav_outer.pack(fill="x",padx=8,pady=(4,0))
-        nav_canvas=tk.Canvas(nav_outer,bg=LIGHT,highlightthickness=0,height=56)
-        nav_canvas.pack(side="left",fill="x",expand=True)
-        nav_vertical=ttk.Scrollbar(nav_outer,orient="vertical",command=nav_canvas.yview)
-        nav_vertical.pack(side="right",fill="y")
-        nav_scroll=ttk.Scrollbar(nav_outer,orient="horizontal",command=nav_canvas.xview)
-        nav_scroll.pack(side="bottom",fill="x")
-        nav_canvas.configure(xscrollcommand=nav_scroll.set,yscrollcommand=nav_vertical.set)
-        tab_nav=tk.Frame(nav_canvas,bg=LIGHT)
-        nav_window=nav_canvas.create_window((0,0),window=tab_nav,anchor="nw")
-        nav_buttons=[]; navigation_columns=None
-        def size_navigation(_event=None):
-            nonlocal navigation_columns
-            columns=min(8,max(2,nav_canvas.winfo_width()//155))
-            if nav_buttons and columns!=navigation_columns:
-                navigation_columns=columns
-                for button in nav_buttons: button.grid_forget()
-                for column in range(8): tab_nav.grid_columnconfigure(column,weight=0,uniform="")
-                for row in range(8): tab_nav.grid_rowconfigure(row,weight=0,uniform="")
-                for column in range(columns): tab_nav.grid_columnconfigure(column,weight=1,uniform="main_tabs")
-                for row in range((len(nav_buttons)+columns-1)//columns):
-                    tab_nav.grid_rowconfigure(row,weight=1,uniform="main_tab_rows")
-                for index,button in enumerate(nav_buttons):
-                    button.grid(row=index//columns,column=index%columns,sticky="nsew",padx=4,pady=3)
-            nav_canvas.itemconfigure(nav_window,width=max(nav_canvas.winfo_width(),tab_nav.winfo_reqwidth()))
-            nav_canvas.configure(height=min(100,max(56,tab_nav.winfo_reqheight()+2)),scrollregion=nav_canvas.bbox("all"))
-            if tab_nav.winfo_reqheight()>nav_canvas.winfo_height()+1:
-                if not nav_vertical.winfo_manager(): nav_vertical.pack(side="right",fill="y")
-            elif nav_vertical.winfo_manager(): nav_vertical.pack_forget()
-            if tab_nav.winfo_reqwidth()>nav_canvas.winfo_width()+1:
-                if not nav_scroll.winfo_manager(): nav_scroll.pack(side="bottom",fill="x")
-            elif nav_scroll.winfo_manager(): nav_scroll.pack_forget()
-        tab_nav.bind("<Configure>",size_navigation)
-        nav_canvas.bind("<Configure>",size_navigation)
+        import desktop_layout
+        side_menu=desktop_layout.side_menu_on(); self.side_menu_mode=side_menu
+        if side_menu:  # 2.9.60: grouped menu on the left instead of the grid of buttons above the pages
+            body=tk.Frame(self,bg=LIGHT); body.pack(fill="both",expand=True)
+            menu_holder=tk.Frame(body,bg=desktop_layout.MENU_BG,width=desktop_layout.MENU_WIDTH); menu_holder.pack(side="left",fill="y"); menu_holder.pack_propagate(False)
+            host=tk.Frame(body,bg=LIGHT); host.pack(side="left",fill="both",expand=True)
+            nav_buttons=[]; size_navigation=lambda _event=None:None
+        else:
+            host=self
+            nav_outer=tk.Frame(self,bg=LIGHT); nav_outer.pack(fill="x",padx=8,pady=(4,0))
+            nav_canvas=tk.Canvas(nav_outer,bg=LIGHT,highlightthickness=0,height=56)
+            nav_canvas.pack(side="left",fill="x",expand=True)
+            nav_vertical=ttk.Scrollbar(nav_outer,orient="vertical",command=nav_canvas.yview)
+            nav_vertical.pack(side="right",fill="y")
+            nav_scroll=ttk.Scrollbar(nav_outer,orient="horizontal",command=nav_canvas.xview)
+            nav_scroll.pack(side="bottom",fill="x")
+            nav_canvas.configure(xscrollcommand=nav_scroll.set,yscrollcommand=nav_vertical.set)
+            tab_nav=tk.Frame(nav_canvas,bg=LIGHT)
+            nav_window=nav_canvas.create_window((0,0),window=tab_nav,anchor="nw")
+            nav_buttons=[]; navigation_columns=None
+            def size_navigation(_event=None):
+                nonlocal navigation_columns
+                columns=min(8,max(2,nav_canvas.winfo_width()//155))
+                if nav_buttons and columns!=navigation_columns:
+                    navigation_columns=columns
+                    for button in nav_buttons: button.grid_forget()
+                    for column in range(8): tab_nav.grid_columnconfigure(column,weight=0,uniform="")
+                    for row in range(8): tab_nav.grid_rowconfigure(row,weight=0,uniform="")
+                    for column in range(columns): tab_nav.grid_columnconfigure(column,weight=1,uniform="main_tabs")
+                    for row in range((len(nav_buttons)+columns-1)//columns):
+                        tab_nav.grid_rowconfigure(row,weight=1,uniform="main_tab_rows")
+                    for index,button in enumerate(nav_buttons):
+                        button.grid(row=index//columns,column=index%columns,sticky="nsew",padx=4,pady=3)
+                nav_canvas.itemconfigure(nav_window,width=max(nav_canvas.winfo_width(),tab_nav.winfo_reqwidth()))
+                nav_canvas.configure(height=min(100,max(56,tab_nav.winfo_reqheight()+2)),scrollregion=nav_canvas.bbox("all"))
+                if tab_nav.winfo_reqheight()>nav_canvas.winfo_height()+1:
+                    if not nav_vertical.winfo_manager(): nav_vertical.pack(side="right",fill="y")
+                elif nav_vertical.winfo_manager(): nav_vertical.pack_forget()
+                if tab_nav.winfo_reqwidth()>nav_canvas.winfo_width()+1:
+                    if not nav_scroll.winfo_manager(): nav_scroll.pack(side="bottom",fill="x")
+                elif nav_scroll.winfo_manager(): nav_scroll.pack_forget()
+            tab_nav.bind("<Configure>",size_navigation)
+            nav_canvas.bind("<Configure>",size_navigation)
         ttk.Style(self).layout("Tabless.TNotebook.Tab",[])
-        notebook=ttk.Notebook(self,style="Tabless.TNotebook"); self.main_notebook=notebook
-        filter_bar=tk.Frame(self,bg=LIGHT); filter_bar.pack(fill="x",padx=28)
-        notebook.pack(fill="both",expand=True,padx=18,pady=(6,16))
+        notebook=ttk.Notebook(host,style="Tabless.TNotebook"); self.main_notebook=notebook
+        filter_bar=tk.Frame(host,bg=LIGHT); filter_bar.pack(fill="x",padx=28 if not side_menu else 14,pady=(6 if side_menu else 0,0))
+        notebook.pack(fill="both",expand=True,padx=18 if not side_menu else 8,pady=(6,16 if not side_menu else 8))
         pages=[("dashboard_tab",tr(lang,"dashboard")),("invoices_tab",tr(lang,"invoices")),("sales_tab","Sales Invoice"),("manual_tab",tr(lang,"manual_entry")),
             ("import_tab",tr(lang,"import")),("parties_tab",tr(lang,"customers_suppliers")),("transactions_tab",tr(lang,"payments_expenses")),("purchases_tab","Purchases & Expenses"),("inventory_tab","Inventory")]
         if self.can_use("payroll"): pages.append(("payroll_tab","Payroll"))
@@ -589,10 +598,14 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         self.tab_names=[notebook.tab(tab,"text") for tab in notebook.tabs()]
         self.tab_choice=tk.StringVar(value=self.tab_names[0])
         self.tab_buttons=nav_buttons
-        for index,(page,name) in enumerate(zip(self.main_tab_pages,self.tab_names)):
-            button=tk.Button(tab_nav,text=name,command=lambda p=page:self.select_main_tab(p),bg=NAVY,fg="white",
-                activebackground=GOLD,activeforeground=NAVY,border=0,font=("Segoe UI",8,"bold"),pady=1,wraplength=120,cursor="hand2")
-            nav_buttons.append(button)
+        self._page_attributes=[attribute for attribute,_name in pages]
+        if side_menu:
+            nav_buttons.extend(desktop_layout.build_side_menu(self,menu_holder,self._page_attributes,self.main_tab_pages,self.tab_names))
+        else:
+            for index,(page,name) in enumerate(zip(self.main_tab_pages,self.tab_names)):
+                button=tk.Button(tab_nav,text=name,command=lambda p=page:self.select_main_tab(p),bg=NAVY,fg="white",
+                    activebackground=GOLD,activeforeground=NAVY,border=0,font=("Segoe UI",8,"bold"),pady=1,wraplength=120,cursor="hand2")
+                nav_buttons.append(button)
         self.after_idle(size_navigation)
         notebook.bind("<<NotebookTabChanged>>",lambda _event:self.highlight_main_tab())
         self.highlight_main_tab()
@@ -758,7 +771,11 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         if selected:
             page=next((item for item in getattr(self,"main_tab_pages",[]) if str(item)==selected),None)
             if page is not None: self._ensure_main_tab(page)
+        side=getattr(self,"side_menu_mode",False)
         for page,button in zip(getattr(self,"main_tab_pages",[]),getattr(self,"tab_buttons",[])):
+            if side:
+                import desktop_layout
+                if desktop_layout.colour_menu_button(button,str(page)==selected): continue
             button.config(bg=GOLD if str(page)==selected else NAVY,fg=NAVY if str(page)==selected else "white")
 
     def show_tab_window(self,start,selected_index=None):
@@ -792,9 +809,19 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
 
         frame=tk.Frame(parent,bg=LIGHT); frame.pack(fill="both",expand=True,padx=10,pady=10)
         tree=ttk.Treeview(frame,columns=[c[0] for c in columns],show="headings")
-        for key,label,width in columns: tree.heading(key,text=label); tree.column(key,width=width,anchor="w")
+        for key,label,width in columns:
+            tree.heading(key,text=label); tree.column(key,width=width,anchor="e" if is_amount_column(key,label) else "w")  # 2.9.59: amounts on the right
         scroll=ttk.Scrollbar(frame,orient="vertical",command=tree.yview); tree.configure(yscrollcommand=scroll.set)
         tree.pack(side="left",fill="both",expand=True); scroll.pack(side="right",fill="y")
+        # 2.9.60: the table fits the window (columns share the width, still resizable by dragging) instead of
+        # making the whole page wider than the screen, which pushed the toolbars off to the right.
+        frame.configure(width=320,height=max(240,int(tree.cget("height") or 10)*27+34)); frame.pack_propagate(False)
+        planned={key:width for key,_label,width in columns}; fitted={"width":0}
+        def fit_columns(event):
+            if abs(event.width-fitted["width"])<4: return  # only when the window width changes, not after a column drag
+            fitted["width"]=event.width; total=sum(planned.values()) or 1; factor=min(1.0,max(0.45,(event.width-4)/total))
+            for key,width in planned.items(): tree.column(key,width=max(40,int(width*factor)))
+        tree.bind("<Configure>",fit_columns,add="+")
 
         real_insert,real_delete=tree.insert,tree.delete
         tree._search_rows=[]
@@ -846,7 +873,10 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
             def sortable(value):
                 clean=str(value).replace(",","").strip()
                 try: return (0,float(clean))
-                except ValueError: return (1,clean.casefold())
+                except ValueError: pass
+                day=sortable_date(clean)
+                if day!=datetime.min: return (0,float(day.toordinal()))  # 2.9.59: DD-MM-YYYY sorts by date, not by day number
+                return (1,clean.casefold())
             ordered=sorted(tree.get_children(""),key=lambda item:sortable(tree.set(item,key)),reverse=reverse)
             for position,item in enumerate(ordered): tree.move(item,"",position)
             tree._sort_reverse[key]=not reverse
@@ -877,9 +907,11 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         self.action_button(actions,"Export Excel",lambda:self.export_report("dashboard","xlsx")).pack(side="left",padx=4)
         self.action_button(actions,"Export PDF",lambda:self.export_report("dashboard","pdf")).pack(side="left",padx=4)
         self.action_button(actions,"Print",lambda:self.export_report("dashboard","print")).pack(side="left",padx=4)
+        flow_toolbars(actions)
+        import desktop_layout; desktop_layout.build_today_panel(self,self.dashboard_tab)  # 2.9.60: quick actions + needs attention
         self.dashboard_cards=tk.Frame(self.dashboard_tab,bg=LIGHT); self.dashboard_cards.pack(fill="x",padx=12)
         self.dashboard_chart=tk.Canvas(self.dashboard_tab,height=105,bg="white",highlightthickness=0)
-        self.dashboard_chart.pack(fill="x",padx=12,pady=(8,4))
+        # 2.9.60: the small monthly strip repeated the "by month" chart below; it is kept (exports use it) but not shown
         self.build_dashboard_charts(self.dashboard_tab)
         self.load_dashboard()
 
@@ -926,6 +958,9 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
             chart_rows.append(row)
         self.draw_dashboard_chart(chart_rows)
         self.load_dashboard_charts()
+        try:
+            import desktop_layout; desktop_layout.fill_today_panel(self,data.get("metrics",[]))
+        except Exception: log.warning("Needs attention list could not be filled",exc_info=True)
 
     def draw_dashboard_chart(self,rows):
         canvas=self.dashboard_chart; canvas.delete("all"); canvas.update_idletasks(); width=max(canvas.winfo_width(),700); height=100
