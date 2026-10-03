@@ -205,7 +205,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
              mock.patch.object(app, "load_dashboard"), mock.patch.object(app, "load_invoices"), \
              mock.patch.object(app, "load_journal"), mock.patch.object(app, "load_trial"), \
              mock.patch.object(app, "load_transactions"):
-            app.send_import()
+            with mock.patch("desktop_stage3.messagebox.askyesnocancel", return_value=False): app.send_import()  # 2026 rows into the 2024 test year
         self.assertEqual([row["vat_account"] for row in upload.call_args.args[0]],
                          ["44216", "44216", "4427"])
         self.assertTrue(all("_vat_account_chosen" not in row for row in upload.call_args.args[0]))

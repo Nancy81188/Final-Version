@@ -26,6 +26,7 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
+        self._collect_garbage_on_screen_thread()
         self.title(f"Saber Accounting {app_runtime.APP_VERSION}")
         screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
         try: dpi_scale=max(1.0,min(2.0,self.winfo_fpixels("1i")/96.0))
@@ -712,7 +713,29 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
                 pending.remove(builder)
                 self._run_page_builder(builder)
 
+    def _collect_garbage_on_screen_thread(self):
+        """2.9.54: Python frees unused screen objects in cycles from whichever thread happens to run at that moment.
+        When that is the data-service thread, Tk refuses it ('main thread is not in main loop') and can stop the
+        program. Automatic collection is switched off and done here, on the screen thread, every 20 seconds."""
+        import gc
+        gc.disable()
+        def collect():
+            try: gc.collect()
+            finally:
+                try: self.after(20000, collect)
+                except tk.TclError: pass
+        self.after(20000, collect)
+        self.bind("<Destroy>", lambda event: gc.collect() if event.widget is self else None, add="+")
+
+    def main_tab_container(self,page):
+        """The notebook page holding a screen. Screens live in a scrolled frame inside the page (2.9.54: opening
+        an entry from the General Journal failed with '... is not in list' when given the inner frame)."""
+        pages=getattr(self,"main_tab_pages",[]); widget=page
+        while widget is not None and widget not in pages: widget=getattr(widget,"master",None)
+        return widget if widget is not None else page
+
     def select_main_tab(self,page):
+        page=self.main_tab_container(page)
         self._ensure_main_tab(page)
         self.main_notebook.select(page); self.highlight_main_tab()
 

@@ -174,6 +174,7 @@ class BalanceReportsMixin:
     # ------------------------------------------------------------ open an entry in the screen where it can be edited (2.9.47)
     def go_to_main_tab(self, page):
         """Show a main tab even when it is outside the visible group of tabs."""
+        page = self.main_tab_container(page) if hasattr(self, "main_tab_container") else page
         try: self.select_main_tab(page)
         except tk.TclError:
             index = self.main_tab_pages.index(page); self.show_tab_window(max(0, index - 2), index); self.highlight_main_tab()

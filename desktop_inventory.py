@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from desktop_brains import EditableSheet
 from multi_select import MultiSelect, chosen_values
+from inventory import ANALYSIS_DIMENSIONS
 
 NAVY, GOLD, LIGHT = "#071b2e", "#c9a96a", "#f3f6f8"
 RED, MUTED = "#8B1E1E", "#5f6b76"
@@ -376,14 +377,15 @@ class InventoryMixin:
         self.ir_info = tk.Label(page, text="", bg=LIGHT, fg=NAVY, anchor="w"); self.ir_info.pack(fill="x", padx=10)
         # Inventory Analysis (3D) options: shown only when that report is selected.
         analysis_bar = tk.Frame(page, bg=LIGHT); self.ir_analysis_bar = analysis_bar
-        self.ir_3d_rows = tk.StringVar(value="Item"); self.ir_3d_columns = tk.StringVar(value="Warehouse"); self.ir_3d_measure = tk.StringVar(value="Quantity")
-        tk.Label(analysis_bar, text="3D rows", bg=LIGHT).pack(side="left")
-        ttk.Combobox(analysis_bar, textvariable=self.ir_3d_rows, values=["Item", "Category", "Supplier"], state="readonly", width=13).pack(side="left", padx=(4, 12))
-        tk.Label(analysis_bar, text="columns", bg=LIGHT).pack(side="left")
-        ttk.Combobox(analysis_bar, textvariable=self.ir_3d_columns, values=["Warehouse", "Month"], state="readonly", width=13).pack(side="left", padx=(4, 12))
-        tk.Label(analysis_bar, text="measure", bg=LIGHT).pack(side="left")
-        ttk.Combobox(analysis_bar, textvariable=self.ir_3d_measure, values=["Quantity", "Value"], state="readonly", width=12).pack(side="left", padx=(4, 12))
-        tk.Label(analysis_bar, text="Warehouse: stock at To date  |  Month: net movement during From / To", bg=LIGHT, fg=MUTED).pack(side="left")
+        self.ir_3d_rows = tk.StringVar(value="Item"); self.ir_3d_columns = tk.StringVar(value="Warehouse"); self.ir_3d_layers = tk.StringVar(value="(none)")
+        self.ir_3d_measure = tk.StringVar(value="Quantity")
+        dimensions = [d.title() for d in ANALYSIS_DIMENSIONS]
+        for label, variable, values in (("Rows", self.ir_3d_rows, dimensions), ("Columns", self.ir_3d_columns, dimensions),
+                                        ("Layers (3rd)", self.ir_3d_layers, ["(none)"] + dimensions), ("Measure", self.ir_3d_measure, ["Quantity", "Value"])):
+            tk.Label(analysis_bar, text=label, bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")
+            ttk.Combobox(analysis_bar, textvariable=variable, values=values, state="readonly", width=12).pack(side="left", padx=(4, 10))
+        self.action_button(analysis_bar, "3D Chart", self.show_inventory_3d_chart).pack(side="left", padx=4)
+        tk.Label(analysis_bar, text="Choose any 3. Stock at To date; with Month, Project or Branch: net movement From / To.", bg=LIGHT, fg=MUTED).pack(side="left", padx=6)
         self.inventory_report_selected()
         self.ir_viewer = self.report_viewer(page)
 
@@ -408,7 +410,9 @@ class InventoryMixin:
     def inventory_report_options(self):
         options = {"date_from": self.ir_from.get().strip(), "date_to": self.ir_to.get().strip(), "days": self.ir_days.get().strip() or "90", "include_zero": self.ir_zero.get()}
         if self.ir_report.get() == "Inventory Analysis (3D)":
-            options.update(rows=self.ir_3d_rows.get().lower(), columns=self.ir_3d_columns.get().lower(), measure=self.ir_3d_measure.get().lower())
+            layers = self.ir_3d_layers.get().lower() if hasattr(self, "ir_3d_layers") else "none"
+            options.update(rows=self.ir_3d_rows.get().lower(), columns=self.ir_3d_columns.get().lower(), measure=self.ir_3d_measure.get().lower(),
+                           layers="none" if layers in ("", "(none)") else layers)
         chosen = [value.split(" - ", 1)[0] for value in chosen_values(self.ir_warehouse.get())]
         ids = [w["id"] for w in getattr(self, "warehouse_rows", []) if w["code"] in chosen]
         if ids: options["warehouse_id"] = ids[0] if len(ids) == 1 else ids
@@ -451,6 +455,16 @@ class InventoryMixin:
         try: result = self.client.inventory_report(REPORTS[self.ir_report.get()], self.inventory_report_options())
         except Exception as exc: return messagebox.showerror("Inventory Reports", str(exc))
         self.inventory_report_result = result; self.show_sections(self.ir_viewer, result["sections"]); self.ir_info.config(text=f'{result["title"]}  |  ' + "   ".join(result["meta"]))
+
+    def show_inventory_3d_chart(self):
+        """The 3D chart of the Inventory Analysis (3D) report, with angle and depth controls."""
+        if self.ir_report.get() != "Inventory Analysis (3D)": self.ir_report.set("Inventory Analysis (3D)"); self.inventory_report_selected()
+        self.run_inventory_report()
+        result = getattr(self, "inventory_report_result", None)
+        charts = [(s["chart"]["title"], s["chart"]) for s in (result or {}).get("sections", []) if s.get("chart") and s["chart"].get("series")]
+        if not charts: return messagebox.showinfo("3D Chart", "No data to draw for these choices")
+        from desktop_projection import show_3d_charts
+        return show_3d_charts(self, charts, "Inventory Analysis (3D)")
 
     def export_inventory_report(self, format_name):
         if not getattr(self, "inventory_report_result", None): self.run_inventory_report()

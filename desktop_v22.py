@@ -22,20 +22,20 @@ class V22Mixin:
     # ------------------------------------------------------------ sales documents
     def sales_doc_type_changed(self):
         if not self.sales_edit_id: self.refresh_sales_number()
-        reverse=self.sales_doc_type.get()=="Credit Note"
+        reverse=self.sales_doc_type.get() in ("Credit Note","Return")  # 2.9.54: Return = goods come back (stock in)
         if reverse:
             self.sales_category_box["values"]=["Goods","Products / Services"]
             if self.sales_category.get()!="Goods": self.sales_category.set("Products / Services")
         else:
             self.sales_category_box["values"]=["Goods","Products","Services"]
             if self.sales_category.get()=="Products / Services": self.sales_category.set("Services")
-        self.sales_revenue_caption.config(text="Discount Account" if reverse else "Revenue Account")
+        self.sales_revenue_caption.config(text="Returns Account" if self.sales_doc_type.get()=="Return" else "Discount Account" if reverse else "Revenue Account")
         self.sales_category_changed()
         self.sales_supplier_side.set("C - Credit" if reverse else "D - Debit")
         self.sales_vat_side.set("D - Debit" if reverse else "C - Credit")
         self.sales_expense_side.set("D - Debit" if reverse else "C - Credit")
-        self.sales_mode_label.config(text=f"NEW {self.sales_doc_type.get().upper()}", bg="#8B1E1E" if self.sales_doc_type.get() == "Credit Note" else GOLD,
-                                     fg="white" if self.sales_doc_type.get() == "Credit Note" else NAVY)
+        self.sales_mode_label.config(text=f"NEW {self.sales_doc_type.get().upper()}", bg="#8B1E1E" if reverse else GOLD,
+                                     fg="white" if reverse else NAVY)
 
     def open_sales_by_number(self):
         self.search_open_sales(); values = list(self.sales_open_box["values"])

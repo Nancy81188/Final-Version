@@ -168,8 +168,11 @@ def _date(value):
         return value.date().isoformat()
     if isinstance(value, date):
         return value.isoformat()
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and 20000 < value < 80000:  # Excel serial date
+        from datetime import timedelta
+        return (datetime(1899, 12, 30) + timedelta(days=int(value))).date().isoformat()
     text = str(value or "").strip()
-    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y"):
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d", "%m/%d/%Y"):
         try:
             return datetime.strptime(text, fmt).date().isoformat()
         except ValueError:
@@ -202,6 +205,10 @@ def read_invoices(path: str | Path, sheet_name: str | None = None, default_curre
         invoices = []
         for row_number, (values, formula_cells) in enumerate(zip(value_rows, formula_rows), start=2):
             if not any(cell.value not in (None, "") for cell in formula_cells):
+                continue
+            # 2.9.54: a row where only formulas were copied down (no date, no name, no amount typed) is not an invoice.
+            typed = [cell.value for cell in formula_cells if cell.value not in (None, "") and not str(cell.value).startswith("=")]
+            if not typed:
                 continue
             number_formats = tuple(cell.number_format or "" for cell in formula_cells)
             def get(field, default=None):
@@ -237,6 +244,15 @@ def read_invoices(path: str | Path, sheet_name: str | None = None, default_curre
                 "source_file": Path(path).name,
                 "source_row": row_number,
             })
+            invoice = invoices[-1]; problems = []
+            if not invoice["party_name"]: problems.append("supplier / customer name missing")
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", invoice["invoice_date"] or ""):
+                problems.append(f"date not valid ({invoice['invoice_date']})" if invoice["invoice_date"] else "date missing")
+            formulas_without_values = any(str(formula_cells[columns[f]].value or "").startswith("=") and get(f) is None
+                                          for f in ("subtotal", "vat", "total") if columns.get(f) is not None and columns[f] < len(formula_cells))
+            if formulas_without_values: problems.append("formulas without saved values - open the file in Excel, press Save, then import again")
+            elif not invoice["total"]: problems.append("amount missing")
+            if problems: invoice["problem"] = "Check: " + ", ".join(problems)
         return invoices
     finally:
         workbook_values.close()

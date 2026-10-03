@@ -133,7 +133,7 @@ class InvoicesMixin:
             "status":tk.StringVar(value=row["status"]),
             "due_date":tk.StringVar(value=row.get("due_date") or ""),
             "amount_paid":tk.StringVar(value=row.get("amount_paid") or "0"),
-            "payment_method":tk.StringVar(value=row.get("payment_method") or "Cash"),
+            "payment_method":tk.StringVar(value=row.get("payment_method") or ("Cash" if float(row.get("amount_paid") or 0) else "On Account (Not Cash)")),
             "cash_account":tk.StringVar(value=row.get("payment_account") or ""),
             "description":tk.StringVar(value=row.get("description") or ""),
             "branch":tk.StringVar(value=row.get("branch_name") or "Head Office"),
@@ -201,13 +201,22 @@ class InvoicesMixin:
                 return messagebox.showwarning("Invoices","Total must equal Before VAT plus VAT",parent=window)
             if amount_paid<0 or amount_paid>total:
                 return messagebox.showwarning("Invoices","Amount paid must be between zero and Total",parent=window)
+            method=values.get("payment_method") or ""
+            if amount_paid==0 and method and not method.lower().startswith("on account"):
+                # 2.9.54: choosing Cash / Bank on an uploaded invoice means it was paid: the payment goes to the cash or bank statement.
+                answer=messagebox.askyesnocancel("Invoices",f"Payment method is {method} but Amount Paid is 0.\n\nYes = paid in full ({total:,.2f}): the payment is posted to "
+                    f"{values.get('cash_account') or ('531 cash' if method.lower()=='cash' else '512 bank')} and shows in its statement\nNo = keep it unpaid (on account)",parent=window)
+                if answer is None: return
+                if answer: values["amount_paid"]=f"{total:.2f}"
+                else: values["payment_method"]="On Account (Not Cash)"
             try:
                 self.client.update_invoice(int(invoice_id),values)
             except Exception as exc:
                 return messagebox.showerror("Invoices",str(exc),parent=window)
             window.destroy()
             self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial()
-            messagebox.showinfo("Invoices","Invoice updated successfully")
+            paid=float(values.get("amount_paid") or 0)
+            messagebox.showinfo("Invoices","Invoice updated successfully"+(f". Payment of {paid:,.2f} posted to {values.get('cash_account') or ('531' if (values.get('payment_method') or '').lower()=='cash' else '512')} (see its account statement)." if paid else ""))
 
         exchange_label=tk.Label(window,text=self.exchange_equivalent_text(float(row["total"] or 0),row["currency"]),bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold"))
         exchange_label.grid(row=(len(fields)+1)//2,column=0,columnspan=4,pady=(6,0))
@@ -530,7 +539,7 @@ class InvoicesMixin:
         invoice_details=tk.Frame(details,bg=LIGHT); account_details=tk.Frame(details,bg=LIGHT)
         details.add(invoice_details,text="Invoice details"); details.add(account_details,text="Posting accounts")
         top=tk.Frame(invoice_details,bg=LIGHT); top.pack(anchor="w",fill="x",pady=(1,0))
-        doc_box=ttk.Combobox(top,textvariable=self.sales_doc_type,values=["Invoice","Credit Note"],state="readonly",width=11)
+        doc_box=ttk.Combobox(top,textvariable=self.sales_doc_type,values=["Invoice","Return","Credit Note","Debit Note"],state="readonly",width=11)
         doc_box.pack(side="left",padx=(0,8)); doc_box.bind("<<ComboboxSelected>>",lambda _event:self.sales_doc_type_changed())
         tk.Label(top,text="Invoice No.",bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,4))
         tk.Entry(top,textvariable=self.sales_no,width=18,font=("Segoe UI",10,"bold"),state="readonly",readonlybackground="white").pack(side="left",padx=(0,12))
@@ -648,7 +657,7 @@ class InvoicesMixin:
         if not self.sales_edit_id and len(self.sales_date.get())==10: self.refresh_sales_number()
 
     def refresh_sales_number(self):
-        kind={"Credit Note":"credit_note","Debit Note":"debit_note"}.get(self.sales_doc_type.get() if hasattr(self,"sales_doc_type") else "Invoice","sale")
+        kind={"Credit Note":"credit_note","Return":"credit_note","Debit Note":"debit_note"}.get(self.sales_doc_type.get() if hasattr(self,"sales_doc_type") else "Invoice","sale")
         try: self.sales_no.set(self.client.next_invoice_number(kind,self.sales_date.get().strip() or None))
         except Exception: self.sales_no.set("")
 
@@ -747,7 +756,7 @@ class InvoicesMixin:
 
     def default_sales_posting_account(self):
         category=self.sales_category.get()
-        if self.sales_doc_type.get()=="Credit Note": return "709000001" if category=="Goods" else "719000001"
+        if self.sales_doc_type.get() in ("Credit Note","Return"): return "709000001" if category=="Goods" else "719000001"
         return {"Goods":"701100001","Products":"711100001","Services":"713000001"}.get(category,"713000001")
 
     def cycle_sales_type(self):
@@ -1028,10 +1037,11 @@ class InvoicesMixin:
         self.sales_treatment.set(next((k for k,v in SALE_TREATMENTS.items() if v==(detail.get("vat_treatment") or "standard")),"Taxable 11%"))
         self.sales_cash_account.set(detail.get("payment_account") or "")
         self.sales_amount_paid.set(str(detail.get("amount_paid") or 0)); self.sales_due_date.set(safe_display_date(detail.get("due_date")) if detail.get("due_date") else "")
-        self.sales_doc_type.set({"credit_note":"Credit Note","debit_note":"Debit Note"}.get(detail.get("doc_subtype") or "invoice","Invoice"))
-        self.sales_revenue_caption.config(text="Discount Account" if self.sales_doc_type.get()=="Credit Note" else "Revenue Account")
+        self.sales_doc_type.set("Return" if detail.get("doc_subtype")=="credit_note" and detail.get("is_return") else
+                                {"credit_note":"Credit Note","debit_note":"Debit Note"}.get(detail.get("doc_subtype") or "invoice","Invoice"))
+        self.sales_revenue_caption.config(text="Returns Account" if self.sales_doc_type.get()=="Return" else "Discount Account" if self.sales_doc_type.get()=="Credit Note" else "Revenue Account")
         revenue_code=str(detail.get("expense_account") or "")
-        if self.sales_doc_type.get()=="Credit Note":
+        if self.sales_doc_type.get() in ("Credit Note","Return"):
             category="Goods" if revenue_code.startswith("709") else "Products / Services"
             self.sales_category_box["values"]=["Goods","Products / Services"]
         else:
@@ -1076,7 +1086,8 @@ class InvoicesMixin:
                  "branch":self.sales_branch.get(),"status":"posted" if post else "review","source_file":"Sales Invoice","source_row":None,
                  "department":self.dimension_code(self.sales_department.get()),"project":self.dimension_code(self.sales_project.get()),
                  "vat_treatment":SALE_TREATMENTS.get(self.sales_treatment.get(),"standard"),
-                 "doc_subtype":{"Credit Note":"credit_note","Debit Note":"debit_note"}.get(self.sales_doc_type.get(),"invoice"),
+                 "doc_subtype":{"Credit Note":"credit_note","Return":"credit_note","Debit Note":"debit_note"}.get(self.sales_doc_type.get(),"invoice"),
+                 "is_return":self.sales_doc_type.get()=="Return",
                  "invoice_discount_percent":self.sales_discount_percent.get().strip() or "0","invoice_discount_amount":self.sales_discount_amount.get().strip() or "0",
                  "gross_before_discount":getattr(self,"sales_calculation",{}).get("total","")}
         if invoice["doc_subtype"]=="credit_note":

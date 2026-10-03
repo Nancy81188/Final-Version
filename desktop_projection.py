@@ -241,22 +241,34 @@ class ProjectionMixin:
     def show_projection_charts(self):
         sections = self._projection_ready()
         if not sections: return
-        charts = [(s["chart"]["title"], s["chart"]) for s in sections if s.get("chart")]
-        window = tk.Toplevel(self); window.title("3D Charts"); window.configure(bg=LIGHT); window.geometry("1000x600")
-        top = tk.Frame(window, bg=LIGHT); top.pack(fill="x", padx=10, pady=6)
-        chosen = tk.StringVar(value=charts[0][0]); angle = tk.IntVar(value=35); depth = tk.DoubleVar(value=0.55)
-        tk.Label(top, text="Chart", bg=LIGHT).pack(side="left")
-        ttk.Combobox(top, textvariable=chosen, values=[name for name, _ in charts], state="readonly", width=34).pack(side="left", padx=6)
-        tk.Label(top, text="Angle", bg=LIGHT).pack(side="left", padx=(10, 2))
-        tk.Scale(top, variable=angle, from_=10, to=70, orient="horizontal", length=140, bg=LIGHT, highlightthickness=0, command=lambda _v: draw()).pack(side="left")
-        tk.Label(top, text="Depth", bg=LIGHT).pack(side="left", padx=(10, 2))
-        tk.Scale(top, variable=depth, from_=0.2, to=1.2, resolution=0.05, orient="horizontal", length=140, bg=LIGHT, highlightthickness=0, command=lambda _v: draw()).pack(side="left")
-        canvas = tk.Canvas(window, bg="white", highlightthickness=0); canvas.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        def draw(*_args):
-            spec = dict(dict(charts)[chosen.get()]); spec.update(angle=angle.get(), depth=depth.get())
-            width = max(600, canvas.winfo_width()); height = max(360, canvas.winfo_height())
-            chart3d.draw_on_canvas(canvas, chart3d.chart_from_spec(spec, width, height))
-        chosen.trace_add("write", draw); canvas.bind("<Configure>", draw)
-        window.bind("<Escape>", lambda _e: window.destroy())
-        window.after(80, draw)
-        return window
+        return show_3d_charts(self, [(s["chart"]["title"], s["chart"]) for s in sections if s.get("chart")])
+
+
+def show_3d_charts(app, charts, title="3D Charts"):
+    """A window with a list of 3D charts, angle and depth sliders (projection, inventory analysis).
+    No Tk variables here: closures holding them could be freed on another thread and stop the program."""
+    window = tk.Toplevel(app); window.title(title); window.configure(bg=LIGHT); window.geometry("1000x600")
+    top = tk.Frame(window, bg=LIGHT); top.pack(fill="x", padx=10, pady=6)
+    names = []
+    for name, _spec in charts:
+        while name in names: name += " "
+        names.append(name)
+    specs = dict(zip(names, [spec for _n, spec in charts]))
+    tk.Label(top, text="Chart", bg=LIGHT).pack(side="left")
+    chooser = ttk.Combobox(top, values=names, state="readonly", width=40); chooser.pack(side="left", padx=6); chooser.set(names[0])
+    canvas = tk.Canvas(window, bg="white", highlightthickness=0)
+    sliders = {}
+    def draw(*_args):
+        if not canvas.winfo_exists() or not sliders: return
+        spec = dict(specs.get(chooser.get(), specs[names[0]])); spec.update(angle=int(sliders["angle"].get()), depth=float(sliders["depth"].get()))
+        width = max(600, canvas.winfo_width()); height = max(360, canvas.winfo_height())
+        chart3d.draw_on_canvas(canvas, chart3d.chart_from_spec(spec, width, height))
+    for label, key, low, high, step, start in (("Angle", "angle", 10, 70, 1, 35), ("Depth", "depth", 0.2, 1.2, 0.05, 0.55)):
+        tk.Label(top, text=label, bg=LIGHT).pack(side="left", padx=(10, 2))
+        scale = tk.Scale(top, from_=low, to=high, resolution=step, orient="horizontal", length=140, bg=LIGHT, highlightthickness=0, command=lambda _v: draw())
+        scale.set(start); scale.pack(side="left"); sliders[key] = scale
+    canvas.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    chooser.bind("<<ComboboxSelected>>", draw); canvas.bind("<Configure>", draw)
+    window.bind("<Escape>", lambda _e: window.destroy())
+    window.after(80, draw)
+    return window

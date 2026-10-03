@@ -1,5 +1,16 @@
 # Saber Accounting MVP
 
+## Version 2.9.54 (journal edit fix, returns on the sales / purchase screens, 3D analysis with any 3 dimensions, Excel import of incomplete files, cash on uploaded invoices, stability)
+
+- Fix: General Journal > Edit Selected Entry on a receipt / payment (and other screens kept in a scrolled page) stopped with "<tkinter.Frame ...> is not in list". The screen now opens.
+- Sales Invoice: Document = Invoice / Return / Credit Note / Debit Note. Return = goods come back into stock (returns account 709 / 719, reversed entry); Credit Note = discount; Debit Note = extra charge (no stock).
+- Purchases: Document = Invoice / Return / Credit Note / Debit Note. Return = goods go back to the supplier (stock out at average cost, Dr supplier / Cr purchases and VAT).
+- Inventory Analysis (3D): choose any three dimensions - Rows, Columns and Layers - among Item, Category, Subcategory, Brand, Supplier, Unit, Warehouse, Month, Project and Branch, in Quantity or Value. One table per layer, the totals, and a "3D Chart" button (also in PDF / Excel).
+- Excel import: rows where only formulas were copied down are skipped; rows missing the name, the date or the amount, with an invalid date (e.g. 02-05-20204) or formulas without saved values stay in the preview with the reason, and the other rows are imported. Rows dated in another fiscal year are kept for that year (or imported anyway when you choose).
+- Uploaded Data > Edit: choosing Cash / Bank with Amount Paid 0 asks to mark it paid in full; the payment is posted to 531 / 512 (or the account chosen) and shows in the cash / bank statement.
+- Stability: Python's memory clean-up now runs on the screen thread only; before, it could run on the data-service thread and stop the program ("main thread is not in main loop").
+- Tests: test_v2_9_54.py. 478 tests pass.
+
 ## Version 2.9.53 (renamed company: second backup copy follows)
 
 - Renaming a company (Companies screen) already moved every year file and the backups folder to the new name, and the years stay linked by the company id, so last year is still found. Now the second backup copy folder (OneDrive / USB) is renamed as well, instead of starting a new folder.

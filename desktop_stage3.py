@@ -115,6 +115,9 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
 
     def import_cell_changed(self, iid, key, text):
         row = self.import_sheet.rows[iid]
+        if key in ("party_name", "invoice_date", "subtotal", "vat", "total") and row.get("problem"):
+            row.pop("problem", None)  # corrected by hand: checked again when saving
+            if str(row.get("notes") or "").startswith("Check"): row["notes"] = ""
         if key == "entry_type":
             if text not in TYPES: messagebox.showwarning("Import","Choose Purchases, Expenses, Assets or Sales"); return False
             row[key] = text
@@ -157,7 +160,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                          "subtotal": r["with_vat_subtotal"] + r["without_vat_subtotal"], "vat": r["vat"], "total": r["with_vat_subtotal"] + r["without_vat_subtotal"] + r["vat"],
                          "source": f"Excel row {r['source_row']}", "_expense": r} for r in read_expenses(path)]
             else:
-                rows = [{**r, "source": f"Excel row {r['source_row']}"} for r in read_invoices(path, default_currency=self.currency.get(), default_kind=kind,allowed_currencies=self.currency_codes)]
+                rows = [{**r, "source": f"Excel row {r['source_row']}", **({"notes": r["problem"]} if r.get("problem") else {})}
+                        for r in read_invoices(path, default_currency=self.currency.get(), default_kind=kind,allowed_currencies=self.currency_codes)]
         except Exception as exc: return messagebox.showerror("Import", f"The Excel file could not be read: {exc}")
         self.import_mode = "excel"; self.import_rows = rows; self.file_label.config(text=f"Excel: {path}", fg=NAVY); self.populate_import_preview()
         if rows and auto_upload_on(self): self.after_idle(self.auto_send_import)
@@ -240,7 +244,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         for r in rows:
             problems = []
             if not r.get("party_name"): problems.append("customer / supplier")
-            if r.get("total") in (None, ""): problems.append("total")
+            if r.get("total") in (None, "", 0, 0.0): problems.append("total")
+            if r.get("problem") and "date" in str(r.get("problem")): problems.append("date")
             if self.import_mode == "pdf":
                 if not r.get("invoice_number"): problems.append("invoice number")
                 if not r.get("invoice_date"): problems.append("date")
@@ -299,8 +304,41 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             reviewer(row)
             return
         kind, entry_type = TYPES[self.import_type.get()]
-        missing = [r["line"] for r in rows if not r.get("party_name") or r.get("total") in (None, "")]
-        if missing: return messagebox.showwarning("Import", f"Row(s) {', '.join(missing[:10])}: enter the customer/supplier and the total")
+        if self.import_mode == "pdf":
+            missing = [str(r.get("line", "")) for r in rows if not r.get("party_name") or r.get("total") in (None, "")]
+            if missing: return messagebox.showwarning("Import", f"Row(s) {', '.join(missing[:10])}: enter the customer/supplier and the total")
+        else:
+            # 2.9.54: an Excel file with some incomplete rows is no longer refused as a whole - those rows stay in the
+            # preview with the reason (Check column) and the others are imported.
+            def row_day(r):
+                for pattern in ("%Y-%m-%d", "%d-%m-%Y"):
+                    try: return datetime.strptime(str(r.get("invoice_date") or "").strip(), pattern)
+                    except ValueError: pass
+                return None
+            def incomplete(r):
+                return not r.get("party_name") or r.get("total") in (None, "", 0, 0.0) or bool(r.get("problem")) or row_day(r) is None
+            waiting = [r for r in rows if incomplete(r)]
+            for r in waiting:
+                if not str(r.get("notes") or "").startswith("Check"):
+                    r["notes"] = ("Check: supplier / customer, date and amount. " + str(r.get("notes") or "")).strip()
+            ready = [r for r in rows if not incomplete(r)]
+            fiscal_year = getattr(self, "current_fiscal_year", None)
+            other_year = [r for r in ready if fiscal_year and row_day(r).year != int(fiscal_year)]
+            if other_year:
+                years = ", ".join(sorted({str(row_day(r).year) for r in other_year}))
+                keep = True if auto else messagebox.askyesnocancel("Import", f"{len(other_year)} row(s) are dated {years}, not {fiscal_year} (the year open now).\n\n"
+                    f"Yes = keep them in the preview: open {years} (Switch Company / Year) and import them there\nNo = import them in {fiscal_year} anyway\nCancel = stop")
+                if keep is None: return
+                if keep:
+                    for r in other_year: r["notes"] = f"Check: dated {row_day(r).year} - open {row_day(r).year} (Switch Company / Year) to import this row"
+                    waiting += other_year; ready = [r for r in ready if not any(r is o for o in other_year)]
+            if waiting:
+                for iid in getattr(self.import_sheet, "rows", {}): self.import_sheet.refresh(iid)
+                lines = ", ".join(str(r.get("line") or r.get("source_row") or "") for r in waiting[:15])
+                if not ready: return messagebox.showwarning("Import", f"No row can be imported now: rows {lines}{' ...' if len(waiting) > 15 else ''} need a check. See the Check column.")
+                if not auto and not messagebox.askyesno("Import", f"{len(waiting)} row(s) stay in the preview (see the Check column): {lines}{' ...' if len(waiting) > 15 else ''}.\n\n"
+                                                        f"Import the other {len(ready)} row(s) now?"): return
+                rows = ready
         if self.import_mode == "pdf":
             incomplete = [str(r["line"]) for r in rows if not r.get("invoice_number") or not r.get("invoice_date")
                           or r.get("subtotal") in (None, "") or r.get("vat") in (None, "")]

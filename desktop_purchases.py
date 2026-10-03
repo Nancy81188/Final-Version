@@ -6,6 +6,9 @@ from desktop_stage3_common import *  # noqa: F401,F403
 from desktop_stage3_common import _dd, _num
 
 
+PURCHASE_DOCUMENTS = ("Invoice", "Return", "Credit Note", "Debit Note")
+
+
 class PurchasesMixin:
     # ================================================================ Purchases & Expenses
     def build_purchases_expenses(self):
@@ -36,6 +39,7 @@ class PurchasesMixin:
         f["department"] = tk.StringVar(); f["project"] = tk.StringVar(); f["vat_typed"] = False; self.purchase_form = f
         f["use"] = tk.StringVar(value="Mixed (partial deduction)"); f["reverse"] = tk.BooleanVar(value=False)
         f["discount_percent"] = tk.StringVar(value="0"); f["discount_amount"] = tk.StringVar(value="0"); f["discount_mode"] = "percent"
+        f["doc"] = tk.StringVar(value="Invoice")  # 2.9.54: Invoice / Return (goods back to the supplier) / Debit Note / Credit Note
         box = tk.LabelFrame(page, text="Purchase Invoice", bg=LIGHT, padx=6, pady=2); box.pack(fill="x", padx=8, pady=(2, 1))
         actions = tk.Frame(box, bg=LIGHT); actions.pack(side="right", anchor="ne", padx=(10, 0))
         fields = tk.Frame(box, bg=LIGHT); fields.pack(side="left", fill="x", expand=True)
@@ -48,6 +52,8 @@ class PurchasesMixin:
         tk.Label(r1, text="Due", bg=LIGHT).pack(side="left"); self.date_entry(r1, v["due"], 11).pack(side="left", padx=(4, 8))
         ttk.Combobox(r1, textvariable=v["currency"], values=self.currency_codes, state="readonly", width=5).pack(side="left", padx=4)
         ttk.Combobox(r1, textvariable=v["type"], values=["Purchases", "Assets"], state="readonly", width=9).pack(side="left", padx=4)
+        doc_box = ttk.Combobox(r1, textvariable=f["doc"], values=list(PURCHASE_DOCUMENTS), state="readonly", width=11); doc_box.pack(side="left", padx=4)
+        doc_box.bind("<<ComboboxSelected>>", lambda _e: self.purchase_doc_changed())
         accounts_row = tk.Frame(fields, bg=LIGHT); accounts_row.pack(fill="x", pady=(2, 0))
         tk.Label(accounts_row, text="Cost / Asset A/C", bg=LIGHT).pack(side="left"); self.account_search_box(accounts_row, v["account"], 18).pack(side="left", padx=(4, 12))
         tk.Label(accounts_row, text="VAT A/C", bg=LIGHT).pack(side="left"); self.account_search_box(accounts_row, v["vat_account"], 14).pack(side="left", padx=4)
@@ -194,6 +200,13 @@ class PurchasesMixin:
         f = self.purchase_form; typed = f["find"].get().strip(); choices = list(f.get("find_map", {}))
         f["find_box"]["values"] = [c for c in choices if row_matches_search((c,),typed)]
 
+    def purchase_doc_changed(self):
+        doc = self.purchase_form["doc"].get()
+        notes = {"Return": "RETURN: goods go back to the supplier (stock out); the supplier owes the amount. Add the returned items below.",
+                 "Credit Note": "CREDIT NOTE: a discount from the supplier, no stock movement.",
+                 "Debit Note": "DEBIT NOTE: an extra charge from the supplier, no stock movement."}
+        self.purchase_form["pdf_label"].config(text=notes.get(doc, "No PDF"), fg=RED if doc in notes else MUTED)
+
     def return_open_purchase(self):
         """Purchases screen: send goods of the open purchase invoice back to the supplier (2.9.49)."""
         invoice_id = getattr(self, "purchase_form", {}).get("id")
@@ -272,6 +285,7 @@ class PurchasesMixin:
         v["date"].set(self.fiscal_today()); v["rate"].set("11"); v["type"].set("Purchases"); v["account"].set("601100000"); f["department"].set("(none)"); f["project"].set("(none)")
         f["use"].set("Mixed (partial deduction)"); f["reverse"].set(False)
         f["discount_mode"]="percent"; f["discount_percent"].set("0"); f["discount_amount"].set("0")
+        if "doc" in f: f["doc"].set("Invoice")
         f["pdf_label"].config(text="No PDF", fg=MUTED); f["total"].config(text="TOTAL TTC: 0.00"); f["tree"].selection_remove(*f["tree"].selection())
         f["items_sheet"].clear(); f["find"].set("")
 
@@ -457,6 +471,10 @@ class PurchasesMixin:
                    "invoice_discount_percent": f["discount_percent"].get(), "invoice_discount_amount": str(discount), "gross_before_discount": str(taxable+exempt)}
         if party and party.get("account_number"): invoice["supplier_account"] = party["account_number"]
         if v["type"].get() == "Assets": invoice["expense_no_vat_account"] = asset_account
+        doc = f["doc"].get() if "doc" in f else "Invoice"
+        if doc in ("Return", "Credit Note"):  # the supplier owes us: Dr supplier / Cr purchases and VAT
+            invoice.update(doc_subtype="credit_note", is_return=doc == "Return", supplier_side="D", vat_side="C", expense_side="C", expense_no_vat_side="C")
+        elif doc == "Debit Note": invoice["doc_subtype"] = "debit_note"
         stock = [r for r in f["items_sheet"].ordered() if (r.get("item_code") or r.get("name")) and _num(r.get("quantity"))]
         if stock:
             lines = []; warehouse = (f["warehouse"].get() or "MAIN").split(" - ", 1)[0]
@@ -667,6 +685,8 @@ class PurchasesMixin:
         f["department"].set(next((f'{d["code"]} - {d["name"]}' for d in lists["departments"] if d["id"] == row.get("department_id")), "(none)"))
         f["project"].set(next((f'{p["code"]} - {p["name"]}' for p in lists["projects"] if p["id"] == row.get("project_id")), "(none)"))
         f["use"].set(next((k for k, val in PURCHASE_USES.items() if val == (row.get("vat_use") or "mixed")), "Mixed (partial deduction)")); f["reverse"].set(row.get("vat_treatment") == "reverse_charge")
+        if "doc" in f: f["doc"].set("Return" if row.get("doc_subtype") == "credit_note" and row.get("is_return") else
+                                    {"credit_note": "Credit Note", "debit_note": "Debit Note"}.get(row.get("doc_subtype") or "", "Invoice"))
         f["pdf_label"].config(text=f"Editing {row['invoice_number']} ({row.get('attachment_count') or 0} document(s) attached)", fg=NAVY); self.purchase_amounts_changed("none")
 
     def delete_purchase(self):

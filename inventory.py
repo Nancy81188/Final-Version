@@ -591,6 +591,17 @@ def issue_for_invoice(database, invoice_id, lines, user_id):
         for line in indexed:
             source_line=next(item for item,original in zip(lines,original_items) if int(original["id"])==line["_source_item_id"])
             line["unit_cost"]=_convert_inventory_cost(database,invoice,line["_source_cost"])
+    elif doc_type=="issue" and returned and not is_sale and not invoice.get("linked_invoice_id"):
+        # 2.9.54: a purchase return typed directly (Purchases > Document: Return), not made from one invoice:
+        # the goods leave at their current average cost.
+        state=run_costing(database,date)
+        for line in indexed:
+            with database.connect() as db:
+                item=db.execute("SELECT id FROM inventory_items WHERE sku=?",(str(line["sku"]).upper(),)).fetchone()
+            cost=_d(state.get(item["id"],{}).get("avg")) if item else ZERO
+            if cost<=0: raise ValueError(f"{line['sku']} has no stock cost yet; a return needs goods that were received first")
+            line["unit_cost"]=cost; line["movement_type"]="purchase_return"
+            line["cost_layers"]=[{"quantity":str(_d(line["quantity"])),"unit_cost":str(cost)}]
     elif doc_type=="issue" and returned and not is_sale:
         rate=Decimal(str(target.get("exchange_rate") or 0))
         if rate<=0: raise ValueError("Original purchase exchange rate is invalid")
@@ -1051,48 +1062,100 @@ def list_counts(database):
 
 
 # ---------------------------------------------------------------- ageing and summary
+ANALYSIS_DIMENSIONS = ("item", "category", "subcategory", "brand", "supplier", "unit", "warehouse", "month", "project", "branch")
+MOVEMENT_DIMENSIONS = ("month", "project", "branch")
+
+
 def inventory_analysis(database, options, items, warehouses, in_category, currency, method, date_from, date_to, warehouse, company):
-    """Pivot items/categories/suppliers against warehouses or months, by quantity or cost value."""
-    row_dim = options.get("rows") or "item"; col_dim = options.get("columns") or "warehouse"; measure = options.get("measure") or "quantity"
-    if row_dim not in ("item", "category", "supplier") or col_dim not in ("warehouse", "month") or measure not in ("quantity", "value"):
-        raise ValueError("Choose Item, Category or Supplier, Warehouse or Month, and Quantity or Value")
+    """Inventory Analysis (3D), 2.9.54: any three dimensions - rows, columns and layers (one table per layer value,
+    plus the total) - chosen from item, category, subcategory, brand, supplier, unit, warehouse, month, project and
+    branch, measured in quantity or cost value. Stock at the To date, or the net movement of the period as soon as
+    month, project or branch is one of the dimensions."""
+    row_dim = options.get("rows") or "item"; col_dim = options.get("columns") or "warehouse"
+    layer_dim = options.get("layers") or "none"; measure = options.get("measure") or "quantity"
+    if row_dim not in ANALYSIS_DIMENSIONS or col_dim not in ANALYSIS_DIMENSIONS or layer_dim not in ANALYSIS_DIMENSIONS + ("none",) or measure not in ("quantity", "value"):
+        raise ValueError("Choose the rows, the columns and the layers among " + ", ".join(d.title() for d in ANALYSIS_DIMENSIONS) + ", and Quantity or Value")
+    chosen = [d for d in (row_dim, col_dim, layer_dim) if d != "none"]
+    if len(set(chosen)) != len(chosen): raise ValueError("Choose three different dimensions")
+    movements = any(d in MOVEMENT_DIMENSIONS for d in chosen)
     with database.connect() as db:
         suppliers = {str(r["id"]): r["name"] for r in db.execute("SELECT id,name FROM parties")}
-    def group(item):
-        if row_dim == "item": return f"{item['sku']} - {item['name']}"
-        if row_dim == "category": return item.get("category") or "(No category)"
-        return suppliers.get(str(item.get("supplier_id") or ""), "(No supplier)")
-    pivot = {}; columns = set()
-    def add(item_id, column, quantity, unit_cost):
+        projects = {r["id"]: f'{r["code"]} - {r["name"]}' for r in db.execute("SELECT id,code,name FROM projects")}
+        branches = {r["id"]: r["name"] for r in db.execute("SELECT id,name FROM branches")}
+    def value_of(dim, item, warehouse_id, row):
+        if dim == "item": return f"{item['sku']} - {item['name']}"
+        if dim == "supplier": return suppliers.get(str(item.get("supplier_id") or ""), "(No supplier)")
+        if dim in ("category", "subcategory", "brand", "unit"): return item.get(dim) or f"(No {dim})"
+        if dim == "warehouse": return warehouses.get(warehouse_id, {}).get("code", "?")
+        if dim == "month": return (row or {}).get("doc_date", "")[:7]
+        if dim == "project": return projects.get((row or {}).get("project_id"), "(No project)")
+        return branches.get((row or {}).get("branch_id"), "(No branch)")
+    cube = {}; columns = set(); layers = set()
+    def add(item_id, warehouse_id, quantity, unit_cost, row=None):
         item = items.get(item_id)
         if not item or not in_category(item_id): return
         if options.get("item_id") and item_id != int(options["item_id"]): return
-        value = quantity if measure == "quantity" else quantity * unit_cost
-        label = group(item); cell = pivot.setdefault(label, {}); cell[column] = cell.get(column, ZERO) + value
-        columns.add(column)
-    if col_dim == "warehouse":
+        amount = quantity if measure == "quantity" else quantity * unit_cost
+        layer = value_of(layer_dim, item, warehouse_id, row) if layer_dim != "none" else ""
+        r = value_of(row_dim, item, warehouse_id, row); c = value_of(col_dim, item, warehouse_id, row)
+        cell = cube.setdefault(layer, {}).setdefault(r, {}); cell[c] = cell.get(c, ZERO) + amount
+        columns.add(c); layers.add(layer)
+    if not movements:
         state = run_costing(database, date_to, method)
         for item_id, data in state.items():
             reported_values = _reported_warehouse_values(data) if measure == "value" else {}
             for warehouse_id, qty in data["by_warehouse"].items():
-                if not warehouse.has(warehouse_id): continue
-                add(item_id, warehouses[warehouse_id]["code"], qty,
-                    reported_values.get(warehouse_id, ZERO) / qty if qty else ZERO)
-        for warehouse_id, name in warehouses.items():
-            if warehouse.has(warehouse_id): columns.add(name["code"])
+                if not warehouse.has(warehouse_id) or not qty and not reported_values.get(warehouse_id): continue
+                add(item_id, warehouse_id, qty, reported_values.get(warehouse_id, ZERO) / qty if qty else ZERO)
+        if col_dim == "warehouse":
+            columns.update(w["code"] for wid, w in warehouses.items() if warehouse.has(wid))
     else:
         def record(row, unit, value):
             if row["doc_date"] < date_from or row["doc_type"] == "transfer" or not warehouse.has(row["warehouse_id"]): return
-            add(row["item_id"], row["doc_date"][:7], _d(row["quantity"]), unit)
+            add(row["item_id"], row["warehouse_id"], _d(row["quantity"]), unit, row)
         run_costing(database, date_to, method, record)
-    ordered = sorted(columns); rows = []; totals = [ZERO] * len(ordered)
-    for label, values in sorted(pivot.items()):
-        amounts = [values.get(col, ZERO) for col in ordered]
-        totals = [a + b for a, b in zip(totals, amounts)]
-        rows.append([label] + [v.quantize(Decimal("0.01")) if measure == "value" else v for v in amounts] + [sum(amounts, ZERO)])
-    rows.append(["TOTAL"] + [v.quantize(Decimal("0.01")) if measure == "value" else v for v in totals] + [sum(totals, ZERO)])
-    return {"title": "Inventory Analysis (3D)", "meta": [f"Company: {company.get('company_name') or '-'}", f"Rows: {row_dim.title()}   Columns: {col_dim.title()}   Measure: {measure.title()} ({currency} cost value when applicable)   Costing: {'FIFO by warehouse' if method == 'fifo' else 'Company-wide weighted average'}", f"From {display_date(date_from)} to {display_date(date_to)}"],
-            "sections": [{"heading": "Stock at To Date" if col_dim == "warehouse" else "Net stock movement during period (receipts less issues)", "headers": [row_dim.title()] + ordered + ["Total"], "rows": rows, "total_rows": [len(rows) - 1]}]}
+    ordered = sorted(columns)
+    fmt = (lambda v: v.quantize(Decimal("0.01"))) if measure == "value" else (lambda v: v)
+    def table(pivot):
+        rows = []; totals = [ZERO] * len(ordered)
+        for label, values in sorted(pivot.items()):
+            amounts = [values.get(col, ZERO) for col in ordered]
+            if not any(amounts): continue
+            totals = [a + b for a, b in zip(totals, amounts)]
+            rows.append([label] + [fmt(v) for v in amounts] + [fmt(sum(amounts, ZERO))])
+        rows.append(["TOTAL"] + [fmt(v) for v in totals] + [fmt(sum(totals, ZERO))])
+        return rows
+    def chart(rows, title):
+        body = sorted(rows[:-1], key=lambda r: -abs(float(r[-1] or 0)))[:8]
+        return {"title": title, "series": [str(r[0])[:28] for r in body], "categories": [str(c)[:14] for c in ordered[:12]],
+                "values": [[float(v or 0) for v in r[1:1 + min(12, len(ordered))]] for r in body]}
+    basis = "Net stock movement (receipts less issues)" if movements else f"Stock at {display_date(date_to)}"
+    headers = [f"{row_dim.title()} / {col_dim.title()}"] + ordered + ["Total"]
+    sections = []
+    if layer_dim == "none":
+        rows = table(cube.get("", {}))
+        sections.append({"heading": basis, "headers": headers, "rows": rows, "total_rows": [len(rows) - 1], "chart": chart(rows, f"{row_dim.title()} x {col_dim.title()} (3D)")})
+    else:
+        merged = {}
+        for layer in sorted(layers):
+            rows = table(cube.get(layer, {}))
+            if len(rows) == 1: continue
+            sections.append({"heading": f"{layer_dim.title()}: {layer} - {basis.lower()}", "headers": headers, "rows": rows, "total_rows": [len(rows) - 1]})
+            for label, values in cube.get(layer, {}).items():
+                target = merged.setdefault(label, {})
+                for col, amount in values.items(): target[col] = target.get(col, ZERO) + amount
+        layer_totals = [[layer] + [fmt(sum((cube[layer].get(r, {}).get(c, ZERO) for r in cube[layer]), ZERO)) for c in ordered] for layer in sorted(layers)]
+        for row in layer_totals: row.append(fmt(sum((v for v in row[1:]), ZERO)))
+        sections.insert(0, {"heading": f"{layer_dim.title()} x {col_dim.title()} - totals", "headers": [f"{layer_dim.title()} / {col_dim.title()}"] + ordered + ["Total"],
+                            "rows": layer_totals, "total_rows": [], "chart": {"title": f"{layer_dim.title()} x {col_dim.title()} (3D)", "series": [str(r[0])[:28] for r in layer_totals[:8]],
+                            "categories": [str(c)[:14] for c in ordered[:12]], "values": [[float(v or 0) for v in r[1:1 + min(12, len(ordered))]] for r in layer_totals[:8]]}})
+        rows = table(merged)
+        sections.append({"heading": f"All {layer_dim}s together - {basis.lower()}", "headers": headers, "rows": rows, "total_rows": [len(rows) - 1],
+                         "chart": chart(rows, f"{row_dim.title()} x {col_dim.title()} (3D)")})
+    if not sections: sections.append({"heading": basis, "headers": headers, "rows": [["No data"] + [""] * (len(headers) - 1)], "total_rows": []})
+    return {"title": "Inventory Analysis (3D)", "meta": [f"Company: {company.get('company_name') or '-'}",
+            f"Rows: {row_dim.title()}   Columns: {col_dim.title()}   Layers: {layer_dim.title()}   Measure: {measure.title()} ({currency} cost value when applicable)   Costing: {'FIFO by warehouse' if method == 'fifo' else 'Company-wide weighted average'}",
+            f"From {display_date(date_from)} to {display_date(date_to)}"], "sections": sections}
 
 
 def inventory_health(database, options, items, in_category, currency, method, date_to, warehouse, company):
