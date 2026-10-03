@@ -20,6 +20,14 @@ from server import run_server
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display for the program window")
+
+def _placed_editor(app, sheet, kind):
+    """The cell editor placed on a sheet. Keyboard focus is not reliable on a build machine without an active window,
+    so the editor is found where the sheet puts it; focus is only the fallback."""
+    import tkinter.ttk as _ttk
+    placed = [w for w in sheet.tree.place_slaves() if isinstance(w, kind) and not (kind is __import__("tkinter").Entry and isinstance(w, _ttk.Combobox))]
+    return placed[-1] if placed else app.focus_get()
+
 class ProgramWindowFixesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -156,14 +164,14 @@ class ProgramWindowFixesTest(unittest.TestCase):
         sheet=app.import_sheet; iid=sheet.tree.get_children()[0]
         self.assertEqual(sheet.rows[iid]["vat_account"],"44210")
         sheet.edit(iid,"vat_account"); app.update()
-        editor=app.focus_get(); self.assertIsInstance(editor,tk.Entry)
+        editor=_placed_editor(app,sheet,tk.Entry); self.assertIsInstance(editor,tk.Entry)
         editor.delete(0,"end"); editor.insert(0,"44216")
         editor.event_generate("<Tab>"); time.sleep(0.04); app.update()
         self.assertEqual(sheet.rows[iid]["vat_account"],"44216")
         self.assertIsInstance(app.focus_get(),tk.Entry)
         with mock.patch.object(app,"open_account_lookup",side_effect=lambda variable, **kwargs: variable.set("4427")) as search:
             sheet.edit(iid,"vat_account"); app.update()
-            app.focus_get().event_generate("<F2>"); app.update()
+            _placed_editor(app,sheet,tk.Entry).event_generate("<F2>"); app.update()
             self.assertEqual(sheet.rows[iid]["vat_account"],"4427")
             self.assertEqual(search.call_args.kwargs,{"include_groups":True})
 
@@ -289,7 +297,8 @@ class ProgramWindowFixesTest(unittest.TestCase):
         app.populate_import_preview(); app.update()
         sheet=app.import_sheet; iid=sheet.tree.get_children()[0]
         sheet.edit(iid,"entry_type"); app.update()
-        editor=app.focus_get()
+        # The cell editor placed on the sheet (keyboard focus is not reliable on a build machine with no active window).
+        editor=_placed_editor(app,sheet,ttk.Combobox)
         self.assertIsInstance(editor,ttk.Combobox)
         self.assertEqual(editor.get(),"Purchases")
         editor.set("Assets"); editor.event_generate("<<ComboboxSelected>>"); app.update()
@@ -373,13 +382,13 @@ class ProgramWindowFixesTest(unittest.TestCase):
             self.assertEqual(sheet.rows[iid]["account"], account_code)
             sheet.rows[iid]["account"] = ""; sheet.refresh(iid)
             sheet.edit(iid, "account"); app.update()
-            editor = app.focus_get()
+            editor = _placed_editor(app, sheet, tk.Entry)
             self.assertIsInstance(editor, tk.Entry)
             editor.event_generate("<Button-3>", x=5, y=5); app.update()
             self.assertEqual(sheet.rows[iid]["account"], account_code)
             sheet.rows[iid]["account"] = ""; sheet.refresh(iid)
             sheet.edit(iid, "account"); app.update()
-            app.focus_get().event_generate("<F2>"); app.update()
+            _placed_editor(app, sheet, tk.Entry).event_generate("<F2>"); app.update()
             self.assertEqual(sheet.rows[iid]["account"], account_code)
             self.assertEqual(search.call_count, 4)
 
