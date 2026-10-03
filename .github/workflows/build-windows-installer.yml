@@ -16,6 +16,10 @@ permissions:
 env:
   PYTHONIOENCODING: utf-8
   PYTHONUTF8: "1"
+  # 2.9.52: optional code signing. Add the repository secrets SIGN_CERT_PFX_BASE64 (the .pfx certificate in base64)
+  # and SIGN_CERT_PASSWORD; while they are missing the signing steps are skipped and the build works as before.
+  SIGN_CERT: ${{ secrets.SIGN_CERT_PFX_BASE64 }}
+  SIGN_PASSWORD: ${{ secrets.SIGN_CERT_PASSWORD }}
 
 jobs:
   build:
@@ -24,6 +28,24 @@ jobs:
     steps:
       - name: Download source
         uses: actions/checkout@v5
+
+      # 2.9.51: stop at once when the upload landed in a sub-folder (the root would still hold the old version)
+      # or when the program and the installer carry different versions. The version is shown in the run summary.
+      - name: Check repository layout and version
+        id: version
+        shell: pwsh
+        run: |
+          foreach ($file in @("run_desktop.py", "app_runtime.py", "installer.iss")) {
+            if (-not (Test-Path $file)) { throw "$file is missing at the top of the repository. Upload the CONTENT of the replitt-main folder, not the folder itself." }
+          }
+          $nested = Get-ChildItem -Directory | Where-Object { Test-Path (Join-Path $_.FullName "installer.iss") }
+          if ($nested) { throw "A second copy of the program was found in the folder '$($nested[0].Name)'. Delete that folder and upload the files at the top of the repository." }
+          $installer = (Select-String -Path installer.iss -Pattern '#define MyAppVersion "([^"]+)"').Matches[0].Groups[1].Value
+          $program = (Select-String -Path app_runtime.py -Pattern '^APP_VERSION = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($installer -ne $program) { throw "installer.iss says $installer but app_runtime.py says $program." }
+          "version=$installer" >> $env:GITHUB_OUTPUT
+          "## Building Saber Accounting $installer" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "Building Saber Accounting $installer"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -108,13 +130,38 @@ jobs:
             Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\Inno Setup 6"
           }
 
+      - name: Sign programs (only when a certificate is set)
+        if: env.SIGN_CERT != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "saber-sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGN_CERT))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe was not found on the build machine." }
+          "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
+          "SIGN_PFX=$pfx" >> $env:GITHUB_ENV
+          foreach ($file in @("dist\SaberAccounting\SaberAccounting.exe", "dist\SaberAccountingBackup.exe")) {
+            if (Test-Path $file) {
+              & $signtool.FullName sign /f $pfx /p $env:SIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $file
+              if ($LASTEXITCODE -ne 0) { throw "Signing $file failed." }
+            }
+          }
+
       - name: Create Windows installer
         run: iscc installer.iss
+
+      - name: Sign the installer (only when a certificate is set)
+        if: env.SIGN_CERT != ''
+        shell: pwsh
+        run: |
+          & $env:SIGNTOOL sign /f $env:SIGN_PFX /p $env:SIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 installer-output\SaberAccountingSetup.exe
+          if ($LASTEXITCODE -ne 0) { throw "Signing the installer failed." }
+          Remove-Item $env:SIGN_PFX -Force
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: SaberAccountingSetup
+          name: SaberAccountingSetup-${{ steps.version.outputs.version }}
           path: installer-output/SaberAccountingSetup.exe
           if-no-files-found: error
           retention-days: 30
