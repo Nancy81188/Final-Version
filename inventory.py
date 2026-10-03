@@ -16,7 +16,8 @@ from database import display_date, iso_date, utcnow
 
 ZERO = Decimal("0")
 DOC_TYPES = {"opening": ("OPN", "Opening Stock", 1), "receipt": ("GRN", "Stock Receipt", 1), "issue": ("GIN", "Stock Issue", -1),
-             "adjustment_in": ("ADJ", "Adjustment +", 1), "adjustment_out": ("ADJ", "Adjustment -", -1), "transfer": ("TRF", "Transfer", 0)}
+             "adjustment_in": ("ADJ", "Adjustment +", 1), "adjustment_out": ("ADJ", "Adjustment -", -1), "transfer": ("TRF", "Transfer", 0),
+             "production": ("PRD", "Production", 0)}  # 2.9.65: materials out, finished product in (production.py)
 STOCK_ACCOUNT, OPENING_ACCOUNT, CLOSING_ACCOUNT = "37", "6051", "6052"
 
 # ---------------------------------------------------------------- negative stock (2.9.45)
@@ -82,6 +83,13 @@ def migrate(db):
         if column not in item_columns: db.execute(f"ALTER TABLE inventory_items ADD COLUMN {column} TEXT")
     if "default_vat" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN default_vat TEXT NOT NULL DEFAULT '11'")
     if "cost_account" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN cost_account TEXT")
+    # 2.9.65: production - recipe (bill of materials) of a finished product, and the extra cost of a production order
+    db.execute("""CREATE TABLE IF NOT EXISTS bom_headers (id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL UNIQUE, output_qty TEXT NOT NULL DEFAULT '1',
+        overhead_per_unit TEXT NOT NULL DEFAULT '0', notes TEXT, active INTEGER NOT NULL DEFAULT 1, updated_by INTEGER, updated_at TEXT)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS bom_lines (id INTEGER PRIMARY KEY, bom_id INTEGER NOT NULL REFERENCES bom_headers(id) ON DELETE CASCADE,
+        component_id INTEGER NOT NULL, quantity TEXT NOT NULL, line_no INTEGER NOT NULL DEFAULT 0)""")
+    document_columns = {row["name"] for row in db.execute("PRAGMA table_info(stock_documents)")}
+    if "extra_cost" not in document_columns: db.execute("ALTER TABLE stock_documents ADD COLUMN extra_cost TEXT")
     for unit in ("unit", "piece", "sheet", "m", "m2", "kg", "box", "roll", "set"): db.execute("INSERT OR IGNORE INTO item_units(name) VALUES(?)", (unit,))
     db.execute("INSERT OR IGNORE INTO warehouses(code,name) VALUES('MAIN','Main Store')")
     db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('inventory_currency','USD')")
@@ -165,7 +173,7 @@ def save_item(database, item, user_id):
 # ---------------------------------------------------------------- costing engine
 def _movements(database, date_to=None, exclude_document_id=None):
     with database.connect() as db:
-        rows = [dict(r) for r in db.execute("""SELECT m.*,d.number,d.doc_type,d.doc_date,d.reference,d.party_id,d.invoice_id,d.allow_negative,d.project_id,d.branch_id,p.name party_name,w.code warehouse_code
+        rows = [dict(r) for r in db.execute("""SELECT m.*,d.number,d.doc_type,d.doc_date,d.reference,d.party_id,d.invoice_id,d.allow_negative,d.project_id,d.branch_id,d.extra_cost,p.name party_name,w.code warehouse_code
             FROM stock_movements m JOIN stock_documents d ON d.id=m.document_id LEFT JOIN parties p ON p.id=d.party_id LEFT JOIN warehouses w ON w.id=m.warehouse_id
             ORDER BY d.doc_date,d.id,m.id""")]
     return [r for r in rows if (not date_to or r["doc_date"] <= date_to) and r["document_id"] != exclude_document_id]
@@ -176,8 +184,13 @@ def run_costing(database, date_to=None, method=None, callback=None, exclude_docu
 
     Average: company-wide moving average; transfers carry that average cost.
     FIFO: issues consume the source warehouse's oldest layers; transfers carry those layers."""
-    method = method or settings(database)["method"]; state = {}; transfers = {}
+    method = method or settings(database)["method"]; state = {}; transfers = {}; produced = {}
     for row in _movements(database, date_to, exclude_document_id):
+        if row.get("movement_type") == "production_output":
+            # 2.9.65: the finished product costs the materials used by the same order (at their real cost now) plus its extra cost
+            made = _d(row["quantity"])
+            total = produced.pop(row["document_id"], ZERO) + _d(row.get("extra_cost"))
+            row["unit_cost"] = str(total / made) if made else "0"
         item = state.setdefault(row["item_id"], {"qty": ZERO, "value": ZERO, "layers": [], "warehouse_layers": {},
                                                    "by_warehouse": {}, "last_date": None, "last_out": None})
         qty = _d(row["quantity"]); cost = _d(row["unit_cost"])
@@ -274,6 +287,8 @@ def run_costing(database, date_to=None, method=None, callback=None, exclude_docu
             item["qty"] -= out; item["value"] -= out * issued_cost; item["last_out"] = row["doc_date"]
             if issued_cost > 0: item["last_cost"] = issued_cost
             if item["qty"] <= 0: item["value"] = item["qty"] * issued_cost if item["qty"] < 0 else ZERO; item["layers"] = []
+        if qty < 0 and row.get("movement_type") == "production_input":
+            produced[row["document_id"]] = produced.get(row["document_id"], ZERO) + out * issued_cost
         if callback: callback(row, issued_cost, qty * issued_cost)
         if layers_callback and qty<0: layers_callback(row,issued_layers)
     if transfers: raise ValueError("Unpaired FIFO transfer in stock history")
@@ -385,6 +400,7 @@ def _optional_id(db, table, value):
 def save_document(database, header, lines, user_id, document_id=None):
     doc_type = str(header.get("doc_type") or "").lower()
     if doc_type not in DOC_TYPES: raise ValueError("Choose the document type")
+    if doc_type == "production": raise ValueError("Production orders are saved from Inventory > Production")
     date = iso_date(header.get("doc_date"), "Date"); database._assert_period_open(date)
     if not isinstance(lines, list) or not lines: raise ValueError("Add at least one item line")
     with database.connect() as db:
@@ -479,7 +495,7 @@ def list_documents(database):
 
 def delete_document(database, document_id, user_id):
     doc = get_document(database, document_id); database._assert_period_open(doc["doc_date"])
-    if DOC_TYPES[doc["doc_type"]][2] > 0:  # removing stock that was already issued afterwards would make it negative
+    if DOC_TYPES[doc["doc_type"]][2] > 0 or doc["doc_type"] == "production":  # removing stock that was already issued afterwards would make it negative
         _check_after_removal(database, document_id)
     with database.connect() as db:
         if doc.get("invoice_id"):

@@ -29,13 +29,14 @@ def _dd(value):
 class InventoryMixin:
     def build_inventory(self):
         nested = ttk.Notebook(self.inventory_tab); nested.pack(fill="both", expand=True, padx=8, pady=8)
-        pages = {name: tk.Frame(nested, bg=LIGHT) for name in ("Items", "Categories & Units", "Stock In / Stock Out", "Stock Documents", "Physical Inventory", "Inventory Reports", "Ageing Report", "Warehouses & Settings")}
+        pages = {name: tk.Frame(nested, bg=LIGHT) for name in ("Items", "Categories & Units", "Stock In / Stock Out", "Stock Documents", "Production", "Physical Inventory", "Inventory Reports", "Ageing Report", "Warehouses & Settings")}
         for name, page in pages.items(): nested.add(page, text=name)
         self.ageing_tab=pages["Ageing Report"]
         self.build_items_page(pages["Items"]); self.build_categories_page(pages["Categories & Units"]); self.build_stock_in_out_page(pages["Stock In / Stock Out"])
         self.build_physical_page(pages["Physical Inventory"]); self.build_stock_documents_page(pages["Stock Documents"])
         self.build_inventory_reports_page(pages["Inventory Reports"]); self.build_inventory_settings_page(pages["Warehouses & Settings"])
         self.load_inventory()
+        self.build_production_page(pages["Production"])  # 2.9.65: recipes, production orders, production report
 
     def load_inventory(self):
         if not hasattr(self, "items_tree") or not self.items_tree.winfo_exists(): return
@@ -58,6 +59,8 @@ class InventoryMixin:
         for box in (getattr(self, "sd_warehouse_box", None), getattr(self, "sd_to_box", None)):
             if box is not None and box.winfo_exists(): box["values"] = names
         if hasattr(self, "ir_warehouse_box"): self.ir_warehouse_box["values"] = ["All"] + names
+        if hasattr(self, "rc_product_box") and self.rc_product_box.winfo_exists():  # 2.9.65: production lists follow the items / warehouses
+            self.rc_product_box["values"] = self.item_choices(); self.po_wh_box["values"] = names; self.po_to_box["values"] = names
         items = [f'{i["sku"]} - {i["name"]}' for i in self.inventory_rows]
         for box in (getattr(self, "ir_item_box", None), getattr(self, "ir_item_to_box", None)):
             if box is not None: box["values"] = [""] + items
@@ -285,7 +288,8 @@ class InventoryMixin:
         try: docs = self.client.stock_documents(); parties = self.client.parties()
         except Exception: return
         labels = {v: k for k, v in DOC_TYPES.items()}
-        self.sd_doc_map = {f'{d["number"]} | {_dd(d["doc_date"])} | {labels[d["doc_type"]]} | {d.get("party_name") or d.get("reference") or ""}': d["id"] for d in docs}
+        self.sd_doc_map = {f'{d["number"]} | {_dd(d["doc_date"])} | {labels[d["doc_type"]]} | {d.get("party_name") or d.get("reference") or ""}': d["id"]
+                           for d in docs if d["doc_type"] in labels}  # production orders are opened from Inventory > Production
         self.sd_find_box["values"] = list(self.sd_doc_map)
         self.sd_party_map = {p["name"]: p for p in parties}; self.sd_party_box["values"] = list(self.sd_party_map)
 

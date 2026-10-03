@@ -13,6 +13,7 @@ from desktop_brains import BrainsScreensMixin
 from desktop_dimensions import DimensionsMixin
 from desktop_stage3 import Stage3Mixin
 from desktop_inventory import InventoryMixin
+from desktop_production import ProductionMixin
 from desktop_v22 import V22Mixin
 from desktop_invoices import InvoicesMixin
 from desktop_parties import PartiesMixin
@@ -22,7 +23,7 @@ from desktop_settings import SettingsMixin
 from desktop_payroll_sheet import PayrollSheetMixin
 from desktop_projection import ProjectionMixin
 
-class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
+class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, ProductionMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()

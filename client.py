@@ -9,7 +9,7 @@ import ssl
 import threading
 import time
 from urllib.error import URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 class SessionExpired(RuntimeError):
     """Raised when the server no longer accepts the saved sign-in."""
@@ -385,6 +385,16 @@ class ApiClient:
     def physical_counts(self): return self.request("GET","/api/inventory/counts")["items"]
     def physical_count(self,count_id): return self.request("GET",f"/api/inventory/counts/{count_id}")
     def save_physical_count(self,header,lines,count_id=None,post=False): return self.request("POST","/api/inventory/counts",{"header":header,"lines":lines,"id":count_id,"post":post})
+    # 2.9.65: production (recipes and production orders)
+    def production_recipes(self): return self.request("GET","/api/production/recipes")["items"]
+    def production_recipe(self,item): return self.request("GET","/api/production/recipe?"+urlencode({"item":item}))
+    def save_production_recipe(self,item): return self.request("POST","/api/production/recipes",item)
+    def delete_production_recipe(self,sku): return self.request("DELETE","/api/production/recipes/"+quote(str(sku),safe=""))
+    def production_plan(self,item,quantity,warehouse=None,date=None): return self.request("GET","/api/production/plan?"+urlencode({k:v for k,v in {"item":item,"quantity":quantity,"warehouse":warehouse,"date":date}.items() if v not in (None,"")}))
+    def production_orders(self): return self.request("GET","/api/production/orders")["items"]
+    def production_order(self,order_id): return self.request("GET",f"/api/production/orders/{order_id}")
+    def save_production_order(self,header,lines,order_id=None): return self.request("POST","/api/production/orders",{"header":header,"lines":lines,"id":order_id})
+    def production_report(self,date_from,date_to): return self.request("GET","/api/production/report?"+urlencode({"from":date_from,"to":date_to}))
     def find_or_create_item(self,name,unit="unit",sku=None,supplier_id=None): return self.request("POST","/api/inventory/find-or-create",{"name":name,"unit":unit,"sku":sku,"supplier_id":supplier_id})["item"]
     def delete_fiscal_year(self,year): return self.request("POST","/api/fiscal-years/delete",{"year":year})
     def download_backup(self,name):

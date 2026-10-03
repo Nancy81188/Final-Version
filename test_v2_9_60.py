@@ -26,7 +26,7 @@ class MenuGroupTests(unittest.TestCase):
         self.assertEqual(groups["More"], ["new_tab"])
 
     def test_choice_is_kept_on_this_computer(self):
-        with tempfile.TemporaryDirectory() as folder, mock.patch("app_runtime.data_dir", return_value=Path(folder)):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder, mock.patch("app_runtime.data_dir", return_value=Path(folder)):
             self.assertTrue(dl.side_menu_on())
             dl.save_layout_settings(side_menu=False, folded=["Inventory"])
             self.assertEqual(dl.layout_settings(), {"side_menu": False, "folded": ["Inventory"]})
@@ -68,7 +68,7 @@ class SideMenuWidgetTests(unittest.TestCase):
         self.addCleanup(root.destroy)
         pages = [tk.Frame(root) for _ in ALL_PAGES]; names = [a.replace("_tab", "").title() for a in ALL_PAGES]
         app = SimpleNamespace(select_main_tab=lambda p: setattr(app, "opened", p))
-        with tempfile.TemporaryDirectory() as folder, mock.patch("app_runtime.data_dir", return_value=Path(folder)):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder, mock.patch("app_runtime.data_dir", return_value=Path(folder)):
             holder = tk.Frame(root); holder.pack(fill="both", expand=True)
             buttons = dl.build_side_menu(app, holder, ALL_PAGES, pages, names); root.update()
             self.assertEqual([b.cget("text") for b in buttons], names)

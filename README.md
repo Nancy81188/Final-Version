@@ -1,5 +1,16 @@
 # Saber Accounting MVP
 
+## Version 2.9.65 (Production)
+- Inventory > Production:
+  - Recipes: the materials (and an extra cost per unit) that make a quantity of a product. A material can have its own recipe; a recipe can never go round in a circle.
+  - Production Orders (PRD-YYYY-000001): product + quantity, materials calculated from the recipe. For a special order the quantities can be changed or materials added / removed on the order only. Red = not enough stock, amber = different from the recipe. Materials leave one warehouse, the product enters another (or the same).
+  - Cost of the product = materials at their real cost (average or FIFO) + extra cost, recomputed by the costing engine (a purchase entered later with an earlier date updates it).
+  - Production Report: orders, products made (average unit cost), materials used; Print / Excel / PDF. The Stock Card shows production lines.
+  - Periodic method of the Lebanese chart: no journal entry; the year-end stock (37) includes the products at their production cost.
+- The upgrade marker of 2.9.64 now also follows the inventory, fixed-asset and bank upgrades (the new recipe tables reach every company file).
+- User guide: new section 6. Production.
+- Tests: test_v2_9_65.py.
+
 ## Version 2.9.64 (old company files upgraded again)
 - Fixed "no such column: i.payment_account" (Edit from the General Journal, Uploaded Data, Purchases ...): company / year files made before 2.9.54 were marked as up to date and never received the new columns. The upgrade marker is now computed from the upgrade code, so every file is upgraded once when a new version adds a column or table. Data is kept.
 - Tests: test_v2_9_64.py.

@@ -218,6 +218,17 @@ class ApiHandler(BaseHTTPRequestHandler):
                 data=year_end.closing_preview(self.db,int(self._query(parsed,"year")))
                 return self._json(200,{c:{"lines":[[code,float(a),float(l),float(u),name] for code,a,l,u,name in v["lines"]],"net_result":float(v["net_result"])} for c,v in data.items()})
             except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path.startswith("/api/production/"):  # 2.9.65
+            import production
+            try:
+                if path == "/api/production/recipes": return self._json(200,{"items":production.list_boms(self.db)})
+                if path == "/api/production/recipe": return self._json(200,production.get_bom(self.db,self._query(parsed,"item","")))
+                if path == "/api/production/plan": return self._json(200,production.plan(self.db,self._query(parsed,"item",""),self._query(parsed,"quantity","0"),self._query(parsed,"warehouse"),self._query(parsed,"date")))
+                if path == "/api/production/orders": return self._json(200,{"items":production.list_orders(self.db)})
+                if path.startswith("/api/production/orders/"): return self._json(200,production.get_order(self.db,int(path.rsplit("/",1)[-1])))
+                if path == "/api/production/report": return self._json(200,ledger_reports.json_ready(production.report(self.db,self._query(parsed,"from"),self._query(parsed,"to"))))
+            except KeyError as exc: return self._json(404,{"error":str(exc).strip("'")})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path.startswith("/api/inventory/"):
             try:
                 if path == "/api/inventory/items": return self._json(200,{"items":inventory.list_items(self.db,self._query(parsed,"date"))})
@@ -562,6 +573,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path.startswith("/api/invoices/") and path.endswith("/landed-cost"):
             try: return self._json(201,{"invoice_id":self.db.add_landed_cost(int(path.split("/")[-2]),body,user["id"])})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path.startswith("/api/production/"):  # 2.9.65
+            import production
+            try:
+                if path == "/api/production/recipes": return self._json(201,production.save_bom(self.db,body,user["id"]))
+                if path == "/api/production/orders": return self._json(201,production.save_order(self.db,body.get("header",{}),body.get("lines",[]),user["id"],body.get("id")))
+            except KeyError as exc: return self._json(404,{"error":str(exc).strip("'")})
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path.startswith("/api/inventory/"):
             try:
@@ -940,6 +958,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             if path.startswith("/api/fixed-assets/"): result=fixed_assets.delete_asset(self.db,int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/vat-return/adjustments/"): result=vat_return.delete_adjustment(self.db,int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/inventory/documents/"): result=inventory.delete_document(self.db,int(path.rsplit("/",1)[-1]),user["id"])
+            elif path.startswith("/api/production/recipes/"):
+                import production; from urllib.parse import unquote
+                result=production.delete_bom(self.db,unquote(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/payments/"): result=self.db.delete_payment(int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/expenses/"): result=self.db.delete_expense(int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/invoices/"): result=self.db.mark_invoice_deleted(int(path.rsplit("/",1)[-1]),user["id"])

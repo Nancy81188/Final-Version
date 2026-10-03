@@ -23,7 +23,7 @@ class SplitTest(unittest.TestCase):
         self.assertLess(len(Path(database.__file__).read_text(encoding="utf-8").splitlines()), 1500)
 
     def test_editing_a_payment_still_uses_a_safe_copy(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
             db, user = new_db(folder)
             party = db.save_party({"kind": "supplier", "name": "BFG"}, user)
             payment = db.add_payment({"kind": "supplier_payment", "payment_date": "15-03-2025", "amount": "100", "currency": "USD", "party_id": party["id"], "cash_account": "531"}, user)
@@ -33,7 +33,7 @@ class SplitTest(unittest.TestCase):
 
 class DatesTest(unittest.TestCase):
     def test_report_dates_accept_both_formats(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
             db, user = new_db(folder)
             party = db.save_party({"kind": "supplier", "name": "BFG"}, user)
             for day, amount in (("15-03-2025", "100"), ("2025-03-16", "7")):
@@ -47,7 +47,7 @@ class DatesTest(unittest.TestCase):
 
 class RatesTest(unittest.TestCase):
     def test_kept_rates_give_the_same_answer_as_the_database(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
             db, _user = new_db(folder)
             rnd = random.Random(7)
             with db.connect() as c:

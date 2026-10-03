@@ -172,7 +172,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
                 version = db.execute("SELECT value FROM app_settings WHERE key='startup_schema_version'").fetchone() if table else None
                 signature = db.execute("SELECT value FROM app_settings WHERE key='startup_schema_signature'").fetchone() if table else None
                 current = self._startup_schema_signature(db) if signature else None
-            if version and version["value"] == self.STARTUP_SCHEMA_VERSION and signature and signature["value"] == current:
+            if version and version["value"] == self._schema_version() and signature and signature["value"] == current:
                 return
             self.initialize(admin_password)
 
@@ -472,7 +472,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         self._auto_lebanese_payroll_rules()
         with self.connect() as db:
             db.execute("INSERT OR REPLACE INTO app_settings(key,value) VALUES('startup_schema_version',?)",
-                       (self.STARTUP_SCHEMA_VERSION,))
+                       (self._schema_version(),))
             db.execute("INSERT OR REPLACE INTO app_settings(key,value) VALUES('startup_schema_signature',?)",
                        (self._startup_schema_signature(db),))
 
@@ -924,18 +924,30 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         raise ValueError("Unknown document type")
 
 
+
 def _schema_fingerprint():
-    """'4-' + a short hash of the schema and of every text in the upgrade code (CREATE / ALTER TABLE ...). Any new
-    column or table changes it, so every company / year file is upgraded once when the new version opens it."""
-    texts = [SCHEMA]
+    """'4-' + a short hash of the schema and of every text in the upgrade code (CREATE / ALTER TABLE ...), including
+    the inventory, fixed assets and bank upgrades and the extra accounts. Any new column, table or account changes it,
+    so every company / year file is upgraded once when the new version opens it."""
+    import bank_rec, chart_extra, fixed_assets, inventory
+    texts = [SCHEMA, repr(getattr(chart_extra, "EXTRA_ACCOUNTS", ""))]
     def collect(code):
         for constant in code.co_consts:
             if isinstance(constant, str): texts.append(constant)
             elif hasattr(constant, "co_consts"): collect(constant)
-    for name in ("_initialize", "_auto_lebanese_payroll_rules", "_upgrade_default_family_allowance_periods"):
-        function = getattr(Database, name, None)
+    functions = [getattr(Database, name, None) for name in ("_initialize", "_auto_lebanese_payroll_rules", "_upgrade_default_family_allowance_periods")]
+    functions += [inventory.migrate, fixed_assets.migrate, bank_rec.migrate, chart_extra.ensure_accounts] + list(getattr(inventory, "MIGRATIONS", ()))
+    for function in functions:
         if function is not None: collect(function.__code__)
     return "4-" + hashlib.sha256("\x00".join(texts).encode("utf-8")).hexdigest()[:16]
 
 
-Database.STARTUP_SCHEMA_VERSION = _schema_fingerprint()
+def _schema_version(_self=None):
+    """Computed once, when a file is first opened (the inventory module imports database, so not at import time)."""
+    if not Database.__dict__.get("_schema_version_value"):
+        Database._schema_version_value = _schema_fingerprint()
+        Database.STARTUP_SCHEMA_VERSION = Database._schema_version_value
+    return Database._schema_version_value
+
+
+Database._schema_version = _schema_version
