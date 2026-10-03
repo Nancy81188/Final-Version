@@ -28,9 +28,12 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         super().__init__()
         self._collect_garbage_on_screen_thread()
         self.title(f"Saber Accounting {app_runtime.APP_VERSION}")
-        try:  # 2.9.56: Saber icon on the window and the taskbar (Windows)
-            if sys.platform == "win32": self.iconbitmap(default=str(resource_path("assets/saber.ico")))
-        except tk.TclError: pass
+        # Saber icon on the window and the taskbar (Windows): inside the program, or installed next to it (2.9.57)
+        if sys.platform == "win32":
+            for icon in (resource_path("assets/saber.ico"), Path(sys.executable).parent / "saber.ico", Path(__file__).resolve().parent / "Assets" / "saber.ico"):
+                try:
+                    if Path(icon).exists(): self.iconbitmap(default=str(icon)); break
+                except tk.TclError: continue
         screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
         try: dpi_scale=max(1.0,min(2.0,self.winfo_fpixels("1i")/96.0))
         except tk.TclError: dpi_scale=1.0
@@ -357,7 +360,11 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         card = tk.Frame(self, bg="white", padx=42, pady=36)
         card.place(relx=.5, rely=.5, anchor="center")
         try:
-            self.login_logo = tk.PhotoImage(file=str(resource_path("assets/Saber_for_Audit_logo.png"))).subsample(6, 6)
+            try:  # 2.9.58: resized with filtering, sharp at any size
+                import brand_images
+                self.login_logo = brand_images.photo(brand_images.full_logo(resource_path("assets/Saber_for_Audit_logo.png"), 250), self)
+            except Exception:
+                self.login_logo = tk.PhotoImage(file=str(resource_path("assets/Saber_for_Audit_logo.png"))).subsample(6, 6)
             tk.Label(card, image=self.login_logo, bg="white").grid(row=0, column=0, columnspan=2, pady=(0, 14))
         except Exception:
             tk.Label(card, text="SABER FOR AUDIT", font=("Segoe UI", 24, "bold"), fg=NAVY, bg="white").grid(row=0, column=0, columnspan=2)
@@ -490,7 +497,11 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         except Exception: self.currency_codes=["USD","LBP","EUR","AED"]
         top=tk.Frame(self,bg=NAVY,height=58); top.pack(fill="x"); top.pack_propagate(False)
         try:
-            self.header_logo = tk.PhotoImage(file=str(resource_path("assets/Saber_for_Audit_logo.png"))).subsample(18, 18)
+            try:  # 2.9.58: the SA mark alone, sharp, white and gold on the navy bar
+                import brand_images
+                self.header_logo = brand_images.photo(brand_images.header_mark(resource_path("assets/Saber_for_Audit_logo.png"), 46), self)
+            except Exception:
+                self.header_logo = tk.PhotoImage(file=str(resource_path("assets/Saber_for_Audit_logo.png"))).subsample(18, 18)
             tk.Label(top,image=self.header_logo,bg=NAVY).pack(side="left",padx=(18,8),pady=2)
         except Exception:
             log.warning("Header logo could not be shown", exc_info=True)

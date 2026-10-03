@@ -2504,6 +2504,7 @@ class Database:
                 expense_number,department_id,project_id,vat_use,(SELECT COUNT(*) FROM expense_attachments a WHERE a.expense_id=expenses.id) attachment_count FROM expenses ORDER BY id DESC""")]
 
     def save_exchange_rate(self, item, user_id):
+        self.__dict__.pop("_rate_state", None)  # 2.9.58: rates change - forget the cached ones
         date_from=str(item.get("date_from") or item.get("rate_date") or "").strip(); date_to=str(item.get("date_to") or date_from).strip()
         self._date_year(date_from); self._date_year(date_to)
         def parsed(value):
@@ -2552,21 +2553,34 @@ class Database:
         expected=(datetime.now().date()-datetime(2024,1,1).date()).days+1
         with self.connect() as db:
             eur_days=db.execute("SELECT COUNT(DISTINCT rate_date) count FROM exchange_rates WHERE from_currency='EUR' AND to_currency='USD'").fetchone()["count"]
-        if loaded!=datetime.now().date().isoformat() or eur_days<expected: self.sync_historical_exchange_rates()
+        # 2.9.58: the internet is asked at most once every 6 hours. Before, every refresh of a screen that shows rates
+        # (Uploaded Data after each save, sales invoice ...) could wait up to 30 seconds when offline.
+        if (loaded!=datetime.now().date().isoformat() or eur_days<expected) and self._may_download_rates("history"): self.sync_historical_exchange_rates()
         self._ensure_automatic_rates()
         with self.connect() as db:
             return [dict(row) for row in db.execute("""SELECT r.id,r.rate_date,r.from_currency,r.to_currency,CAST(r.rate AS REAL) rate,r.created_at,
                 (SELECT COUNT(*) FROM exchange_rate_samples s WHERE s.rate_date=r.rate_date AND s.from_currency=r.from_currency AND s.to_currency=r.to_currency) samples
                 FROM exchange_rates r ORDER BY r.id DESC""")]
 
+    _RATE_DOWNLOADS = {}
+
+    def _may_download_rates(self, kind, hours=6):
+        """True when the EUR rates were not asked from the internet for this file in the last `hours`."""
+        import time as _time
+        key = (str(self.path), kind); now = _time.time()
+        if now - Database._RATE_DOWNLOADS.get(key, 0) < hours * 3600: return False
+        Database._RATE_DOWNLOADS[key] = now
+        return True
+
     def _ensure_automatic_rates(self):
+        self.__dict__.pop("_rate_state", None)  # 2.9.58: rates change - forget the cached ones
         today=datetime.now().strftime("%d-%m-%Y")
         with self.connect() as db:
             db.execute("""INSERT INTO exchange_rates(rate_date,from_currency,to_currency,rate,created_at)
                 VALUES(?,?,?,?,?) ON CONFLICT(rate_date,from_currency,to_currency) DO NOTHING""",
                 (today,"USD","LBP","89500",utcnow()))
             exists=db.execute("SELECT 1 FROM exchange_rates WHERE rate_date=? AND from_currency='EUR' AND to_currency='USD'",(today,)).fetchone()
-        if exists: return
+        if exists or not self._may_download_rates("today"): return
         try:
             request=urllib.request.Request("https://api.frankfurter.app/latest?from=EUR&to=USD",headers={"User-Agent":"SaberAccounting/1.4"})
             with urllib.request.urlopen(request,timeout=5) as response: eur_usd=Decimal(str(json.loads(response.read().decode("utf-8"))["rates"]["USD"]))
@@ -2581,6 +2595,7 @@ class Database:
             logging.getLogger("saber.database").info("Today's EUR rate was not downloaded: %s", exc)
 
     def sync_historical_exchange_rates(self):
+        self.__dict__.pop("_rate_state", None)  # 2.9.58: rates change - forget the cached ones
         start=datetime(2024,1,1).date(); end=datetime.now().date(); collected={}
         previous=None
         for year in range(start.year,end.year+1):
@@ -2611,6 +2626,7 @@ class Database:
         return {"from":start.isoformat(),"to":end.isoformat(),"days":(end-start).days+1,"rates":len(rows)}
 
     def restore_euro_rates(self):
+        self.__dict__.pop("_rate_state", None)  # 2.9.58: rates change - forget the cached ones
         with self.connect() as db:
             db.execute("DELETE FROM exchange_rate_samples WHERE from_currency='EUR' AND to_currency IN ('USD','LBP')")
             db.execute("DELETE FROM exchange_rates WHERE from_currency='EUR' AND to_currency IN ('USD','LBP')")
@@ -2656,10 +2672,30 @@ class Database:
         return {"metrics":list(metrics.values()),"monthly":monthly}
 
     def _converted_amount(self, amount, source, target, rate_date):
+        """amount x the rate of that day. 2.9.58: the rate of a (currency pair, day) is looked up once and kept while the
+        exchange-rate table does not change (reports used to query the rates for every journal line: a trial balance of
+        3,000 invoices took 40 seconds)."""
         amount=Decimal(str(amount or 0)); source=str(source or "USD").upper(); target=str(target or source).upper()
         if source==target: return amount
         try: target_key=iso_date(rate_date).replace("-","")
         except ValueError: target_key=datetime.now().strftime("%Y%m%d")
+        cache=self._rate_cache(); key=(source,target,target_key)
+        if key not in cache: cache[key]=self._rate_factor(source,target,rate_date,target_key)
+        return amount*cache[key]
+
+    def _rate_cache(self):
+        import time as _time
+        state=self.__dict__.setdefault("_rate_state",{"checked":0.0,"signature":None,"cache":{}})
+        now=_time.monotonic()
+        if now-state["checked"]>1.0:  # at most one cheap check per second: a new or removed rate empties the cache
+            with self.connect() as db:
+                signature=tuple(db.execute("SELECT COUNT(*),MAX(id),COALESCE(SUM(LENGTH(rate)),0) FROM exchange_rates").fetchone())
+            if signature!=state["signature"]: state["cache"]={}; state["signature"]=signature
+            state["checked"]=now
+        return state["cache"]
+
+    def _rate_factor(self, source, target, rate_date, target_key):
+        amount=Decimal("1")
         sortable="""CASE WHEN rate_date GLOB '??-??-????' THEN substr(rate_date,7,4)||substr(rate_date,4,2)||substr(rate_date,1,2)
             ELSE replace(rate_date,'-','') END"""
         def find_rate(frm,to):
@@ -2774,7 +2810,10 @@ class Database:
                             "currency": r["currency"], "party_name": r["party_name"]} for r in found])
         return result
 
-    def list_invoices(self, limit=500):
+    def list_invoices(self, limit=None):
+        """Every invoice (2.9.58: the list stopped at the newest 500, so with a big file imported invoices, the
+        purchases list, opening an entry and other screens could not find older ones)."""
+        limit = int(limit) if limit else -1  # SQLite: LIMIT -1 = no limit
         with self.connect() as db:
             return [dict(r) for r in db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,p.name party_name,i.kind,i.entry_type,i.currency,i.exchange_rate,i.subtotal,i.deductible_subtotal,i.non_deductible_subtotal,i.vat,i.total,
                 CASE WHEN i.status='deleted' THEN 0 ELSE COALESCE(CAST(i.debit_override AS REAL),CASE WHEN i.kind='sale' THEN CAST(i.total AS REAL) ELSE 0 END) END debit,
@@ -2942,11 +2981,12 @@ class Database:
         elif posting_status=="review": conditions.append("(e.source_type='invoice' AND i.status='review')")
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
         with self.connect() as db:
+            # 2.9.58: summed per account, currency and day by the database (one row per day instead of per line)
             raw=[dict(r) for r in db.execute(f"""SELECT a.code,a.name_en,e.currency,e.entry_date,
-                CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit
+                SUM(CAST(j.debit AS REAL)) debit,SUM(CAST(j.credit AS REAL)) credit
                 FROM journal_lines j JOIN accounts a ON a.id=j.account_id JOIN journal_entries e ON e.id=j.entry_id
                 LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
-                {where_clause} ORDER BY e.currency,a.code""",parameters)]
+                {where_clause} GROUP BY a.code,a.name_en,e.currency,e.entry_date ORDER BY e.currency,a.code""",parameters)]
         totals={}
         for row in raw:
             key=(row["code"],row["name_en"],row["currency"])

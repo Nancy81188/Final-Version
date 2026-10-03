@@ -194,7 +194,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
     def populate_import_preview(self):
         self.import_sheet.clear(); selected = self.import_view_currency.get()
         rows = [r for r in self.import_rows if selected == "All Currencies" or r.get("currency") == selected]
-        for row in rows[:2000]:
+        for row in rows[:20000]:
             expense=row.get("_expense") or {}
             entry_type=row.get("entry_type") if self.import_mode=="pdf" else self.import_type.get()
             if self.import_mode!="pdf": row["entry_type"]=entry_type

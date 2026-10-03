@@ -1,5 +1,18 @@
 # Saber Accounting MVP
 
+## Version 2.9.58 (sharp logo, much faster with big files, all invoices listed)
+
+- The header logo was shrunk by dropping pixels and could not be read. It is now the "SA" monogram alone, resized with filtering, in white and gold on the navy bar; the login card shows the full logo, sharp. New file brand_images.py (Pillow, already installed with ReportLab; listed in requirements.txt).
+- Speed: exchange rates are looked up once per currency and day and kept until a rate changes (the trial balance and the account statements of a big company were slowed by a rate query for every journal line: 3,000 invoices took 40 seconds, now under 1 second); the trial balance is summed by the database. The internet is asked for EUR rates at most once every 6 hours (offline, each refresh of the Uploaded Data or the sales invoice could wait up to 30 seconds).
+- Fix: the Uploaded Data list, the purchases list, opening an entry and other screens showed only the newest 500 invoices; every invoice is listed now. The import preview shows up to 20,000 rows (was 2,000).
+- Shortcuts: the installer gives the Desktop / Start menu shortcuts the Saber icon (2.9.57).
+- Tests: test_v2_9_55.py extended, test_v2_9_58.py. 487 tests pass.
+
+## Version 2.9.57 (icon without changing the workflow)
+
+- The icon no longer depends on the GitHub workflow: the installer copies saber.ico next to the program and uses it for the Desktop / Start menu shortcuts, Add / Remove Programs and the window. With the 2.9.56 workflow pasted, SaberAccounting.exe itself also carries it (Explorer); without it the build still passes.
+- Changed files: installer.iss, desktop.py, app_runtime.py, test_v2_9_55.py, README.md. 484 tests pass.
+
 ## Version 2.9.56 (Saber icon)
 
 - The program, the backup service, the installer and the window / taskbar now carry the Saber for Audit "SA" icon (Assets/saber.ico, 16 to 256 pixels), made from the logo. THE WORKFLOW FILE MUST BE PASTED BY HAND on GitHub (it adds --icon and the icon file to the build).

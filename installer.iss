@@ -1,5 +1,5 @@
 #define MyAppName "Saber Accounting"
-#define MyAppVersion "2.9.56"
+#define MyAppVersion "2.9.58"
 #define MyAppPublisher "Saber for Audit"
 
 [Setup]
@@ -21,7 +21,7 @@ SetupIconFile=Assets\saber.ico
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-UninstallDisplayIcon={app}\SaberAccounting.exe
+UninstallDisplayIcon={app}\saber.ico
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; Close a running copy before upgrading. Company data lives in the user's
 ; SaberAccounting folder and is never touched by install, upgrade or uninstall.
@@ -39,11 +39,13 @@ Name: "autobackup"; Description: "Start automatic daily backups with Windows (al
 Source: "dist\SaberAccounting\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "dist\SaberAccountingBackup.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "Assets\Saber_for_Audit_logo.png"; DestDir: "{app}\assets"; Flags: ignoreversion
+; 2.9.57: the Saber icon for the shortcuts, the window and Add / Remove Programs (no workflow change needed)
+Source: "Assets\saber.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Assets\fonts\Amiri-OFL.txt"; DestDir: "{app}\assets\fonts"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\Saber Accounting"; Filename: "{app}\SaberAccounting.exe"
-Name: "{autodesktop}\Saber Accounting"; Filename: "{app}\SaberAccounting.exe"
+Name: "{autoprograms}\Saber Accounting"; Filename: "{app}\SaberAccounting.exe"; IconFilename: "{app}\saber.ico"
+Name: "{autodesktop}\Saber Accounting"; Filename: "{app}\SaberAccounting.exe"; IconFilename: "{app}\saber.ico"
 Name: "{commonstartup}\Saber Accounting Backups"; Filename: "{app}\SaberAccountingBackup.exe"; WorkingDir: "{app}"; Tasks: autobackup; Check: FileExists(ExpandConstant('{app}\SaberAccountingBackup.exe'))
 
 [Run]

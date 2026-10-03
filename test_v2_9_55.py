@@ -20,13 +20,26 @@ class IconTest(unittest.TestCase):
         data = (HERE / "Assets" / "saber.ico").read_bytes()
         self.assertEqual(data[:4], b"\x00\x00\x01\x00")                    # Windows icon
         self.assertGreaterEqual(int.from_bytes(data[4:6], "little"), 5)        # several sizes (16 to 256)
-        self.assertIn("SetupIconFile=Assets\\saber.ico", (HERE / "installer.iss").read_text(encoding="utf-8"))
+        installer = (HERE / "installer.iss").read_text(encoding="utf-8")
+        self.assertIn("SetupIconFile=Assets\\saber.ico", installer)
+        self.assertIn('Source: "Assets\\saber.ico"; DestDir: "{app}"', installer)          # works with the older workflow too
+        self.assertEqual(installer.count('IconFilename: "{app}\\saber.ico"'), 2)
         workflow = (HERE / ".github" / "workflows" / "build-windows-installer.yml").read_text(encoding="utf-8")
         if "--icon Assets/saber.ico" not in workflow:
             # The upload page does not replace files in .github: until the new workflow is pasted by hand the build
             # simply makes the programs without the icon - it must not stop the build.
             self.skipTest("build-windows-installer.yml on GitHub is the older one: paste the 2.9.56 workflow to get the icon")
         self.assertEqual(workflow.count("--icon Assets/saber.ico"), 2); self.assertIn('--add-data "Assets/saber.ico;assets"', workflow)
+
+
+class SharpLogoTest(unittest.TestCase):
+    def test_header_mark_and_login_logo_are_resized_cleanly(self):
+        import brand_images
+        mark = brand_images.header_mark(HERE / "Assets" / "Saber_for_Audit_logo.png", 46)
+        self.assertEqual(mark.size[1], 46); self.assertLess(mark.size[0], 80)            # the monogram only, not the whole logo
+        self.assertEqual(mark.getpixel((0, 0))[3], 0)                                     # transparent corner on the navy bar
+        logo = brand_images.full_logo(HERE / "Assets" / "Saber_for_Audit_logo.png", 250)
+        self.assertEqual(logo.size[0], 250)
 
 
 class RepeatsTest(unittest.TestCase):
