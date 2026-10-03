@@ -1267,7 +1267,7 @@ class Database:
                     (code, name, account_type),
                 )
             due_date = self._invoice_due_date(item, party)
-            amount_paid = Decimal(str(item.get("amount_paid") or 0))
+            amount_paid = total if str(item.get("amount_paid") or "").strip().lower() == "full" else Decimal(str(item.get("amount_paid") or 0))  # 2.9.55: "full" = paid in full
             if amount_paid < 0 or amount_paid > total:
                 raise ValueError("Amount paid must be between zero and invoice total")
             payment_status = "paid" if amount_paid == total and total > 0 else "partial" if amount_paid > 0 else "unpaid"
@@ -2747,18 +2747,31 @@ class Database:
             saved = [dict(r) for r in db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,i.kind,i.currency,CAST(i.total AS REAL) total,
                 COALESCE(i.doc_subtype,'invoice') doc_subtype,p.name party_name FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
                 WHERE i.status NOT IN ('cancelled','deleted')""")]
-        index = {}
+        index = {}; by_amount = {}
         for row in saved:
-            key = (row["kind"], str(row["party_name"] or "").strip().casefold(), self.invoice_number_key(row["invoice_number"]), row["doc_subtype"] or "invoice")
+            party = str(row["party_name"] or "").strip().casefold()
+            key = (row["kind"], party, self.invoice_number_key(row["invoice_number"]), row["doc_subtype"] or "invoice")
             index.setdefault(key, []).append(row)
+            try: day = iso_date(row["invoice_date"])
+            except Exception: day = str(row["invoice_date"] or "")
+            by_amount.setdefault((row["kind"], party, day, round(float(row["total"] or 0), 2)), []).append(row)
         result = []
         for position, item in enumerate(items or []):
-            number = self.invoice_number_key(item.get("invoice_number"))
-            if not number: result.append([]); continue
             kind = "sale" if self._entry_type(item) == "sales" else "purchase"
-            key = (kind, str(item.get("party_name") or "").strip().casefold(), number, str(item.get("doc_subtype") or "invoice"))
+            party = str(item.get("party_name") or "").strip().casefold()
+            if item.get("by_amount"):
+                # 2.9.55: an Excel file without an invoice number column - the same customer / supplier, date and total
+                try: day = iso_date(item.get("invoice_date"))
+                except Exception: day = str(item.get("invoice_date") or "")
+                try: total = round(float(item.get("total") or 0), 2)
+                except (TypeError, ValueError): total = None
+                found = by_amount.get((kind, party, day, total), []) if total else []
+            else:
+                number = self.invoice_number_key(item.get("invoice_number"))
+                if not number: result.append([]); continue
+                found = index.get((kind, party, number, str(item.get("doc_subtype") or "invoice")), [])
             result.append([{"id": r["id"], "invoice_number": r["invoice_number"], "invoice_date": r["invoice_date"], "total": r["total"],
-                            "currency": r["currency"], "party_name": r["party_name"]} for r in index.get(key, [])])
+                            "currency": r["currency"], "party_name": r["party_name"]} for r in found])
         return result
 
     def list_invoices(self, limit=500):

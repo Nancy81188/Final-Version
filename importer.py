@@ -89,7 +89,7 @@ def _currency(values, columns, default_currency, number_formats=(), allowed_curr
     if currency_cell.upper() in allowed: explicit.add(currency_cell.upper())
 
     votes = {code: 0 for code in allowed}
-    field_currencies = {}
+    field_currencies = {}; not_enabled = set()
 
     # The symbols/codes printed in monetary cells are the primary source.
     for field in ("subtotal", "vat", "total"):
@@ -103,11 +103,15 @@ def _currency(values, columns, default_currency, number_formats=(), allowed_curr
         for value in evidence:
             for code in allowed-set(SUPPORTED_CURRENCIES):
                 if re.search(rf"\b{re.escape(code)}\b",str(value),re.IGNORECASE): detected.add(code)
+        not_enabled.update(code for code in detected if code not in votes)  # 2.9.55: e.g. a EUR cell in a company without EUR
+        detected = {code for code in detected if code in votes}
         field_currencies[field] = detected
         for code in detected:
             votes[code] += 1
 
     found = {code for code, count in votes.items() if count}
+    if not found and not_enabled:
+        return default, "unsupported:" + ",".join(sorted(not_enabled))
 
     if found:
         highest = max(votes.values())
@@ -223,6 +227,7 @@ def read_invoices(path: str | Path, sheet_name: str | None = None, default_curre
             if total is None and subtotal is not None and vat is not None:
                 total = subtotal + vat
             invoice_number = str(get("invoice_number") or row_number).strip()
+            number_from_row = not str(get("invoice_number") or "").strip()  # no invoice number in the file: the row number is used
             kind = str(get("kind") or default_kind).strip().lower()
             currency, currency_issue = _currency(values, columns, default_currency, number_formats, allowed_currencies)
             invoices.append({
@@ -243,6 +248,7 @@ def read_invoices(path: str | Path, sheet_name: str | None = None, default_curre
                 "expense_account": str(get("expense_account") or "601100000").strip(),
                 "source_file": Path(path).name,
                 "source_row": row_number,
+                "number_from_row": number_from_row,
             })
             invoice = invoices[-1]; problems = []
             if not invoice["party_name"]: problems.append("supplier / customer name missing")

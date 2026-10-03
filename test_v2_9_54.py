@@ -92,6 +92,20 @@ class ExcelRowsTest(unittest.TestCase):
         self.assertEqual(rows[3]["invoice_date"], "2024-02-08"); self.assertNotIn("problem", rows[3])
 
 
+class CurrencyNotEnabledTest(unittest.TestCase):
+    def test_a_currency_the_company_does_not_use_never_stops_the_import(self):
+        from openpyxl import Workbook
+        from importer import read_invoices
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "e.xlsx"; wb = Workbook(); ws = wb.active
+            ws.append(["Date", "Supplier Name", "Total Before VAT", "VAT", "Total After VAT"])
+            ws.append(["02-02-2024", "EURO SUPPLIER", 100, 11, 111])
+            for cell in ws[2][2:]: cell.number_format = '€#,##0.00'
+            wb.save(path)
+            rows = read_invoices(path, allowed_currencies=["USD", "LBP"])   # used to fail with KeyError: 'EUR'
+        self.assertEqual((rows[0]["currency"], rows[0]["currency_issue"]), ("USD", "unsupported:EUR"))
+
+
 class ScreenFixesTest(unittest.TestCase):
     def test_inner_screen_frame_finds_its_tab(self):
         try:

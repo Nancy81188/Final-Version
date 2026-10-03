@@ -1,5 +1,13 @@
 # Saber Accounting MVP
 
+## Version 2.9.55 (Excel currency fix)
+
+- Excel import: a price cell formatted in a currency the company does not use (for example EUR in a USD / LBP company) stopped the whole import with "KeyError: 'EUR'". The row is now imported in the default currency, marked "unsupported:EUR" and kept for review.
+- Logo: Assets/Saber_for_Audit_logo.png was not a valid picture (damaged since 2.9.40), so the login / header logo and the default invoice logo were missing. Replaced with the Saber for Audit logo.
+- Excel files without an invoice number column: a row with the same supplier, date and total as another row of the file, or as an invoice already in the books, is kept in the preview with the reason (or imported anyway when you choose).
+- Purchases: "Paid" (On Account / Cash / Bank Transfer / Cheque / Card) and "from A/C": a purchase paid on the spot gets its payment entry to 531 / 512 or the chosen account, and shows in that statement.
+- Tests: test_v2_9_54.py extended, test_v2_9_55.py. 483 tests pass.
+
 ## Version 2.9.54 (journal edit fix, returns on the sales / purchase screens, 3D analysis with any 3 dimensions, Excel import of incomplete files, cash on uploaded invoices, stability)
 
 - Fix: General Journal > Edit Selected Entry on a receipt / payment (and other screens kept in a scrolled page) stopped with "<tkinter.Frame ...> is not in list". The screen now opens.

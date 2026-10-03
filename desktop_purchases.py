@@ -7,6 +7,7 @@ from desktop_stage3_common import _dd, _num
 
 
 PURCHASE_DOCUMENTS = ("Invoice", "Return", "Credit Note", "Debit Note")
+PAID_BY = ["On Account (Not Cash)", "Cash", "Bank Transfer", "Cheque", "Card"]
 
 
 class PurchasesMixin:
@@ -57,6 +58,12 @@ class PurchasesMixin:
         accounts_row = tk.Frame(fields, bg=LIGHT); accounts_row.pack(fill="x", pady=(2, 0))
         tk.Label(accounts_row, text="Cost / Asset A/C", bg=LIGHT).pack(side="left"); self.account_search_box(accounts_row, v["account"], 18).pack(side="left", padx=(4, 12))
         tk.Label(accounts_row, text="VAT A/C", bg=LIGHT).pack(side="left"); self.account_search_box(accounts_row, v["vat_account"], 14).pack(side="left", padx=4)
+        # 2.9.55: paid on the spot - the payment entry goes to the cash / bank account and its statement
+        f["paid_by"] = tk.StringVar(value=PAID_BY[0]); f["paid_account"] = tk.StringVar()
+        tk.Label(accounts_row, text="Paid", bg=LIGHT).pack(side="left", padx=(12, 0))
+        ttk.Combobox(accounts_row, textvariable=f["paid_by"], values=PAID_BY, state="readonly", width=20).pack(side="left", padx=4)
+        tk.Label(accounts_row, text="from A/C", bg=LIGHT).pack(side="left"); self.account_search_box(accounts_row, f["paid_account"], 12).pack(side="left", padx=4)
+        tk.Label(accounts_row, text="(empty: 531 cash / 512 bank)", bg=LIGHT, fg=MUTED).pack(side="left")
         totals_box = tk.LabelFrame(totals_parent or page, text="Purchase totals", bg="#dfe6ee", padx=10, pady=4)
         r2 = tk.Frame(totals_box, bg="#dfe6ee"); r2.pack(fill="x", pady=(2, 4))
         for label, key, width in (("Taxable Amount", "taxable", 12), ("Exempt Amount", "exempt", 11), ("VAT %", "rate", 5), ("VAT", "vat", 11)):
@@ -286,6 +293,7 @@ class PurchasesMixin:
         f["use"].set("Mixed (partial deduction)"); f["reverse"].set(False)
         f["discount_mode"]="percent"; f["discount_percent"].set("0"); f["discount_amount"].set("0")
         if "doc" in f: f["doc"].set("Invoice")
+        if "paid_by" in f: f["paid_by"].set(PAID_BY[0]); f["paid_account"].set("")
         f["pdf_label"].config(text="No PDF", fg=MUTED); f["total"].config(text="TOTAL TTC: 0.00"); f["tree"].selection_remove(*f["tree"].selection())
         f["items_sheet"].clear(); f["find"].set("")
 
@@ -475,6 +483,11 @@ class PurchasesMixin:
         if doc in ("Return", "Credit Note"):  # the supplier owes us: Dr supplier / Cr purchases and VAT
             invoice.update(doc_subtype="credit_note", is_return=doc == "Return", supplier_side="D", vat_side="C", expense_side="C", expense_no_vat_side="C")
         elif doc == "Debit Note": invoice["doc_subtype"] = "debit_note"
+        paid_by = f["paid_by"].get() if "paid_by" in f else PAID_BY[0]
+        if doc in ("Invoice", "Debit Note") and paid_by != PAID_BY[0]:
+            invoice.update(payment_method=paid_by, amount_paid="full",
+                           cash_account=f["paid_account"].get().split(" - ", 1)[0].strip())
+        else: invoice.update(payment_method=PAID_BY[0], amount_paid="0")
         stock = [r for r in f["items_sheet"].ordered() if (r.get("item_code") or r.get("name")) and _num(r.get("quantity"))]
         if stock:
             lines = []; warehouse = (f["warehouse"].get() or "MAIN").split(" - ", 1)[0]
@@ -685,6 +698,9 @@ class PurchasesMixin:
         f["department"].set(next((f'{d["code"]} - {d["name"]}' for d in lists["departments"] if d["id"] == row.get("department_id")), "(none)"))
         f["project"].set(next((f'{p["code"]} - {p["name"]}' for p in lists["projects"] if p["id"] == row.get("project_id")), "(none)"))
         f["use"].set(next((k for k, val in PURCHASE_USES.items() if val == (row.get("vat_use") or "mixed")), "Mixed (partial deduction)")); f["reverse"].set(row.get("vat_treatment") == "reverse_charge")
+        if "paid_by" in f:
+            paid = float(row.get("amount_paid") or 0); method = row.get("payment_method") or ""
+            f["paid_by"].set(method if paid and method in PAID_BY else PAID_BY[0]); f["paid_account"].set(row.get("payment_account") or "")
         if "doc" in f: f["doc"].set("Return" if row.get("doc_subtype") == "credit_note" and row.get("is_return") else
                                     {"credit_note": "Credit Note", "debit_note": "Debit Note"}.get(row.get("doc_subtype") or "", "Invoice"))
         f["pdf_label"].config(text=f"Editing {row['invoice_number']} ({row.get('attachment_count') or 0} document(s) attached)", fg=NAVY); self.purchase_amounts_changed("none")

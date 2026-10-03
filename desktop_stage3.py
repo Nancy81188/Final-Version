@@ -230,7 +230,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         for r in rows:
             entry_type = TYPES[r["entry_type"]][1] if self.import_mode == "pdf" and r.get("entry_type") in TYPES else default_entry_type
             if entry_type == "expenses" or not r.get("invoice_number"): continue
-            checked.append((r, {"kind": entry_type, "party_name": r.get("party_name"), "invoice_number": r.get("invoice_number"), "doc_subtype": r.get("doc_subtype") or "invoice"}))
+            checked.append((r, {"kind": entry_type, "party_name": r.get("party_name"), "invoice_number": r.get("invoice_number"), "doc_subtype": r.get("doc_subtype") or "invoice",
+                                "by_amount": bool(r.get("number_from_row")), "invoice_date": r.get("invoice_date"), "total": r.get("total")}))
         if not checked: return {}
         try:
             found = self.client.invoice_duplicates([item for _r, item in checked])
@@ -332,6 +333,21 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                 if keep:
                     for r in other_year: r["notes"] = f"Check: dated {row_day(r).year} - open {row_day(r).year} (Switch Company / Year) to import this row"
                     waiting += other_year; ready = [r for r in ready if not any(r is o for o in other_year)]
+            # 2.9.55: the same supplier, date and total twice in the file (no invoice number to tell them apart)
+            seen = {}; repeats = []
+            for r in ready:
+                key = (str(r.get("party_name") or "").strip().casefold(), str(r.get("invoice_date") or ""), round(float(r.get("total") or 0), 2))
+                if r.get("number_from_row") and key in seen: repeats.append((r, seen[key]))
+                else: seen.setdefault(key, r)
+            if repeats:
+                listed = ", ".join(f"{r.get('source_row')} (= {first.get('source_row')})" for r, first in repeats[:12])
+                keep = True if auto else messagebox.askyesnocancel("Import", f"{len(repeats)} row(s) repeat another row of the file - same name, date and total, "
+                    f"and the file has no invoice number to tell them apart: rows {listed}{' ...' if len(repeats) > 12 else ''}.\n\n"
+                    "Yes = keep the repeats in the preview (import only the first)\nNo = they are different invoices, import them all\nCancel = stop")
+                if keep is None: return
+                if keep:
+                    for r, first in repeats: r["notes"] = f"Check: same supplier, date and total as Excel row {first.get('source_row')}"
+                    waiting += [r for r, _first in repeats]; ready = [r for r in ready if not any(r is x for x, _f in repeats)]
             if waiting:
                 for iid in getattr(self.import_sheet, "rows", {}): self.import_sheet.refresh(iid)
                 lines = ", ".join(str(r.get("line") or r.get("source_row") or "") for r in waiting[:15])

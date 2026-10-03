@@ -1,5 +1,5 @@
 #define MyAppName "Saber Accounting"
-#define MyAppVersion "2.9.54"
+#define MyAppVersion "2.9.55"
 #define MyAppPublisher "Saber for Audit"
 
 [Setup]
