@@ -98,9 +98,25 @@ class ApiHandler(BaseHTTPRequestHandler):
         except Exception:
             return None
 
+    def _year_db(self, year):
+        """2.9.52: the books of another fiscal year of the selected company (each year has its own file);
+        the current file when that year is kept in it (or not set up separately)."""
+        try:
+            company_id = self.headers.get("X-Company-ID")
+            other = self.company_manager.database(company_id, int(year)) if company_id else None
+        except Exception:
+            other = None
+        return other or self.db
+
     def _select_database(self):
         try:
             self.db=self.company_manager.database(self.headers.get("X-Company-ID"),self.headers.get("X-Fiscal-Year"))
+            # 2.9.52: users are kept in the main file; the company-year file needs the same user row so that what a
+            # non-administrator saves can record who made it (it used to fail with "FOREIGN KEY constraint failed").
+            try:
+                user = self._user()
+                if user and self.db is not self.master_db: self.db.ensure_user_row(user)
+            except Exception: log.warning("User row not copied to the company file", exc_info=True)
             return True
         except (KeyError, ValueError) as exc:
             self._json(400,{"error":str(exc).strip("'\"")})
@@ -120,7 +136,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path in ("/api/backups/download","/api/backups/folder","/api/backups") and user["role"]=="viewer":
             return self._json(403,{"error":"Backup access is not available for viewer accounts"})
         if path == "/api/me":
-            info={k:user[k] for k in ("id","username","role","language","expires_at")}; info["permissions"]={m:self.master_db.user_can(user,m) for m in ("payroll","vat")}
+            info={k:user[k] for k in ("id","username","role","language","expires_at")}; info["permissions"]={m:self.master_db.user_can(user,m) for m in ("payroll","vat","delete")}
             return self._json(200,info)
         if path == "/api/asset-categories": return self._json(200,{"items":fixed_assets.list_categories(self.db)})
         if path == "/api/asset-depreciation":
@@ -194,6 +210,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if path == "/api/inventory/next-number": return self._json(200,{"number":inventory.next_number(self.db,self._query(parsed,"type"),self._query(parsed,"date"))})
                 if path == "/api/inventory/categories": return self._json(200,inventory.list_categories(self.db))
                 if path == "/api/inventory/brands": return self._json(200,{"items":inventory.brands(self.db)})
+                if path == "/api/inventory/similar": return self._json(200,{"items":inventory.similar_items(self.db,self._query(parsed,"name",""))})
                 if path == "/api/inventory/count-sheet": return self._json(200,{"items":inventory.count_sheet(self.db,self._query(parsed,"warehouse_id"),self._query(parsed,"date"))})
                 if path == "/api/inventory/counts": return self._json(200,{"items":inventory.list_counts(self.db)})
                 if path.startswith("/api/inventory/counts/"): return self._json(200,inventory.get_count(self.db,int(path.rsplit("/",1)[-1])))
@@ -271,6 +288,15 @@ class ApiHandler(BaseHTTPRequestHandler):
                 year_db=self.company_manager.database(company_id,year)
                 return self._json(200,{"items":year_db.journal(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0]),"year":year,"read_only":True})
             except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path in ("/api/fiscal-year/profit-loss", "/api/fiscal-year/balance-sheet"):
+            try:
+                year = int(self._query(parsed, "year")); year_db = self._year_db(year); currency = self._query(parsed, "currency")
+                if path.endswith("profit-loss"):
+                    items = year_db.profit_and_loss(self._query(parsed, "from_date"), self._query(parsed, "to_date"), currency)
+                else:
+                    items = year_db.balance_sheet(self._query(parsed, "to_date"), currency)
+                return self._json(200, {"items": items, "year": year, "separate_file": year_db is not self.db})
+            except Exception as exc: return self._json(400, {"error": str(exc)})
         if path == "/api/invoices/next-number":
             try: return self._json(200,{"invoice_number":self.db.next_invoice_number(self._query(parsed,"kind","sale"),self._query(parsed,"date"))})
             except Exception as exc: return self._json(400,{"error":str(exc)})
@@ -404,6 +430,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 query.get("from_date", [None])[0],
                 query.get("to_date", [None])[0],
                 query.get("currency", [None])[0],
+                entry_number=query.get("entry_number", [None])[0],
+                source_type=query.get("source_type", [None])[0],
             )})
         if path.startswith("/api/journal-vouchers/"):
             try: return self._json(200,self.db.journal_voucher_detail(int(path.rsplit("/",1)[-1])))
@@ -430,7 +458,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200,{"items":self.db.aging_report(query.get("as_of_date",[None])[0],query.get("kind",[None])[0],query.get("currency",[None])[0])})
         if path == "/api/comparative-reports":
             query=parse_qs(parsed.query)
-            try: result=self.db.comparative_reports(query.get("from_date",[""])[0],query.get("to_date",[""])[0],query.get("currency",[None])[0])
+            try:
+                from_date=query.get("from_date",[""])[0]
+                prior_db=self._year_db(int(str(from_date)[:4])-1) if str(from_date)[:4].isdigit() else self.db
+                result=self.db.comparative_reports(from_date,query.get("to_date",[""])[0],query.get("currency",[None])[0],prior_db=None if prior_db is self.db else prior_db)
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)
         return self._json(404, {"error": "Not found"})
@@ -685,6 +716,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self._json(400, {"error": str(exc)})
             return self._json(201, {"invoice": result})
+        if path.startswith("/api/invoices/") and path.endswith("/cancel") and not self.master_db.user_can(user, "delete"):
+            return self._json(403,{"error":"You do not have permission to cancel invoices. Ask the administrator."})
         if path.startswith("/api/invoices/") and path.endswith("/cancel"):
             try: result=self.db.cancel_invoice(int(path.split("/")[-2]),body.get("reason"),user["id"])
             except KeyError: return self._json(404,{"error":"Invoice not found"})
@@ -753,6 +786,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                 result=self.company_manager.refresh_opening(company_id,body.get("source_year"),user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)
+        if path == "/api/invoices/duplicates":
+            try: return self._json(200, {"items": self.db.find_invoice_duplicates(body.get("items") or [])})
+            except Exception as exc: return self._json(400, {"error": str(exc)})
         if path == "/api/invoices/payment-entries":
             try: return self._json(200, self.db.create_missing_invoice_payments(user["id"]))
             except Exception as exc: return self._json(400, {"error": str(exc)})
@@ -774,6 +810,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             items = body.get("items", [])
             if not isinstance(items, list) or len(items) > 5000:
                 return self._json(400, {"error": "Invalid import batch"})
+            if body.get("replace_existing", False) and not self.master_db.user_can(user, "delete"):
+                return self._json(403,{"error":"You do not have permission to replace all invoices. Ask the administrator."})
             if body.get("replace_existing", False):
                 # Validate the entire replacement on a private SQLite snapshot first.
                 # A failed row leaves the live database untouched.
@@ -879,6 +917,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         if user["role"]=="viewer": return self._json(403,{"error":"Viewer access is read-only"})
         try:
             if self._module_denied(user, path): return
+            if not self.master_db.user_can(user, "delete"):
+                return self._json(403,{"error":"You do not have permission to delete. Ask the administrator."})
             if path.startswith("/api/fixed-assets/"): result=fixed_assets.delete_asset(self.db,int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/vat-return/adjustments/"): result=vat_return.delete_adjustment(self.db,int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/inventory/documents/"): result=inventory.delete_document(self.db,int(path.rsplit("/",1)[-1]),user["id"])

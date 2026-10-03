@@ -472,7 +472,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
 
     def load_manual_vouchers(self):
         if not hasattr(self, "manual_find_box"): return
-        try: rows = [row for row in self.client.journal() if row.get("source_type") == "journal_voucher"]
+        try: rows = [row for row in self.client.journal(source_type="journal_voucher") if row.get("source_type") == "journal_voucher"]
         except Exception: rows = []
         grouped = {}
         for row in rows:

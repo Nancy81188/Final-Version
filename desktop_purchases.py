@@ -229,7 +229,7 @@ class PurchasesMixin:
                 lines = []
                 for line in invoice["lines"]:
                     before = len(getattr(self, "inventory_rows", []))
-                    item = self.client.find_or_create_item(line["description"], line.get("unit") or "unit", line.get("item_code") or None)
+                    item = resolve_item(self, line["description"], line.get("unit") or "unit", line.get("item_code") or None)
                     if not self.item_by_code(item["sku"]): created += 1
                     cost = line["unit_price"] * (1 - (line.get("discount_percent") or 0) / 100)
                     lines.append({"item_code": item["sku"], "description": item["name"], "quantity": line["quantity"], "unit": line.get("unit") or item.get("unit"), "unit_price": round(cost, 4),
@@ -352,9 +352,7 @@ class PurchasesMixin:
         created = 0
         for row in items:
             try:
-                item = self.client.find_or_create_item(
-                    row["description"], row.get("unit") or "unit", None, party["id"] if party else None,
-                )
+                item = resolve_item(self, row["description"], row.get("unit") or "unit", None, party["id"] if party else None)
             except Exception as exc:
                 messagebox.showerror("Purchase PDF item", f"{created} item(s) added; could not create {row['description']}: {exc}")
                 break
@@ -465,7 +463,7 @@ class PurchasesMixin:
             for r in stock:
                 code = r.get("item_code")
                 if not code:
-                    item = self.client.find_or_create_item(r["name"], r.get("unit") or "unit", None, party["id"] if party else None); code = item["sku"]
+                    item = resolve_item(self, r["name"], r.get("unit") or "unit", None, party["id"] if party else None); code = item["sku"]
                 cost = (_num(r["unit_cost"]) or 0) * (1 - (_num(r.get("discount_percent")) or 0) / 100)
                 cost *= net_taxable/taxable if taxable else 1
                 item_row = next((i for i in getattr(self, "inventory_rows", []) if i.get("sku") == code), None)
@@ -557,6 +555,14 @@ class PurchasesMixin:
                     "A paid Expense belongs in Expenses; an unpaid supplier bill belongs in Purchases. "
                     "Confirm the type and accounts before posting.\n\nSave with the selected type anyway?"):
                 return
+        if not f["id"]:
+            try: found = self.client.invoice_duplicates([{**invoice, "kind": invoice.get("kind")}])[0]
+            except Exception: found = []
+            if isinstance(found, list) and found:
+                old = found[0]; text = f"Invoice {invoice['invoice_number']} of {invoice['party_name']} is already saved (ID {old['id']}, {old['invoice_date']}, total {float(old['total'] or 0):,.2f} {old['currency']})."
+                if auto:
+                    f["pdf_label"].config(text=text + " Not saved again.", fg=RED); return
+                if not messagebox.askyesno("Already saved", text + "\n\nSave it again anyway?"): return
         try:
             invoice_id = self.client.replace_invoice(f["id"], invoice, lines) if f["id"] else self.client.create_manual_invoice(invoice, lines)["invoice_id"]
         except Exception as exc:

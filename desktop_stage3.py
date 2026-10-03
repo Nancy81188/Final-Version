@@ -220,6 +220,20 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             return
         return self.send_import(auto=True, rows=ready)
 
+    def import_duplicates(self, rows, default_entry_type="purchases"):
+        """{id(row): (row, [saved invoices])} for preview rows already in the books (2.9.51). Expenses are not invoices."""
+        checked = []
+        for r in rows:
+            entry_type = TYPES[r["entry_type"]][1] if self.import_mode == "pdf" and r.get("entry_type") in TYPES else default_entry_type
+            if entry_type == "expenses" or not r.get("invoice_number"): continue
+            checked.append((r, {"kind": entry_type, "party_name": r.get("party_name"), "invoice_number": r.get("invoice_number"), "doc_subtype": r.get("doc_subtype") or "invoice"}))
+        if not checked: return {}
+        try:
+            found = self.client.invoice_duplicates([item for _r, item in checked])
+            if not isinstance(found, list): return {}
+            return {id(r): (r, matches) for (r, _item), matches in zip(checked, found) if isinstance(matches, list) and matches}
+        except Exception: return {}  # the check never blocks an import when the service cannot answer
+
     def split_ready_import_rows(self, rows):
         """Rows that can be posted without a question, and the others (their Check note says why)."""
         ready = []; waiting = []
@@ -248,7 +262,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         rate = round(vat / subtotal * 100, 4) if subtotal else 0
         lines = []; remaining_subtotal = round(subtotal, 2); remaining_vat = round(vat, 2)
         for index, it in enumerate(items):
-            item = self.client.find_or_create_item(it["description"], it.get("unit") or "unit", None, None)
+            item = resolve_item(self, it["description"], it.get("unit") or "unit", None, None)
             last = index == len(items) - 1
             line_subtotal = remaining_subtotal if last else round(float(it["total"]), 2)
             line_vat = remaining_vat if last else round(line_subtotal * rate / 100, 2)
@@ -319,6 +333,24 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             if not auto and not messagebox.askyesno("Confirm PDF types",f"Review the Type of every PDF row before posting.\n{counts}\n\nExpenses are recorded as PAID from the selected payment account; Purchases are supplier invoices and Assets require a fixed-asset account.\n\nAre these types and accounts correct?"):
                 return
         if self.import_replace.get() and not messagebox.askyesno("Replace previous data", "ALL previous invoices will be removed and replaced. A safety backup is made first. Continue?"): return
+        checker = getattr(self, "import_duplicates", None)
+        duplicates = checker(rows, entry_type) if callable(checker) and not self.import_replace.get() else {}
+        if duplicates:
+            listed = "\n".join(f"Row {r.get('line', '')}: {r.get('invoice_number')} - {r.get('party_name')} (already saved {found[0]['invoice_date']}, total {float(found[0]['total'] or 0):,.2f})"
+                               for r, found in list(duplicates.values())[:10])
+            skip = True if auto else messagebox.askyesnocancel("Already saved",
+                f"{len(duplicates)} invoice(s) are already in the books (same customer / supplier and number):\n{listed}\n\n"
+                "Yes = skip them (they stay in the preview)\nNo = save them again anyway\nCancel = stop")
+            if skip is None: return
+            for r, found in duplicates.values():
+                r["notes"] = f"Already saved (ID {found[0]['id']}, {found[0]['invoice_date']}) - not saved again. " + str(r.get("notes") or "").replace("Already saved", "Was saved")
+            if skip:
+                rows = [r for r in rows if id(r) not in duplicates]
+                for iid in self.import_sheet.rows: self.import_sheet.refresh(iid)
+                if not rows:
+                    self.import_status.config(text=f"{len(duplicates)} row(s) already saved - nothing new to import")
+                    if not auto: messagebox.showinfo("Import", "Every row is already in the books; nothing was saved again.")
+                    return
         done = 0; errors = []; completed = []
         try:
             expense_rows = [r for r in rows if r.get("entry_type")=="Expenses"] if self.import_mode=="pdf" else rows if entry_type=="expenses" else []

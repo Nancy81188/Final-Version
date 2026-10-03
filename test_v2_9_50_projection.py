@@ -130,7 +130,7 @@ class ScreenTest(unittest.TestCase):
         for name in ("build_projection_page", "load_projection_assumptions", "collect_projection_assumptions", "fill_projection_sheet", "_format_projection_row",
                      "projection_cell_changed", "apply_projection_growth_to_all", "save_projection_assumptions", "load_projection_base", "refresh_projection",
                      "_projection_ready", "export_projection", "save_projection_as_budget", "show_projection_charts", "_projection_file", "_projection_key",
-                     "report_viewer", "show_sections", "action_button", "save_sections"):
+                     "report_viewer", "show_sections", "action_button", "save_sections", "suggest_projection_growth", "_year_profit_loss"):
             setattr(App, name, getattr(desktop.SaberApp, name))
         try: app = App()
         except tk.TclError as exc: self.skipTest(f"no display: {exc}")

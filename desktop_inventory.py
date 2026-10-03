@@ -344,7 +344,7 @@ class InventoryMixin:
         tk.Label(bar, text="From Date", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.ir_from, 11).pack(side="left", padx=(4, 6))
         tk.Label(bar, text="To Date / As of", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.ir_to, 11).pack(side="left", padx=(4, 6))
         self.ir_warehouse_label = tk.Label(bar, text="Warehouse", bg=LIGHT); self.ir_warehouse_label.pack(side="left")
-        self.ir_warehouse_box = ttk.Combobox(bar, textvariable=self.ir_warehouse, state="readonly", width=16); self.ir_warehouse_box.pack(side="left", padx=(4, 6))
+        self.ir_warehouse_box = MultiSelect(bar, self.ir_warehouse, width=16, title="Warehouse", bg=LIGHT); self.ir_warehouse_box.pack(side="left", padx=(4, 6))
         tk.Label(bar, text="Costing", bg=LIGHT).pack(side="left")
         ttk.Combobox(bar, textvariable=self.ir_method, values=["Company setting", "Weighted average", "FIFO"], state="readonly", width=15).pack(side="left", padx=4)
         item_row = tk.Frame(page, bg=LIGHT); self.ir_item_row = item_row
@@ -409,8 +409,9 @@ class InventoryMixin:
         options = {"date_from": self.ir_from.get().strip(), "date_to": self.ir_to.get().strip(), "days": self.ir_days.get().strip() or "90", "include_zero": self.ir_zero.get()}
         if self.ir_report.get() == "Inventory Analysis (3D)":
             options.update(rows=self.ir_3d_rows.get().lower(), columns=self.ir_3d_columns.get().lower(), measure=self.ir_3d_measure.get().lower())
-        if self.ir_warehouse.get() not in ("", "All"):
-            code = self.ir_warehouse.get().split(" - ", 1)[0]; options["warehouse_id"] = next(w["id"] for w in self.warehouse_rows if w["code"] == code)
+        chosen = [value.split(" - ", 1)[0] for value in chosen_values(self.ir_warehouse.get())]
+        ids = [w["id"] for w in getattr(self, "warehouse_rows", []) if w["code"] in chosen]
+        if ids: options["warehouse_id"] = ids[0] if len(ids) == 1 else ids
         if self.ir_item.get().strip():
             item = self.item_by_code(self.ir_item.get())
             if not item: raise ValueError("Choose a valid Item From")

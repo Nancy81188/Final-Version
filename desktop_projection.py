@@ -58,7 +58,8 @@ class ProjectionMixin:
         tk.Label(bar2, text="(DSO / DPO empty = taken from the books)", bg=LIGHT, fg=MUTED).pack(side="left")
         bar3 = tk.Frame(page, bg=LIGHT); bar3.pack(fill="x", padx=10, pady=2)
         tk.Label(bar3, text="Same revenue % for every year", bg=LIGHT).pack(side="left"); tk.Entry(bar3, textvariable=self.pj["all_growth"], width=6).pack(side="left", padx=4)
-        self.action_button(bar3, "Apply to all years", self.apply_projection_growth_to_all).pack(side="left", padx=(2, 12))
+        self.action_button(bar3, "Apply to all years", self.apply_projection_growth_to_all).pack(side="left", padx=(2, 4))
+        self.action_button(bar3, "% from past years", self.suggest_projection_growth).pack(side="left", padx=(2, 12))
         self.action_button(bar3, "Save assumptions", self.save_projection_assumptions).pack(side="left", padx=3)
         tk.Label(bar3, text="Save as budget for year", bg=LIGHT).pack(side="left", padx=(16, 2)); tk.Entry(bar3, textvariable=self.pj["budget_year"], width=6).pack(side="left", padx=2)
         tk.Button(bar3, text="Save as Budget", command=self.save_projection_as_budget, bg=NAVY, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=4)
@@ -147,12 +148,42 @@ class ProjectionMixin:
         if not quiet: messagebox.showinfo("Projection", "Assumptions saved for this company.")
 
     # ------------------------------------------------------------ data from the books
+    def _year_profit_loss(self, year, start, end, currency):
+        """P&L of any fiscal year: its own file when the company keeps one per year (2.9.52), else this one."""
+        try: return self.client.fiscal_year_profit_loss(year, start, end, currency)
+        except Exception:
+            try: return self.client.profit_loss(start, end, currency)
+            except Exception: return []
+
     def load_projection_base(self, base_year, currency):
         months, label = pm.base_period(base_year)
         monthly = {month: self.client.profit_loss(f"{base_year}-{month:02d}-01", pm.month_end(base_year, month), currency) for month in range(1, months + 1)}
-        accounts = pm.collect_base(monthly, months)
+        used = months
+        if months < 12:  # 2.9.52: a year in progress is completed with the same months of last year (last 12 months)
+            previous = {month: self._year_profit_loss(base_year - 1, f"{base_year - 1}-{month:02d}-01", pm.month_end(base_year - 1, month), currency)
+                        for month in range(months + 1, 13)}
+            if any(rows for rows in previous.values()):
+                monthly.update(previous); used = 12
+                label = f"Last 12 months ({pm.MONTHS[months]} {base_year - 1} - {pm.MONTHS[months - 1]} {base_year})"
+        accounts = pm.collect_base(monthly, used)
         balances = pm.balances_from(self.client.balance_sheet(pm.month_end(base_year, months), currency))
+        history = []
+        for year in (base_year - 2, base_year - 1):
+            if used == 12 and months < 12 and year == base_year - 1: continue  # already inside the last 12 months
+            rows = self._year_profit_loss(year, f"{year}-01-01", f"{year}-12-31", currency)
+            if rows: history.append((f"Actual {year}", pm.statement_from_rows(rows)))
+        self.pj_history = history
         return accounts, balances, label
+
+    def suggest_projection_growth(self):
+        """Revenue % of every projected year = the average growth of the actual years."""
+        if getattr(self, "pj_base", None) is None: self.refresh_projection()
+        if getattr(self, "pj_base", None) is None: return
+        base = pm._statement(pm._lines_total(self.pj_base[0]))
+        growth = pm.historical_growth(getattr(self, "pj_history", []), base)
+        if growth is None: return messagebox.showinfo("Projection", "There is no earlier year with revenue in Saber to measure the growth. Type the % yourself.")
+        self.pj["all_growth"].set(f"{growth:g}"); self.apply_projection_growth_to_all(); self.refresh_projection(reload=False)
+        messagebox.showinfo("Projection", f"Revenue growth set to {growth:g}% per year (average of the actual years). Adjust any year in the sheet.")
 
     def refresh_projection(self, reload=True):
         try:
@@ -163,7 +194,8 @@ class ProjectionMixin:
                 self.pj_base = (accounts, balances, label, (assumptions["base_year"], currency))
             accounts, balances, label, _key = self.pj_base
             budget_year = int(self.pj["budget_year"].get() or 0) or None
-            projections, sections = pm.report_sections(accounts, assumptions, balances, label, currency, self.pj["scenario"].get(), budget_year)
+            projections, sections = pm.report_sections(accounts, assumptions, balances, label, currency, self.pj["scenario"].get(), budget_year,
+                                                       getattr(self, "pj_history", []))
         except ValueError as exc: return messagebox.showwarning("Projection", str(exc))
         except Exception as exc:
             log.exception("Projection failed"); return messagebox.showerror("Projection", str(exc))

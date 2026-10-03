@@ -149,7 +149,7 @@ class BalanceReportsMixin:
             state.setdefault("parents", {})[state["notebook"].select()] = parent  # Escape comes back to the trial balance
 
     def open_transaction(self, entry_number):
-        try: rows = [r for r in self.client.journal() if r["entry_number"] == entry_number]
+        try: rows = [r for r in self.client.journal(entry_number=entry_number) if r["entry_number"] == entry_number]
         except Exception as exc: return messagebox.showerror("Transaction", str(exc))
         if not rows: return messagebox.showinfo("Transaction", f"{entry_number} was not found in this fiscal year")
         first = rows[0]
@@ -221,7 +221,7 @@ class BalanceReportsMixin:
         selected = self.journal_tree.selection()
         if not selected: return messagebox.showwarning("General Journal", "Select a line of the entry you want to edit")
         number = str(self.journal_tree.item(selected[0], "values")[0])
-        try: rows = [r for r in self.client.journal() if r["entry_number"] == number]
+        try: rows = [r for r in self.client.journal(entry_number=number) if r["entry_number"] == number]
         except Exception as exc: return messagebox.showerror("General Journal", str(exc))
         if not rows: return messagebox.showinfo("General Journal", f"{number} was not found")
         return self.open_entry_source(rows[0])

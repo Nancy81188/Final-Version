@@ -637,7 +637,7 @@ class FinalFeaturesMixin:
         form = tk.Frame(users, bg=LIGHT); form.pack(fill="x", padx=10, pady=10)
         self.user_name = tk.StringVar(); self.user_password = tk.StringVar(); self.user_role = tk.StringVar(value="accountant"); self.user_language = tk.StringVar(value="en")
         self.user_expiry = tk.StringVar(value=(datetime.now() + timedelta(days=365)).strftime("%d-%m-%Y"))
-        self.user_active = tk.BooleanVar(value=True); self.user_payroll = tk.BooleanVar(value=True); self.user_vat = tk.BooleanVar(value=True); self.edit_user_id = None
+        self.user_active = tk.BooleanVar(value=True); self.user_payroll = tk.BooleanVar(value=True); self.user_vat = tk.BooleanVar(value=True); self.user_delete = tk.BooleanVar(value=False); self.edit_user_id = None
         fields = (("Username", self.user_name, 16, ""), ("Password", self.user_password, 14, "*"))
         for column, (label, var, width, show) in enumerate(fields):
             tk.Label(form, text=label, bg=LIGHT).grid(row=0, column=column * 2, padx=4, sticky="w")
@@ -651,20 +651,21 @@ class FinalFeaturesMixin:
         tk.Checkbutton(form, text="Active", variable=self.user_active, bg=LIGHT).grid(row=1, column=2, sticky="w")
         tk.Checkbutton(form, text="Payroll access", variable=self.user_payroll, bg=LIGHT).grid(row=1, column=3, sticky="w")
         tk.Checkbutton(form, text="VAT access", variable=self.user_vat, bg=LIGHT).grid(row=1, column=4, sticky="w")
-        buttons = tk.Frame(form, bg=LIGHT); buttons.grid(row=1, column=5, columnspan=4, sticky="w")
+        tk.Checkbutton(form, text="Can delete / cancel", variable=self.user_delete, bg=LIGHT).grid(row=1, column=5, sticky="w")
+        buttons = tk.Frame(form, bg=LIGHT); buttons.grid(row=1, column=6, columnspan=4, sticky="w")
         self.action_button(buttons, "Save User", self.add_user).pack(side="left", padx=3)
         self.action_button(buttons, "Renew 1 Year", self.renew_selected_user).pack(side="left", padx=3)
         self.action_button(buttons, "New / Clear", self.clear_user_form).pack(side="left", padx=3)
         tk.Label(users, text="Roles: Admin = everything; Accountant = enter and post; Viewer = read only. New non-admin users are valid for 1 year; "
-                 "leave 'Valid until' empty for no expiry. Payroll and VAT access can be removed per user.", bg=LIGHT, fg=MUTED, wraplength=1050, justify="left").pack(fill="x", padx=12)
+                 "leave 'Valid until' empty for no expiry. Payroll and VAT access can be removed per user. 'Can delete / cancel' allows deleting or cancelling posted documents (new users: off).", bg=LIGHT, fg=MUTED, wraplength=1050, justify="left").pack(fill="x", padx=12)
         self.users_tree = self.table(users, [("id", "ID", 50), ("username", "Username", 160), ("role", "Role", 95), ("language", "Language", 70), ("status", "Status", 80),
-            ("expires", "Valid Until", 95), ("days", "Days Left", 75), ("payroll", "Payroll", 65), ("vat", "VAT", 55)])
+            ("expires", "Valid Until", 95), ("days", "Days Left", 75), ("payroll", "Payroll", 65), ("vat", "VAT", 55), ("delete", "Delete", 60)])
         self.users_tree.tag_configure("expired", foreground=RED); self.users_tree.tag_configure("soon", foreground=AMBER)
         self.users_tree.bind("<Double-1>", lambda _event: self.edit_selected_user())
 
     def clear_user_form(self):
         self.edit_user_id = None; self.user_name.set(""); self.user_password.set(""); self.user_role.set("accountant"); self.user_active.set(True)
-        self.user_payroll.set(True); self.user_vat.set(True)
+        self.user_payroll.set(True); self.user_vat.set(True); self.user_delete.set(False)
         self.user_expiry.set((datetime.now() + timedelta(days=365)).strftime("%d-%m-%Y"))
 
     def fill_users_tree(self, users):
@@ -675,14 +676,15 @@ class FinalFeaturesMixin:
             permissions = row.get("permissions") or {}
             self.users_tree.insert("", "end", iid=str(row["id"]), values=(row["id"], row["username"], row["role"], row["language"], str(row.get("status", "")).title(),
                 _display(row.get("expires_at")) or "No expiry", "" if days is None else days, "Yes" if row["role"] == "admin" or permissions.get("payroll", True) else "No",
-                "Yes" if row["role"] == "admin" or permissions.get("vat", True) else "No"), tags=(tag,) if tag else ())
+                "Yes" if row["role"] == "admin" or permissions.get("vat", True) else "No",
+                "Yes" if row["role"] == "admin" or (row["role"] != "viewer" and permissions.get("delete", True)) else "No"), tags=(tag,) if tag else ())
 
     def user_payload(self):
         expiry = self.user_expiry.get().strip()
         if expiry: _user_date(expiry)
         return {"id": self.edit_user_id, "username": self.user_name.get().strip(), "password": self.user_password.get(), "role": self.user_role.get(),
                 "language": self.user_language.get(), "active": self.user_active.get(), "expires_at": expiry,
-                "permissions": {"payroll": self.user_payroll.get(), "vat": self.user_vat.get()}}
+                "permissions": {"payroll": self.user_payroll.get(), "vat": self.user_vat.get(), "delete": self.user_delete.get()}}
 
     def add_user(self):
         try: payload = self.user_payload(); saved = self.client.save_user(payload)
@@ -708,3 +710,4 @@ class FinalFeaturesMixin:
         self.edit_user_id = row["id"]; self.user_name.set(row["username"]); self.user_role.set(row["role"]); self.user_language.set(row["language"])
         self.user_password.set(""); self.user_active.set(bool(row["active"])); self.user_expiry.set(_display(row.get("expires_at")))
         permissions = row.get("permissions") or {}; self.user_payroll.set(permissions.get("payroll", True)); self.user_vat.set(permissions.get("vat", True))
+        self.user_delete.set(permissions.get("delete", True))

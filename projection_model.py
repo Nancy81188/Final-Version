@@ -91,6 +91,23 @@ def balances_from(balance_rows):
     return {"cash": cash, "receivables": max(receivables, 0.0), "payables": max(payables, 0.0)}
 
 
+def statement_from_rows(rows):
+    """Income statement lines of a whole period from profit and loss rows (2.9.52: earlier years)."""
+    totals = {line: 0.0 for line, _en, _ar in LINES}
+    for row in rows or []:
+        if row.get("type") in ("income", "expense"): totals[line_of(row["code"], row["type"])] += float(row.get("amount") or 0)
+    return _statement(totals)
+
+
+def historical_growth(history, base):
+    """Average yearly revenue growth % from the earlier actual years up to the base (None when it cannot be measured)."""
+    revenues = [statement["revenue"] for _label, statement in history] + [base["revenue"]]
+    first = next((v for v in revenues if v > 0), None)
+    if first is None or len(revenues) < 2 or base["revenue"] <= 0: return None
+    years = len(revenues) - 1 - revenues.index(first)
+    return round(((base["revenue"] / first) ** (1 / years) - 1) * 100, 1) if years > 0 else None
+
+
 # ---------------------------------------------------------------- projection
 def _lines_total(accounts, key="annual"):
     totals = {line: 0.0 for line, _en, _ar in LINES}
@@ -191,11 +208,14 @@ def _r(value):
     return round(float(value or 0), 2)
 
 
-def report_sections(base_accounts, assumptions, balances, base_label, currency, scenario="Base", budget_year=None):
-    """All the projection reports, each a section for report_export (with 3D charts where they help)."""
+def report_sections(base_accounts, assumptions, balances, base_label, currency, scenario="Base", budget_year=None, history=None):
+    """All the projection reports, each a section for report_export (with 3D charts where they help).
+    history: [(label, statement)] of earlier actual years, shown before the base in the income statement."""
     projections = {name: project(base_accounts, assumptions, balances, name) for name in SCENARIOS}
-    p = projections[scenario]; years = p["years"]; labels = [base_label] + [str(y) for y in years]
-    table = [p["base"]] + [p["rows"][y] for y in years]
+    history = [(label, statement) for label, statement in (history or []) if any(abs(statement[k]) > 0.004 for k in ("revenue", "cost_of_sales", "payroll", "operating"))]
+    p = projections[scenario]; years = p["years"]
+    labels = [label for label, _s in history] + [base_label] + [str(y) for y in years]
+    table = [statement for _l, statement in history] + [p["base"]] + [p["rows"][y] for y in years]
     sections = []
     # assumptions
     per_year = assumptions.get("per_year") or {}
@@ -211,7 +231,8 @@ def report_sections(base_accounts, assumptions, balances, base_label, currency, 
         ["Base period", base_label], ["Income tax rate %", _f(assumptions.get("tax_rate"), 17.0)], ["Customer collection days (DSO)", round(p["dso"], 1)],
         ["Supplier payment days (DPO)", round(p["dpo"], 1)], ["Asset life for new investments (years)", _f(assumptions.get("asset_life"), 5.0)],
         [f"Cash at end of base period ({currency})", _r(balances.get("cash"))], [f"Customers at end of base period ({currency})", _r(balances.get("receivables"))],
-        [f"Suppliers at end of base period ({currency})", _r(balances.get("payables"))]], "total_rows": []})
+        [f"Suppliers at end of base period ({currency})", _r(balances.get("payables"))],
+        ["Average revenue growth of the actual years %", "-" if historical_growth(history, p["base"]) is None else historical_growth(history, p["base"])]], "total_rows": []})
     # income statement
     def line(label, key, bold=False):
         return [label] + [_r(t[key]) for t in table], bold

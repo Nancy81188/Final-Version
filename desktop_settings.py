@@ -115,6 +115,7 @@ class SettingsMixin:
                 tk.Button(lock_bar,text="Lock",command=self.lock_books,bg=GOLD,fg=NAVY,border=0,padx=14,pady=5,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
                 self.action_button(lock_bar,"Unlock",self.unlock_books).pack(side="left",padx=4)
                 self.books_lock_label=tk.Label(lock_bar,text="",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")); self.books_lock_label.pack(side="left",padx=12)
+            if is_admin: self.build_second_copy_box(backups)
             tk.Label(backups,text="An automatic backup of this company and year is made every day when you open it (the newest 30 automatic copies are kept; manual and safety copies are never deleted). Keep a copy outside the computer too: Save Backup As... (USB / Drive).",bg=LIGHT,fg="#5f6b76",wraplength=1050,justify="left").pack(fill="x",padx=14)
             self.backups_tree=self.table(backups,[("name","Backup File",400),("kind","Type",100),("checked","Checked",90),("size","Size",100),("modified","Created",170)])
         rate_controls=tk.Frame(rates,bg=LIGHT); rate_controls.pack(fill="x",padx=10,pady=10)
@@ -194,7 +195,12 @@ class SettingsMixin:
     def create_backup(self):
         try: result=self.client.create_backup()
         except Exception as exc: return messagebox.showerror("Backup",str(exc))
-        self.load_settings_pages(); messagebox.showinfo("Backup",f'Backup created:\n{result["path"]}')
+        self.load_settings_pages()
+        import backup_copy
+        config=backup_copy.settings(); extra=""
+        if config["folder"]: extra=f"\n\nSecond copy: FAILED - {config['last_error']}" if config["last_error"] else f"\n\nSecond copy saved in {config['folder']}"
+        if hasattr(self,"refresh_second_copy_status"): self.refresh_second_copy_status()
+        messagebox.showinfo("Backup",f'Backup created:\n{result["path"]}{extra}')
 
     def save_backup_as(self):
         selected=self.backups_tree.selection()
@@ -217,6 +223,48 @@ class SettingsMixin:
             if os.name=="nt": os.startfile(folder)
             else: raise RuntimeError
         except Exception: messagebox.showinfo("Backups",f"Backup folder:\n{folder}")
+
+    # ------------------------------------------------------------ 2.9.52: second copy (OneDrive / USB / network)
+    def build_second_copy_box(self,parent):
+        import backup_copy
+        box=tk.LabelFrame(parent,text="Second copy of every backup (OneDrive / USB / network folder)",bg=LIGHT,padx=8,pady=6); box.pack(fill="x",padx=10,pady=(0,6))
+        config=backup_copy.settings()
+        self.second_copy_folder=tk.StringVar(value=config["folder"]); self.second_copy_keep=tk.StringVar(value=str(config["keep"]))
+        tk.Label(box,text="Folder",bg=LIGHT).pack(side="left"); tk.Entry(box,textvariable=self.second_copy_folder,width=48).pack(side="left",padx=4)
+        self.action_button(box,"Browse...",self.choose_second_copy_folder).pack(side="left",padx=2)
+        self.action_button(box,"Use OneDrive",self.use_onedrive_for_backups).pack(side="left",padx=2)
+        tk.Label(box,text="Keep",bg=LIGHT).pack(side="left",padx=(8,2)); tk.Entry(box,textvariable=self.second_copy_keep,width=4).pack(side="left")
+        tk.Button(box,text="Save",command=self.save_second_copy,bg=GOLD,fg=NAVY,border=0,padx=12,pady=4,font=("Segoe UI",9,"bold")).pack(side="left",padx=6)
+        self.second_copy_status=tk.Label(parent,text="",bg=LIGHT,fg=NAVY,anchor="w"); self.second_copy_status.pack(fill="x",padx=14,after=box)
+        self.refresh_second_copy_status()
+
+    def refresh_second_copy_status(self):
+        import backup_copy
+        config=backup_copy.settings(); label=getattr(self,"second_copy_status",None)
+        if label is None or not label.winfo_exists(): return
+        if not config["folder"]: text,color="No second copy: backups stay only on this computer. Choose OneDrive or a USB / network folder.","#8a5a00"
+        elif config["last_error"]: text,color=f"Last copy FAILED: {config['last_error']}","#8B1E1E"
+        elif config["last_ok"]: text,color=f"Last copy: {config['last_ok']}",NAVY
+        else: text,color=f"Every new backup will also be copied to {config['folder']}",NAVY
+        label.config(text=text,fg=color)
+
+    def choose_second_copy_folder(self):
+        folder=filedialog.askdirectory(title="Folder for the second copy of the backups")
+        if folder: self.second_copy_folder.set(folder)
+
+    def use_onedrive_for_backups(self):
+        import backup_copy
+        folder=backup_copy.suggested_folder()
+        if not folder: return messagebox.showinfo("Backups","OneDrive was not found on this computer. Choose a USB or network folder with Browse...")
+        self.second_copy_folder.set(folder)
+
+    def save_second_copy(self):
+        import backup_copy
+        try: backup_copy.save_settings(self.second_copy_folder.get(),self.second_copy_keep.get())
+        except ValueError as exc: return messagebox.showwarning("Backups",str(exc))
+        if self.second_copy_folder.get().strip() and messagebox.askyesno("Backups","Saved. Make a backup now to check the second copy?"):
+            self.create_backup()
+        self.refresh_second_copy_status()
 
     def open_log_folder(self):
         """Error log of this computer (logs/saber.log in the Saber data folder) - send it when reporting a problem."""

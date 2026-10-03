@@ -184,15 +184,16 @@ class ApiClient:
         }.items() if value})
         path = "/api/trial-balance" + (f"?{query}" if query else "")
         return self.request("GET", path)["items"]
-    def journal(self, from_date=None, to_date=None, currency=None):
+    def journal(self, from_date=None, to_date=None, currency=None, entry_number=None, source_type=None):
         query = urlencode({key: value for key, value in {
-            "from_date": from_date, "to_date": to_date, "currency": currency
+            "from_date": from_date, "to_date": to_date, "currency": currency, "entry_number": entry_number, "source_type": source_type
         }.items() if value})
         path = "/api/journal" + (f"?{query}" if query else "")
         return self.request("GET", path)["items"]
     def import_invoices(self, items, replace_existing=True): return self.request("POST", "/api/invoices/import", {"items": items, "replace_existing": replace_existing})
     def create_manual_invoice(self, invoice, items): return self.request("POST", "/api/invoices/manual", {"invoice": invoice, "items": items})
     def update_invoice(self, invoice_id, invoice): return self.request("PUT", f"/api/invoices/{invoice_id}", {"invoice": invoice})
+    def invoice_duplicates(self, items): return self.request("POST","/api/invoices/duplicates",{"items":items})["items"]
     def create_missing_invoice_payments(self): return self.request("POST","/api/invoices/payment-entries",{})
     def delete_invoice(self,invoice_id): return self.request("DELETE",f"/api/invoices/{invoice_id}")
     def delete_journal_voucher(self,entry_id): return self.request("DELETE",f"/api/journal/{entry_id}")
@@ -250,6 +251,12 @@ class ApiClient:
     def close_fiscal_year(self, year): return self.request("POST","/api/fiscal-years/close",{"year":year})
     def reopen_fiscal_year(self, year): return self.request("POST","/api/fiscal-years/reopen",{"year":year})
     def refresh_opening(self, source_year): return self.request("POST","/api/fiscal-years/refresh-opening",{"source_year":source_year})
+    def fiscal_year_profit_loss(self,year,from_date=None,to_date=None,currency=None):
+        query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
+        return self.request("GET",f"/api/fiscal-year/profit-loss?{query}")["items"]
+    def fiscal_year_balance_sheet(self,year,to_date=None,currency=None):
+        query=urlencode({k:v for k,v in {"year":year,"to_date":to_date,"currency":currency}.items() if v})
+        return self.request("GET",f"/api/fiscal-year/balance-sheet?{query}")["items"]
     def fiscal_year_journal(self,year,from_date=None,to_date=None,currency=None):
         query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
         return self.request("GET",f"/api/fiscal-year/journal?{query}")["items"]
@@ -359,6 +366,7 @@ class ApiClient:
     def save_warehouse(self,item): return self.request("POST","/api/inventory/warehouses",item)["item"]
     def inventory_settings(self): return self.request("GET","/api/inventory/settings")
     def inventory_brands(self): return self.request("GET","/api/inventory/brands")["items"]
+    def similar_items(self,name): return self.request("GET","/api/inventory/similar?"+urlencode({"name":name}))["items"]
     def save_inventory_settings(self,item): return self.request("POST","/api/inventory/settings",item)
     def stock_documents(self): return self.request("GET","/api/inventory/documents")["items"]
     def stock_document(self,document_id): return self.request("GET",f"/api/inventory/documents/{document_id}")

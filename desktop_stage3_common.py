@@ -42,3 +42,46 @@ def auto_upload_on(app):
     var = getattr(app, "auto_upload_var", None)
     try: return bool(var().get()) if callable(var) else False
     except Exception: return False
+
+
+def resolve_item(app, name, unit="unit", code=None, supplier_id=None):
+    """2.9.51: the inventory item for a purchase line. The same name written differently is matched by the service;
+    when only a CLOSE name exists (e.g. 'HPL Panel 4mm Wht' and 'HPL Panel 4mm White'), the user chooses once:
+    use the existing item or create a new one. The answer is remembered for the rest of the session."""
+    client = app.client
+    if code or not isinstance(app, tk.Misc):
+        return client.find_or_create_item(name, unit, code, supplier_id)
+    memory = getattr(app, "_item_choices", None)
+    if memory is None:
+        memory = {}
+        try: app._item_choices = memory
+        except Exception: pass
+    key = str(name or "").strip().casefold()
+    if key in memory:
+        chosen = memory[key]
+        return chosen if chosen else client.find_or_create_item(name, unit, None, supplier_id)
+    try: candidates = client.similar_items(name)
+    except Exception: candidates = []
+    if not isinstance(candidates, list) or not candidates or candidates[0].get("score", 0) >= 1:
+        return client.find_or_create_item(name, unit, None, supplier_id)
+    chosen = choose_similar_item(app, name, candidates)
+    memory[key] = chosen
+    return chosen if chosen else client.find_or_create_item(name, unit, None, supplier_id)
+
+
+def choose_similar_item(app, name, candidates):
+    """Small window: use one of the close items, or create a new item. Returns the chosen item or None (create)."""
+    window = tk.Toplevel(app); window.title("Same item?"); window.transient(app); window.grab_set()
+    tk.Label(window, text=f"The invoice line\n\"{name}\"\nlooks like an item you already have:", justify="left", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+    choice = tk.IntVar(master=window, value=0)
+    for index, item in enumerate(candidates):
+        tk.Radiobutton(window, text=f'Use {item["sku"]} - {item["name"]} ({item.get("unit") or ""}, {item["score"] * 100:.0f}% alike)', variable=choice, value=index,
+                       anchor="w").pack(fill="x", padx=20)
+    tk.Radiobutton(window, text="Create a new item with this name", variable=choice, value=-1, anchor="w").pack(fill="x", padx=20, pady=(4, 0))
+    result = {"item": None}
+    def ok(_e=None):
+        result["item"] = candidates[choice.get()] if choice.get() >= 0 else None; window.destroy()
+    tk.Button(window, text="OK", command=ok, width=10).pack(pady=12)
+    window.bind("<Return>", ok); window.protocol("WM_DELETE_WINDOW", ok)
+    app.wait_window(window)
+    return result["item"]

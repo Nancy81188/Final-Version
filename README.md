@@ -1,5 +1,23 @@
 # Saber Accounting MVP
 
+## Version 2.9.52 (warehouse multi-select, earlier fiscal years, second backup copy, delete permission, optional code signing)
+
+- Inventory reports: the Warehouse filter takes any combination (e.g. MAIN + W3) in every report - valuation, stock card, movements, brands, health, ageing, 3D analysis.
+- Earlier fiscal years: reports can read another year's own file. Comparative P&L shows the prior year from last year's file (it showed 0 when each year has its own file). The projection shows the earlier actual years, completes a year in progress with last year's months (last 12 months), and "% from past years" sets the revenue growth from the actual history.
+- Backups: Settings > Backup & Restore > "Second copy of every backup": OneDrive (found automatically), USB or network folder. Every checked backup is copied there (company / year), the newest 30 automatic copies are kept, manual and safety copies are never removed. The status (last copy or the error) is shown; a failed copy never stops the backup.
+- Users: new "Can delete / cancel" permission (delete or cancel posted documents, replace all invoices). Off for new users; existing users keep what they could do until the administrator changes it.
+- Fix: an accountant (non-administrator) can save in a company file - the user is copied into the company-year file (saving failed with "FOREIGN KEY constraint failed").
+- Build: optional code signing. Add the GitHub secrets SIGN_CERT_PFX_BASE64 and SIGN_CERT_PASSWORD (a code-signing certificate) and the program, the backup service and the installer are signed; without them the build works as before. THE WORKFLOW FILE MUST BE PASTED BY HAND on GitHub.
+- New file backup_copy.py. Tests: test_v2_9_52.py. 471 tests pass.
+
+## Version 2.9.51 (no duplicate invoices or items from uploads, no hidden journal lines, build version check)
+
+- Duplicate invoices: before an upload or import is saved, Saber looks for an invoice already in the books with the same type, the same customer / supplier and the same number (INV-0045 = inv 45; cancelled ones ignored). Automatic saving skips it and says why; a manual save or import asks (skip / save again / stop).
+- Items: a purchase line whose name is written differently ("HPL Panel 4mm White" / "hpl panel - 4 MM white") uses the existing item. When only a close name exists, a small window asks once: use the existing item or create a new one.
+- Reports read every journal line: the General Journal, General Ledger, Cash Flow, "open transaction" and the voucher list used to stop at 5,000 / 20,000 / 50,000 lines. Cash Flow is now summed by the database.
+- GitHub build: a first step stops with a clear message when the files were uploaded inside a sub-folder or when installer.iss and app_runtime.py carry different versions; the run summary shows the version built and the artifact is named SaberAccountingSetup-<version>. THIS WORKFLOW CHANGE MUST BE PASTED BY HAND in .github/workflows/build-windows-installer.yml on GitHub.
+- Tests: new test_v2_9_51.py. 464 tests pass.
+
 ## Version 2.9.50 (recoverable VAT rate sheet, professional projection & budget with 3D charts, automatic upload posting, multi-select filters)
 
 - VAT: new "Taux Récupérable" PDF / Excel on the Quarterly VAT screen, in the layout of the accountants' worksheet "Calcul du taux récupérable": revenues taxable / export / exempt / outside the scope (quarter and year-to-date base of the rate), the recoverable rate, the VAT on fixed assets, goods, packaging and overheads split into recoverable and non-recoverable, VAT collected and VAT payable. The deduction ratio now keeps 6 decimals (the 2018 example matches to the LBP).

@@ -637,11 +637,33 @@ def _names(database):
     return items, warehouses
 
 
+class WarehouseChoice:
+    """2.9.51: the warehouse filter of the reports - none (all warehouses), one, or any combination."""
+
+    def __init__(self, value):
+        values = value if isinstance(value, (list, tuple, set, frozenset)) else [value]
+        self.ids = frozenset(int(v) for v in values if str(v if v is not None else "").strip().isdigit())
+
+    def __bool__(self): return bool(self.ids)
+
+    def has(self, warehouse_id): return not self.ids or warehouse_id in self.ids
+
+    def pick(self, by_warehouse):
+        """Sum of a {warehouse_id: amount} dict over the chosen warehouses."""
+        return sum((amount for wid, amount in (by_warehouse or {}).items() if wid in self.ids), ZERO)
+
+    def qty(self, data):
+        return self.pick(data.get("by_warehouse", {})) if self.ids else data.get("qty", ZERO)
+
+    def label(self, warehouses):
+        return ", ".join(warehouses[w]["code"] for w in sorted(self.ids) if w in warehouses)
+
+
 def build_report(database, report, options):
     options = dict(options or {}); inv = settings(database); method = options.get("method") or inv["method"]; currency = inv["currency"]
     date_to = iso_date(options["date_to"]) if options.get("date_to") else datetime.now().strftime("%Y-%m-%d")
     date_from = iso_date(options["date_from"]) if options.get("date_from") else f"{date_to[:4]}-01-01"
-    warehouse = options.get("warehouse_id"); warehouse = int(warehouse) if str(warehouse or "").isdigit() else None
+    warehouse = WarehouseChoice(options.get("warehouse_id"))
     items, warehouses = _names(database); company = database.settings(); sections = []
     first_item=items.get(int(options["item_id"])) if options.get("item_id") else None
     last_item=items.get(int(options["item_to_id"])) if options.get("item_to_id") else first_item
@@ -690,12 +712,12 @@ def build_report(database, report, options):
         for item_id, item in sorted(items.items(), key=lambda pair: pair[1]["sku"]):
             if not in_category(item_id): continue
             data = state.get(item_id, {"qty": ZERO, "avg": ZERO, "by_warehouse": {}, "warehouse_value": {}})
-            qty = data["by_warehouse"].get(warehouse, ZERO) if warehouse else data["qty"]
+            qty = warehouse.qty(data)
             if not qty and not options.get("include_zero"): continue
             # Round warehouse lines before adding so displayed warehouse totals reconcile to displayed item totals.
             values = _reported_warehouse_values(data) if data["qty"] else {}
-            value = values.get(warehouse, ZERO) if warehouse else sum(values.values(), ZERO)
-            unit_cost = data["avg"] if not warehouse else (data["warehouse_value"].get(warehouse, ZERO) / qty if qty else ZERO)
+            value = warehouse.pick(values) if warehouse else sum(values.values(), ZERO)
+            unit_cost = data["avg"] if not warehouse else (warehouse.pick(data["warehouse_value"]) / qty if qty else ZERO)
             price = _d(item.get("sales_price")); reorder = _d(item.get("reorder_level"))
             total += value; sales_total += qty * price
             quantities_by_unit[item["unit"]]=quantities_by_unit.get(item["unit"],ZERO)+qty
@@ -710,7 +732,7 @@ def build_report(database, report, options):
                             sum((m[8] for m in members), ZERO), "", ""]); totals_index.append(len(grouped) - 1)
         count = len(rows); rows = grouped
         rows.append(["TOTAL", f"{count} item(s)", "", "", "", "", total, "", sales_total.quantize(Decimal("0.01")), "", ""])
-        title = "Stock Valuation"; sections.append({"heading": f"Stock valuation at {display_date(date_to)} - {'weighted average' if method != 'fifo' else 'FIFO'}" + (f" - {warehouses[warehouse]['code']}" if warehouse else " - all warehouses"),
+        title = "Stock Valuation"; sections.append({"heading": f"Stock valuation at {display_date(date_to)} - {'weighted average' if method != 'fifo' else 'FIFO'}" + (f" - {warehouse.label(warehouses)}" if warehouse else " - all warehouses"),
                                                      "headers": headers, "rows": rows, "total_rows": totals_index + [len(rows) - 1]})
         if not warehouse and len(warehouses) > 1:
             by_wh = [[w["code"], w["name"], sum((_reported_warehouse_values(state[i]).get(wid, ZERO)
@@ -729,7 +751,7 @@ def build_report(database, report, options):
         cards = {item_id: {"opening_qty": ZERO, "opening_value": ZERO, "lines": []} for item_id in selected}
         def record(row, unit, value):
             card = cards.get(row["item_id"])
-            if card is None or (warehouse and row["warehouse_id"] != warehouse): return
+            if card is None or not warehouse.has(row["warehouse_id"]): return
             qty = _d(row["quantity"]); cost_value = qty * (_d(row["unit_cost"]) if qty > 0 and row["doc_type"] != "transfer" else unit)
             if row["doc_date"] < date_from:
                 card["opening_qty"] += qty; card["opening_value"] += cost_value; return
@@ -747,7 +769,7 @@ def build_report(database, report, options):
                 total_in += _d(line[5] or 0); total_out += _d(line[6] or 0)
                 rows.append(line + [qty_balance, value_balance.quantize(Decimal("0.01"))])
             closing = closing_state.get(item_id, {})
-            target_value = (_reported_warehouse_values(closing).get(warehouse, ZERO) if warehouse and closing
+            target_value = (warehouse.pick(_reported_warehouse_values(closing)) if warehouse and closing
                             else closing.get("value", ZERO).quantize(Decimal("0.01")))
             difference = target_value - value_balance.quantize(Decimal("0.01"))
             if difference:
@@ -758,7 +780,7 @@ def build_report(database, report, options):
             rows.append(["", "", "TOTAL / CLOSING", "", "", total_in, total_out, "", "", qty_balance, value_balance.quantize(Decimal("0.01"))])
             item = items[item_id]
             unit=item["unit"]; card_totals[unit]=card_totals.get(unit,ZERO)+qty_balance
-            sections.append({"heading": f"{item['sku']} - {item['name']} ({item['unit']}) | {display_date(date_from)} to {display_date(date_to)}" + (f" - {warehouses[warehouse]['code']}" if warehouse else ""),
+            sections.append({"heading": f"{item['sku']} - {item['name']} ({item['unit']}) | {display_date(date_from)} to {display_date(date_to)}" + (f" - {warehouse.label(warehouses)}" if warehouse else ""),
                              "headers": ["Date", "Document", "Type", "Warehouse", "Party / Reference", "In", "Out", f"Unit Cost ({currency})", "Value", "Balance Qty", "Balance Value"],
                              "rows": rows, "total_rows": [0, len(rows) - 1]})
         title = "Stock Cards" if options.get("item_to_id") else "Stock Card"
@@ -767,7 +789,7 @@ def build_report(database, report, options):
     elif report == "movements":
         rows = []
         def record(row, unit, value):
-            if row["doc_date"] < date_from or not wanted(row["item_id"]) or not in_category(row["item_id"]) or (warehouse and row["warehouse_id"] != warehouse) or not document_ok(row): return
+            if row["doc_date"] < date_from or not wanted(row["item_id"]) or not in_category(row["item_id"]) or not warehouse.has(row["warehouse_id"]) or not document_ok(row): return
             if options.get("doc_type") and row["doc_type"] != options["doc_type"]: return
             qty = _d(row["quantity"]); unit_cost = _d(row["unit_cost"]) if qty > 0 and row["doc_type"] != "transfer" else unit
             rows.append([display_date(row["doc_date"]), row["number"], DOC_TYPES[row["doc_type"]][1], items[row["item_id"]]["sku"], items[row["item_id"]]["name"], row.get("warehouse_code") or "",
@@ -797,7 +819,7 @@ def build_report(database, report, options):
             if item_id not in items or not in_category(item_id): continue
             values = _reported_warehouse_values(data)
             for wid, qty in data.get("by_warehouse", {}).items():
-                if warehouse and wid != warehouse: continue
+                if not warehouse.has(wid): continue
                 if not qty and not values.get(wid): continue
                 key = (items[item_id].get("brand") or "(no brand)", warehouses.get(wid, {}).get("code", "?"))
                 entry = grouped.setdefault(key, {"items": set(), "qty": ZERO, "value": ZERO, "negative": 0})
@@ -933,10 +955,39 @@ def save_category(database, item, user_id):
     return list_categories(database)
 
 
+def item_name_key(name):
+    """'Panel 4 mm', 'PANEL-4MM' and 'panel 4mm' are the same item name (2.9.51)."""
+    import re
+    return re.sub(r"[^0-9a-z\u0600-\u06ff]", "", str(name or "").casefold())
+
+
+def similar_items(database, name, limit=3, threshold=0.82):
+    """Items whose name is the same or close to `name` (best first): [{id, sku, name, unit, score}], score 1.0 = same."""
+    from difflib import SequenceMatcher
+    key = item_name_key(name)
+    if not key: return []
+    with database.connect() as db:
+        rows = [dict(r) for r in db.execute("SELECT id,sku,name,unit FROM inventory_items WHERE COALESCE(active,1)=1")]
+    found = []
+    for row in rows:
+        other = item_name_key(row["name"])
+        if not other: continue
+        score = 1.0 if other == key else SequenceMatcher(None, key, other).ratio()
+        if score < 1.0 and (key in other or other in key) and min(len(key), len(other)) >= 4: score = max(score, 0.86)
+        if score >= threshold: found.append({**row, "score": round(score, 3)})
+    return sorted(found, key=lambda r: (-r["score"], r["sku"]))[:limit]
+
+
 def find_or_create_item(database, name, unit="unit", code=None, user_id=None, supplier_id=None):
-    """Used by the purchase import: an item that does not exist yet is created automatically."""
+    """Used by the purchase import: an item that does not exist yet is created automatically.
+    2.9.51: a name written differently (spaces, case, dashes) finds the existing item instead of creating a second one."""
     with database.connect() as db:
         row = db.execute("SELECT * FROM inventory_items WHERE (sku=? AND ?<>'') OR lower(name)=lower(?) ORDER BY id LIMIT 1", (str(code or "").upper(), str(code or ""), str(name or ""))).fetchone()
+        if not row:
+            key = item_name_key(name)
+            if key:
+                for candidate in db.execute("SELECT * FROM inventory_items ORDER BY COALESCE(active,1) DESC,id"):
+                    if item_name_key(candidate["name"]) == key: row = candidate; break
     if row: return dict(row)
     return save_item(database, {"sku": code or "", "name": name, "unit": unit or "unit", "supplier_id": supplier_id}, user_id)
 
@@ -1024,14 +1075,14 @@ def inventory_analysis(database, options, items, warehouses, in_category, curren
         for item_id, data in state.items():
             reported_values = _reported_warehouse_values(data) if measure == "value" else {}
             for warehouse_id, qty in data["by_warehouse"].items():
-                if warehouse and warehouse != warehouse_id: continue
+                if not warehouse.has(warehouse_id): continue
                 add(item_id, warehouses[warehouse_id]["code"], qty,
                     reported_values.get(warehouse_id, ZERO) / qty if qty else ZERO)
         for warehouse_id, name in warehouses.items():
-            if not warehouse or warehouse == warehouse_id: columns.add(name["code"])
+            if warehouse.has(warehouse_id): columns.add(name["code"])
     else:
         def record(row, unit, value):
-            if row["doc_date"] < date_from or row["doc_type"] == "transfer" or (warehouse and warehouse != row["warehouse_id"]): return
+            if row["doc_date"] < date_from or row["doc_type"] == "transfer" or not warehouse.has(row["warehouse_id"]): return
             add(row["item_id"], row["doc_date"][:7], _d(row["quantity"]), unit)
         run_costing(database, date_to, method, record)
     ordered = sorted(columns); rows = []; totals = [ZERO] * len(ordered)
@@ -1053,7 +1104,7 @@ def inventory_health(database, options, items, in_category, currency, method, da
     state = run_costing(database, date_to, method); rows = []; totals = {}
     for item_id, item in sorted(items.items(), key=lambda pair: pair[1]["sku"]):
         if not item["active"] or not in_category(item_id): continue
-        data = state.get(item_id, {}); qty = data.get("by_warehouse", {}).get(warehouse, ZERO) if warehouse else data.get("qty", ZERO)
+        data = state.get(item_id, {}); qty = warehouse.qty(data)
         reorder = _d(item.get("reorder_level")); issues = []
         if qty < 0: issues.append("Negative stock")
         if reorder > 0 and qty <= reorder: issues.append("Reorder")
@@ -1061,7 +1112,7 @@ def inventory_health(database, options, items, in_category, currency, method, da
         if qty > 0 and not item.get("supplier_id"): issues.append("No supplier")
         if qty > 0 and (not data.get("last_out") or data["last_out"] < cutoff): issues.append(f"No issue in {days} days")
         if not issues: continue
-        value = (_reported_warehouse_values(data).get(warehouse, ZERO) if warehouse
+        value = (warehouse.pick(_reported_warehouse_values(data)) if warehouse
                  else data.get("value", ZERO).quantize(Decimal("0.01")))
         for issue in issues:
             rows.append([issue, item["sku"], item["name"], item.get("category") or "", qty, reorder, value, display_date(data["last_out"]) if data.get("last_out") else "Never"])
@@ -1083,7 +1134,7 @@ def additional_inventory_report(database, report, options, items, warehouses, in
             counts = [dict(row) for row in db.execute("SELECT number,count_date,warehouse_id,status,lines FROM physical_counts WHERE count_date BETWEEN ? AND ? ORDER BY count_date,number", (date_from, date_to))]
         rows = []; total = ZERO
         for count in counts:
-            if warehouse and count["warehouse_id"] != warehouse: continue
+            if not warehouse.has(count["warehouse_id"]): continue
             snapshot = {row["item_id"]: row for row in count_sheet(database, count["warehouse_id"], count["count_date"])}
             if count["status"] == "posted":
                 with database.connect() as db:
@@ -1108,16 +1159,16 @@ def additional_inventory_report(database, report, options, items, warehouses, in
         issued = {}
         for row in _movements(database, date_to):
             item_id = row["item_id"]
-            if date_from <= row["doc_date"] <= date_to and row["doc_type"] == "issue" and selected(item_id) and (not warehouse or row["warehouse_id"] == warehouse):
+            if date_from <= row["doc_date"] <= date_to and row["doc_type"] == "issue" and selected(item_id) and warehouse.has(row["warehouse_id"]):
                 issued[item_id] = issued.get(item_id, ZERO) - _d(row["quantity"])
         rows = []; period_days = (datetime.strptime(date_to, "%Y-%m-%d") - datetime.strptime(date_from, "%Y-%m-%d")).days + 1
         for item_id, item in sorted(items.items(), key=lambda pair: pair[1]["sku"]):
             if not selected(item_id): continue
-            data = state.get(item_id, {}); on_hand = data.get("by_warehouse", {}).get(warehouse, ZERO) if warehouse else data.get("qty", ZERO)
+            data = state.get(item_id, {}); on_hand = warehouse.qty(data)
             sold = issued.get(item_id, ZERO)
             if not sold and not on_hand and not options.get("include_zero"): continue
             days = (on_hand / sold * Decimal(period_days)).quantize(Decimal("0.1")) if sold else "-"
-            value = _reported_warehouse_values(data).get(warehouse, ZERO) if warehouse and data else data.get("value", ZERO)
+            value = warehouse.pick(_reported_warehouse_values(data)) if warehouse and data else data.get("value", ZERO)
             rows.append([item["sku"], item["name"], item["unit"], sold, on_hand, days, money(value)])
         return {"title": "Stock Turnover", "meta": meta, "sections": [{"heading": "Issues during period and stock at To Date (coverage at the period's issue rate)", "headers": ["Item Code", "Item", "Unit", "Issued", "On Hand", "Coverage Days", f"On-hand Value ({currency})"], "rows": rows, "total_rows": []}]}
     with database.connect() as db:
@@ -1125,10 +1176,10 @@ def additional_inventory_report(database, report, options, items, warehouses, in
     groups = {}
     for item_id, item in items.items():
         if not selected(item_id): continue
-        data = state.get(item_id, {}); qty = data.get("by_warehouse", {}).get(warehouse, ZERO) if warehouse else data.get("qty", ZERO)
+        data = state.get(item_id, {}); qty = warehouse.qty(data)
         if not qty and not options.get("include_zero"): continue
         name = suppliers.get(str(item.get("supplier_id") or ""), "(No supplier)")
-        value = _reported_warehouse_values(data).get(warehouse, ZERO) if warehouse and data else data.get("value", ZERO)
+        value = warehouse.pick(_reported_warehouse_values(data)) if warehouse and data else data.get("value", ZERO)
         groups.setdefault(name, []).append([item["sku"], item["name"], item["unit"], qty, money(value)])
     rows = []; totals = []
     for name, members in sorted(groups.items()):
@@ -1171,17 +1222,17 @@ def _ageing_data(database, options, items, in_category, method, date_to):
     limits = _buckets(options); as_of = datetime.strptime(date_to, "%Y-%m-%d")
     state = run_costing(database, date_to, method)
     layers = fifo_layers(database, date_to) if method != "fifo" else {}
-    warehouse = options.get("warehouse_id"); warehouse = int(warehouse) if str(warehouse or "").isdigit() else None
+    warehouse = WarehouseChoice(options.get("warehouse_id"))
     result = []
     for item_id, item in sorted(items.items(), key=lambda pair: pair[1]["sku"]):
         data = state.get(item_id)
         if method == "fifo" and data:
-            remaining = ([list(layer) for layer in data["warehouse_layers"].get(warehouse, [])] if warehouse
+            remaining = ([list(layer) for wid in sorted(warehouse.ids) for layer in data["warehouse_layers"].get(wid, [])] if warehouse
                          else [list(layer) for wh_layers in data["warehouse_layers"].values() for layer in wh_layers])
         else:
             remaining = layers.get(item_id, [])
         if not data or data["qty"] <= 0 or not in_category(item_id) or (options.get("item_id") and int(options["item_id"]) != item_id) or not remaining: continue
-        on_hand = data["by_warehouse"].get(warehouse, ZERO) if warehouse else data["qty"]
+        on_hand = warehouse.qty(data)
         if on_hand <= 0: continue
         share = on_hand / data["qty"] if method != "fifo" else Decimal(1)  # average-cost warehouse age is estimated
         unit_cost = data["avg"]

@@ -23,7 +23,7 @@ VAT_ACCOUNT_9 = "44210"  # VAT on purchases (was 442660000)
 EXPENSE_NO_VAT_ACCOUNT_9 = "601100001"
 SESSION_HOURS = 24
 USER_VALIDITY_DAYS = 365
-PERMISSION_MODULES = ("payroll", "vat")
+PERMISSION_MODULES = ("payroll", "vat", "delete")  # 2.9.52: "delete" = delete / cancel posted documents, replace all invoices
 
 SCHEMA = """
 PRAGMA foreign_keys=ON;
@@ -855,6 +855,19 @@ class Database:
         if self.user_is_expired(row): return None
         return row
 
+    def ensure_user_row(self, user):
+        """Copy a signed-in user (from the main file) into this company-year file once: same id, no password
+        (signing in always happens on the main file)."""
+        user_id = int(user["id"]); cache = self.__dict__.setdefault("_known_user_ids", set())
+        if user_id in cache: return
+        with self.connect() as db:
+            if not db.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone():
+                name = str(user["username"])
+                if db.execute("SELECT 1 FROM users WHERE lower(username)=lower(?)", (name,)).fetchone(): name = f"{name}#{user_id}"
+                db.execute("INSERT INTO users(id,username,password_hash,role,language,active) VALUES(?,?,?,?,?,1)",
+                           (user_id, name, "!", user["role"], user["language"] if "language" in user.keys() else "en"))
+        cache.add(user_id)
+
     def user_can(self, user, module):
         if not user: return False
         if user["role"]=="admin": return True
@@ -1008,6 +1021,11 @@ class Database:
             try: source_connection.backup(target_connection)
             finally: target_connection.close(); source_connection.close()
         self._check_new_backup(source, target)
+        try:  # 2.9.52: second copy outside the computer's Saber folder (OneDrive / USB / network), when set
+            import backup_copy
+            backup_copy.copy_backup(target, folder)
+        except Exception:
+            logging.getLogger("saber").warning("Second backup copy skipped", exc_info=True)
         return str(target)
 
     BACKUP_CHECKS_FILE = "backup_checks.json"
@@ -2715,6 +2733,34 @@ class Database:
             row["balance"] = float(balances[code])
         return {"party": dict(party), "opening": {key: float(value) for key,value in opening.items()}, "items": items}
 
+    # 2.9.51: the same invoice must not be recorded twice by an upload (same customer / supplier and same number)
+    @staticmethod
+    def invoice_number_key(number):
+        import re as _re
+        text = _re.sub(r"[^0-9A-Z]", "", str(number or "").upper())
+        return _re.sub(r"(?<![0-9])0+(?=[0-9])", "", text)  # INV-0045 = INV45 = inv 45
+
+    def find_invoice_duplicates(self, items):
+        """For each {kind, party_name, invoice_number, total, doc_subtype}: the invoices already saved with the same
+        type, the same customer / supplier and the same number (cancelled and deleted ones are ignored)."""
+        with self.connect() as db:
+            saved = [dict(r) for r in db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,i.kind,i.currency,CAST(i.total AS REAL) total,
+                COALESCE(i.doc_subtype,'invoice') doc_subtype,p.name party_name FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
+                WHERE i.status NOT IN ('cancelled','deleted')""")]
+        index = {}
+        for row in saved:
+            key = (row["kind"], str(row["party_name"] or "").strip().casefold(), self.invoice_number_key(row["invoice_number"]), row["doc_subtype"] or "invoice")
+            index.setdefault(key, []).append(row)
+        result = []
+        for position, item in enumerate(items or []):
+            number = self.invoice_number_key(item.get("invoice_number"))
+            if not number: result.append([]); continue
+            kind = "sale" if self._entry_type(item) == "sales" else "purchase"
+            key = (kind, str(item.get("party_name") or "").strip().casefold(), number, str(item.get("doc_subtype") or "invoice"))
+            result.append([{"id": r["id"], "invoice_number": r["invoice_number"], "invoice_date": r["invoice_date"], "total": r["total"],
+                            "currency": r["currency"], "party_name": r["party_name"]} for r in index.get(key, [])])
+        return result
+
     def list_invoices(self, limit=500):
         with self.connect() as db:
             return [dict(r) for r in db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,p.name party_name,i.kind,i.entry_type,i.currency,i.exchange_rate,i.subtotal,i.deductible_subtotal,i.non_deductible_subtotal,i.vat,i.total,
@@ -2810,10 +2856,15 @@ class Database:
                 FROM invoices WHERE status NOT IN ('cancelled','deleted') GROUP BY kind,currency""").fetchall()
             return [dict(r) for r in rows]
 
-    def journal(self, from_date=None, to_date=None, currency=None, limit=5000, branch_id=None):
-        """Return journal lines with a running balance per account and currency."""
+    def journal(self, from_date=None, to_date=None, currency=None, limit=None, branch_id=None, entry_number=None, account_code=None, source_type=None):
+        """Return journal lines with a running balance per account and currency.
+        2.9.51: no line limit any more (5,000 lines used to hide later entries from the journal, the general ledger and
+        'open transaction'); one entry, one account or one kind of entry can be asked for directly."""
         conditions = []
         parameters = []
+        if entry_number: conditions.append("e.entry_number=?"); parameters.append(str(entry_number))
+        if account_code: conditions.append("a.code=?"); parameters.append(str(account_code))
+        if source_type: conditions.append("e.source_type=?"); parameters.append(str(source_type))
         normalized_date = """CASE
             WHEN e.entry_date GLOB '??-??-????'
                 THEN substr(e.entry_date,7,4)||'-'||substr(e.entry_date,4,2)||'-'||substr(e.entry_date,1,2)
@@ -2830,7 +2881,7 @@ class Database:
         if branch_id:
             conditions.append("e.branch_id=?"); parameters.append(int(branch_id))
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
-        parameters.append(int(limit))
+        parameters.append(int(limit) if limit else -1)  # SQLite: LIMIT -1 = every line
         with self.connect() as db:
             rows = [dict(row) for row in db.execute(f"""SELECT e.id entry_id,e.entry_number,e.entry_date,
                 e.description,e.source_type,e.source_id,e.voucher_type,e.currency,e.branch_id,COALESCE(b.name,'Head Office') branch_name,a.code account_code,a.name_en account_name,
@@ -2910,8 +2961,7 @@ class Database:
         return list(totals.values())
 
     def general_ledger(self, account_code=None, from_date=None, to_date=None, currency=None):
-        rows=self.journal(None,to_date,currency,limit=20000)
-        if account_code: rows=[row for row in rows if row["account_code"]==str(account_code)]
+        rows=self.journal(None,to_date,currency,account_code=account_code)
         opening={}; items=[]; balances={}
         for row in rows:
             normalized=str(row["entry_date"] or "")
@@ -2952,18 +3002,26 @@ class Database:
         return rows
 
     def cash_flow(self,from_date=None,to_date=None,currency=None):
-        rows=self.journal(from_date,to_date,currency,limit=50000)
-        cash_rows=[row for row in rows if str(row["account_code"]).startswith(("51","53"))]
+        """Cash and bank movements (classes 51 / 53) by origin. 2.9.51: summed by the database itself - every line
+        counts (the report used to read at most 50,000 journal lines and silently miss the rest)."""
+        normalized_date="""CASE WHEN e.entry_date GLOB '??-??-????'
+            THEN substr(e.entry_date,7,4)||'-'||substr(e.entry_date,4,2)||'-'||substr(e.entry_date,1,2) ELSE e.entry_date END"""
+        conditions=["(a.code LIKE '51%' OR a.code LIKE '53%')"]; parameters=[]
+        if from_date: conditions.append(f"{normalized_date}>=?"); parameters.append(from_date)
+        if to_date: conditions.append(f"{normalized_date}<=?"); parameters.append(to_date)
+        if currency: conditions.append("e.currency=?"); parameters.append(currency)
+        with self.connect() as db:
+            lines=db.execute(f"""SELECT e.currency,COALESCE(e.source_type,'other') source,
+                SUM(CASE WHEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL)>0 THEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL) ELSE 0 END) inflow,
+                SUM(CASE WHEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL)<0 THEN CAST(j.credit AS REAL)-CAST(j.debit AS REAL) ELSE 0 END) outflow
+                FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
+                WHERE {' AND '.join(conditions)} GROUP BY e.currency,COALESCE(e.source_type,'other')""",parameters).fetchall()
         grouped={}
-        for row in cash_rows:
-            source=row.get("source_type") or "other"
+        for line in lines:
             category={"invoice":"Operating - Invoices","expense":"Operating - Expenses","payroll":"Operating - Payroll",
-                "payment":"Operating - Receipts / Payments","opening":"Opening Balance","year_close":"Year Closing"}.get(source,"Other Cash Movement")
-            key=(row["currency"],category); item=grouped.setdefault(key,{"currency":row["currency"],"category":category,"inflow":0.0,"outflow":0.0,"net":0.0})
-            movement=float(row["debit"] or 0)-float(row["credit"] or 0)
-            if movement>=0: item["inflow"]+=movement
-            else: item["outflow"]+=-movement
-            item["net"]+=movement
+                "payment":"Operating - Receipts / Payments","opening":"Opening Balance","year_close":"Year Closing"}.get(line["source"],"Other Cash Movement")
+            item=grouped.setdefault((line["currency"],category),{"currency":line["currency"],"category":category,"inflow":0.0,"outflow":0.0,"net":0.0})
+            item["inflow"]+=float(line["inflow"] or 0); item["outflow"]+=float(line["outflow"] or 0); item["net"]=item["inflow"]-item["outflow"]
         return sorted(grouped.values(),key=lambda row:(row["currency"],row["category"]))
 
     def aging_report(self,as_of_date=None,kind=None,currency=None):
@@ -2995,13 +3053,17 @@ class Database:
             row["bucket"]="Current" if days==0 else "1-30" if days<=30 else "31-60" if days<=60 else "61-90" if days<=90 else "Over 90"
         return rows
 
-    def comparative_reports(self,from_date,to_date,currency=None):
+    def comparative_reports(self,from_date,to_date,currency=None,prior_db=None):
+        """Current period against the same period one year earlier. 2.9.52: the prior year is read from its own
+        fiscal-year file when the company keeps one file per year (it used to show 0 for every account)."""
         start=datetime.strptime(from_date,"%Y-%m-%d"); end=datetime.strptime(to_date,"%Y-%m-%d")
         try: prior_start=start.replace(year=start.year-1).strftime("%Y-%m-%d")
         except ValueError: prior_start=start.replace(year=start.year-1,day=28).strftime("%Y-%m-%d")
         try: prior_end=end.replace(year=end.year-1).strftime("%Y-%m-%d")
         except ValueError: prior_end=end.replace(year=end.year-1,day=28).strftime("%Y-%m-%d")
         current=self.profit_and_loss(from_date,to_date,currency); prior=self.profit_and_loss(prior_start,prior_end,currency)
+        if prior_db is not None and prior_db is not self and not prior:
+            prior=prior_db.profit_and_loss(prior_start,prior_end,currency)
         combined={}
         for label,rows in (("current",current),("prior",prior)):
             for row in rows:
