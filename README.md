@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.53 (renamed company: second backup copy follows)
+
+- Renaming a company (Companies screen) already moved every year file and the backups folder to the new name, and the years stay linked by the company id, so last year is still found. Now the second backup copy folder (OneDrive / USB) is renamed as well, instead of starting a new folder.
+- Tests: test_v2_9_53.py. 472 tests pass.
+
 ## Version 2.9.52 (warehouse multi-select, earlier fiscal years, second backup copy, delete permission, optional code signing)
 
 - Inventory reports: the Warehouse filter takes any combination (e.g. MAIN + W3) in every report - valuation, stock card, movements, brands, health, ageing, 3D analysis.

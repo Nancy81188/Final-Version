@@ -188,6 +188,11 @@ class CompanyManager:
         if old_backups!=new_backups and old_backups.is_dir() and not new_backups.exists():
             try: old_backups.rename(new_backups)
             except OSError: pass
+        if old_backups.name!=new_backups.name:  # 2.9.53: the second copy (OneDrive / USB) follows the new name too
+            try:
+                import backup_copy
+                backup_copy.rename_company(old_backups.name,new_backups.name)
+            except Exception: logging.getLogger("saber").warning("Second backup copy folder not renamed",exc_info=True)
         for path in [p for p in self._cache]: self._cache.pop(path).release()  # backup folders are set again on next use
         return next(c for c in self._read()["companies"] if c["id"]==company_id)
 

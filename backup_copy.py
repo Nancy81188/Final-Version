@@ -93,3 +93,13 @@ def _prune(folder, keep):
     for old in automatic[keep:]:
         try: old.unlink()
         except OSError: pass
+
+
+def rename_company(old_name, new_name):
+    """A renamed company: its folder in the second copy gets the new name as well (never merged or overwritten)."""
+    folder = settings()["folder"]
+    if not folder or not old_name or old_name == new_name: return False
+    source = Path(folder) / old_name; target = Path(folder) / new_name
+    if not source.is_dir() or target.exists(): return False
+    source.rename(target)
+    return True
