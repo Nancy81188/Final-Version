@@ -15,6 +15,16 @@ class LogoTest(unittest.TestCase):
         self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
 
 
+class IconTest(unittest.TestCase):
+    def test_icon_is_built_into_the_programs_and_the_installer(self):
+        data = (HERE / "Assets" / "saber.ico").read_bytes()
+        self.assertEqual(data[:4], b"\x00\x00\x01\x00")                    # Windows icon
+        self.assertGreaterEqual(int.from_bytes(data[4:6], "little"), 5)        # several sizes (16 to 256)
+        workflow = (HERE / ".github" / "workflows" / "build-windows-installer.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("--icon Assets/saber.ico"), 2); self.assertIn('--add-data "Assets/saber.ico;assets"', workflow)
+        self.assertIn("SetupIconFile=Assets\\saber.ico", (HERE / "installer.iss").read_text(encoding="utf-8"))
+
+
 class RepeatsTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

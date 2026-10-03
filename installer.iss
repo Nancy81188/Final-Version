@@ -1,5 +1,5 @@
 #define MyAppName "Saber Accounting"
-#define MyAppVersion "2.9.55"
+#define MyAppVersion "2.9.56"
 #define MyAppPublisher "Saber for Audit"
 
 [Setup]
@@ -17,6 +17,7 @@ OutputBaseFilename=SaberAccountingSetup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=Assets\saber.ico
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible

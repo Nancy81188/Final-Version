@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.56 (Saber icon)
+
+- The program, the backup service, the installer and the window / taskbar now carry the Saber for Audit "SA" icon (Assets/saber.ico, 16 to 256 pixels), made from the logo. THE WORKFLOW FILE MUST BE PASTED BY HAND on GitHub (it adds --icon and the icon file to the build).
+- Tests: test_v2_9_55.py extended. 484 tests pass.
+
 ## Version 2.9.55 (Excel currency fix)
 
 - Excel import: a price cell formatted in a currency the company does not use (for example EUR in a USD / LBP company) stopped the whole import with "KeyError: 'EUR'". The row is now imported in the default currency, marked "unsupported:EUR" and kept for review.
