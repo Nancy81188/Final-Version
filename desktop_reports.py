@@ -444,7 +444,8 @@ class ReportsMixin:
         try:
             ledger=self.client.general_ledger(None,dates[0],dates[1],currency)
             balance=self.client.balance_sheet(dates[1],currency)
-            vat=self.client.vat_report(dates[0],dates[1],currency)
+            # 2.9.63: a user without the VAT right still gets the ledger, balance sheet and cash flow (the whole page failed)
+            vat=self.client.vat_report(dates[0],dates[1],currency) if self.can_use("vat") else {"items":[],"summary":[],"_hidden":True}
             cash=self.client.cash_flow(dates[0],dates[1],currency)
             comparative=self.client.comparative_reports(dates[0],dates[1],currency)
         except Exception as exc: return messagebox.showerror("Financial Reports",str(exc))
@@ -461,7 +462,8 @@ class ReportsMixin:
         for r in self.vat_rows: self.vat_tree.insert("","end",values=(r["currency"],r["kind"],r["invoices"],f'{r["subtotal"] or 0:,.2f}',f'{r["vat"] or 0:,.2f}',f'{r["total"] or 0:,.2f}'))
         for r in self.cash_rows: self.cash_tree.insert("","end",values=(r["currency"],r["category"],f'{r["inflow"]:,.2f}',f'{r["outflow"]:,.2f}',f'{r["net"]:,.2f}'))
         for r in self.comparative_rows: self.comparative_tree.insert("","end",values=(r["currency"],r["type"],r["code"],r["name_en"],f'{r["current"]:,.2f}',f'{r["prior"]:,.2f}',f'{r["variance"]:,.2f}'))
-        self.vat_summary.config(text="   ".join(f'{r["currency"]} VAT payable: {r["vat_payable"]:,.2f}' for r in vat["summary"]) or "No VAT activity")
+        self.vat_summary.config(text="VAT figures need the VAT right (ask the administrator)." if vat.get("_hidden") else
+                                "   ".join(f'{r["currency"]} VAT payable: {r["vat_payable"]:,.2f}' for r in vat["summary"]) or "No VAT activity")
 
     def load_ageing_report(self):
         try: as_of=parse_user_date(self.ageing_as_of.get()).strftime("%Y-%m-%d")

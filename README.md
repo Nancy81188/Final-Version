@@ -1,5 +1,13 @@
 # Saber Accounting MVP
 
+## Version 2.9.63 (stability, speed, tidier code)
+- Stability check on real data (ECOLOGE, purchases and sales), as admin, accountant and viewer: every screen, every data request, and every entry opened for editing and saved again without changes (the books stay identical).
+- Fixed: a user without the VAT right got an error on Financial Reports and saw no ledger / balance sheet / cash flow. Now only the VAT part is hidden.
+- Fixed: reports given a DD-MM-YYYY date (journal, trial balance, ledger, balance sheet, P&L, cash flow, VAT) now filter the right days.
+- Faster: exchange rates are read once and kept in memory (a trial balance of 20,000 invoices: 28 s -> under 1 s).
+- database.py (4,300 lines) split into database.py + database_common.py + db_invoices, db_payments, db_journal, db_reports, db_payroll, db_rates, db_vat, db_dimensions, db_documents. Same code, same Database class.
+- Tests: test_v2_9_63.py.
+
 ## Version 2.9.62 (Trial Balance / Statement: tick several branches, departments, projects)
 - Trial Balance and Statement of Account: Branch, Department and Project are tick lists like the inventory filters - one, several or All. The chosen filters are printed in the report header.
 - Tests: test_v2_9_62.py.
