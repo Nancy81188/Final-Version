@@ -149,6 +149,9 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         return result
 
     # Bump whenever initialize(), SCHEMA, seed accounts or its migration helpers change.
+    # 2.9.64: the upgrade marker is computed from the upgrade code itself (see _schema_fingerprint at the end of this file).
+    # It used to be a number changed by hand; columns added since 2.9.54 (payment_account ...) kept the same number, so
+    # company files already marked were never upgraded: "no such column: i.payment_account".
     STARTUP_SCHEMA_VERSION = "4"
 
     @staticmethod
@@ -919,3 +922,20 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             if kind == "expense": return self._next_number(db, "expenses", "expense_number", "EXP", date)
             if kind == "purchase": return self.next_invoice_number("purchase", date)
         raise ValueError("Unknown document type")
+
+
+def _schema_fingerprint():
+    """'4-' + a short hash of the schema and of every text in the upgrade code (CREATE / ALTER TABLE ...). Any new
+    column or table changes it, so every company / year file is upgraded once when the new version opens it."""
+    texts = [SCHEMA]
+    def collect(code):
+        for constant in code.co_consts:
+            if isinstance(constant, str): texts.append(constant)
+            elif hasattr(constant, "co_consts"): collect(constant)
+    for name in ("_initialize", "_auto_lebanese_payroll_rules", "_upgrade_default_family_allowance_periods"):
+        function = getattr(Database, name, None)
+        if function is not None: collect(function.__code__)
+    return "4-" + hashlib.sha256("\x00".join(texts).encode("utf-8")).hexdigest()[:16]
+
+
+Database.STARTUP_SCHEMA_VERSION = _schema_fingerprint()

@@ -1,5 +1,9 @@
 # Saber Accounting MVP
 
+## Version 2.9.64 (old company files upgraded again)
+- Fixed "no such column: i.payment_account" (Edit from the General Journal, Uploaded Data, Purchases ...): company / year files made before 2.9.54 were marked as up to date and never received the new columns. The upgrade marker is now computed from the upgrade code, so every file is upgraded once when a new version adds a column or table. Data is kept.
+- Tests: test_v2_9_64.py.
+
 ## Version 2.9.63 (stability, speed, tidier code)
 - Stability check on real data (ECOLOGE, purchases and sales), as admin, accountant and viewer: every screen, every data request, and every entry opened for editing and saved again without changes (the books stay identical).
 - Fixed: a user without the VAT right got an error on Financial Reports and saw no ledger / balance sheet / cash flow. Now only the VAT part is hidden.
