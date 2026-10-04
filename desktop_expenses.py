@@ -202,6 +202,11 @@ class ExpensesMixin:
 
     def delete_expense(self):
         f = self.expense_form; selected = f["tree"].selection()
+        if len(selected) > 1:  # 2.9.69: several selected
+            items = [(f["rows"][iid]["id"], f["rows"][iid].get("expense_number") or iid) for iid in selected if iid in f["rows"]]
+            if not messagebox.askyesno("Expenses", f"Delete {len(items)} expenses and their journal entries?"): return
+            bulk_action("Expenses", items, self.client.delete_expense)
+            self.new_expense(); self.load_expenses(); self.load_journal(); self.load_trial(); return
         target = f["id"] or (f["rows"][selected[0]]["id"] if selected else None)
         if not target: return messagebox.showwarning("Expenses", "Select an expense first")
         if not messagebox.askyesno("Expenses", "Delete this expense and its journal entry?"): return

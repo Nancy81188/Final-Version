@@ -49,6 +49,8 @@ class InvoicesMixin:
         self.action_button(lifecycle,"VAT Deductible / Non-Deductible",self.toggle_selected_invoice_vat).pack(side="left",padx=4)
         self.action_button(lifecycle,"VAT Treatment",self.vat_classification_dialog).pack(side="left",padx=4)
         self.invoice_tree.bind("<Double-1>",lambda _event:self.edit_selected_invoice())
+        self.invoice_tree.bind("<Delete>",lambda _event:self.delete_selected_invoice())
+        column_toggles(self.invoice_tree,["branch","kind","debit","credit"],"uploaded_data")  # 2.9.69: show / hide next to Search
         flow_toolbars(invoice_actions,lifecycle)  # 2.9.59
         self.load_invoices()
 
@@ -261,12 +263,14 @@ class InvoicesMixin:
         return int(selected[0])
 
     def delete_selected_invoice(self):
-        invoice_id=self.selected_invoice_id()
-        if invoice_id is None: return
-        if not messagebox.askyesno("Delete Invoice","Mark this invoice DELETED? Its number and details stay visible; its journal entry is removed."): return
-        try: self.client.delete_invoice(invoice_id)
-        except Exception as exc: return messagebox.showerror("Delete Uploaded Data",str(exc))
-        self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial(); messagebox.showinfo("Invoices","Invoice marked DELETED")
+        """2.9.69: every selected row (Ctrl / Shift / drag) is marked DELETED in one go."""
+        selected=[iid for iid in self.invoice_tree.selection() if self.invoice_rows.get(iid,{}).get("status")!="deleted"]
+        if not selected: return messagebox.showwarning("Invoices","Select the invoice rows first (Ctrl / Shift or drag the mouse for several)")
+        names=[(int(iid),self.invoice_rows.get(iid,{}).get("invoice_number") or iid) for iid in selected]
+        shown=", ".join(str(n) for _i,n in names[:10])+(f" ... (+{len(names)-10})" if len(names)>10 else "")
+        if not messagebox.askyesno("Delete Invoice",f"Mark {len(names)} invoice(s) DELETED?\n{shown}\n\nTheir numbers and details stay visible; their journal entries are removed."): return
+        bulk_action("Delete Uploaded Data",names,self.client.delete_invoice)
+        self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial()
 
     def duplicate_selected_invoice(self):
         invoice_id=self.selected_invoice_id()

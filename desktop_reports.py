@@ -55,7 +55,8 @@ class ReportsMixin:
             ("account","Account",85),("account_name","Account Name",190),("party","Customer / Supplier",165),
             ("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
         self.journal_tree.bind("<Double-1>",self.edit_journal_selection)  # double-click a line: edit its entry
-        self.journal_tree._totals_skip={"balance"}  # running balance: not added up for the selected lines
+        self.journal_tree._totals_skip={"balance"}
+        self.journal_tree.bind("<Delete>",lambda _event:self.delete_selected_journal_voucher())  # running balance: not added up for the selected lines
         flow_toolbars(filters,finder,actions)  # 2.9.59: wrap instead of being cut off on 1366-px screens
         self.load_journal()
 
@@ -122,7 +123,17 @@ class ReportsMixin:
         if int(self.journal_view_year.get() or self.current_fiscal_year)!=int(self.current_fiscal_year): return messagebox.showwarning("General Journal","Previous-year transactions are read-only")
         selected=self.journal_tree.selection()
         if not selected: return messagebox.showwarning("General Journal","Select a Journal Voucher line first")
-        entry_number=str(self.journal_tree.item(selected[0],"values")[0])
+        numbers=list(dict.fromkeys(str(self.journal_tree.item(iid,"values")[0]) for iid in selected))
+        if len(numbers)>1:  # 2.9.69: several vouchers selected: delete them all (system entries are skipped)
+            rows={str(item["entry_number"]):item for item in getattr(self,"journal_rows",[])}
+            vouchers=[(rows[n]["entry_id"],n) for n in numbers if n in rows and rows[n].get("source_type")=="journal_voucher"]
+            skipped=[n for n in numbers if not (n in rows and rows[n].get("source_type")=="journal_voucher")]
+            if not vouchers: return messagebox.showwarning("General Journal","None of the selected entries is a Journal Voucher: system entries are changed from their own screen")
+            text=f"Delete {len(vouchers)} journal voucher(s) and all their lines?"+(f"\n\n{len(skipped)} other entr(ies) are not vouchers and are kept: {', '.join(skipped[:8])}" if skipped else "")
+            if not messagebox.askyesno("Delete Journal Vouchers",text+"\nThis is recorded in the audit log."): return
+            bulk_action("Delete Journal Vouchers",vouchers,self.client.delete_journal_voucher)
+            self.load_journal(); self.load_invoices(); self.load_dashboard(); self.load_trial(); return
+        entry_number=numbers[0]
         row=next((item for item in getattr(self,"journal_rows",[]) if str(item["entry_number"])==entry_number),None)
         if not row: return messagebox.showwarning("General Journal","Selected entry was not found")
         if row.get("source_type")=="year_close":

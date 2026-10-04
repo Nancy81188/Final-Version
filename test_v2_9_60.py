@@ -29,7 +29,7 @@ class MenuGroupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder, mock.patch("app_runtime.data_dir", return_value=Path(folder)):
             self.assertTrue(dl.side_menu_on())
             dl.save_layout_settings(side_menu=False, folded=["Inventory"])
-            self.assertEqual(dl.layout_settings(), {"side_menu": False, "folded": ["Inventory"]})
+            self.assertEqual(dl.layout_settings(), {"side_menu": False, "folded": ["Inventory"], "hidden_columns": {}})
 
 
 class AttentionTests(unittest.TestCase):

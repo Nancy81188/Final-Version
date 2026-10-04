@@ -7,7 +7,7 @@ import financial_statements as fs
 
 class FinancialStatementsTest(unittest.TestCase):
     def setUp(self):
-        self.folder=tempfile.TemporaryDirectory(); self.addCleanup(self.folder.cleanup)
+        self.folder=tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.addCleanup(self.folder.cleanup)
         self.db=Database(Path(self.folder.name)/'2025.db'); self.db.initialize('secret12345')
     def voucher(self, amount, debit='531', credit='7011', date='01-03-2025', **extra):
         return self.db.save_journal_voucher(dict(entry_date=date,currency='USD',description='FS test',**extra),
@@ -24,15 +24,18 @@ class FinancialStatementsTest(unittest.TestCase):
         self.assertEqual(d['equity_end'],Decimal('1300'))
         pack=fs.build({2025:self.db},{'years':'2025','basis':'USD'})
         bs=pack['sections'][1]
-        self.assertEqual(bs['rows'][-1][1],0)
-        self.assertIn('Single-year',str(pack))
+        assets=next(r for r in bs['rows'] if r[0]=='TOTAL ASSETS')
+        self.assertEqual(assets[2],bs['rows'][-1][2])
+        self.assertEqual(bs['rows'][-1][0],'TOTAL EQUITY AND LIABILITIES')
+        self.assertIn('Single period',str(pack))
+        self.assertEqual(pack['sections'][0]['heading'],"INDEPENDENT AUDITOR'S REPORT")
     def test_comparatives_are_separate_and_latest_first(self):
         other=Database(Path(self.folder.name)/'2024.db');other.initialize('secret12345')
         self.voucher(123)
         pack=fs.build({2025:self.db,2024:other},{'years':'2024,2025'})
-        self.assertEqual(pack['sections'][1]['headers'],['Description','2025 (USD)','2024 (USD)'])
+        self.assertEqual(pack['sections'][1]['headers'],['','Notes','31-12-2025 (USD)','31-12-2024 (USD)'])
         cash=next(r for r in pack['sections'][1]['rows'] if r[0]=='Cash and cash equivalents')
-        self.assertEqual(cash[1:],[Decimal('123'),0])
+        self.assertEqual(cash[2:],[Decimal('123'),0])
         with self.assertRaisesRegex(ValueError,'not found'): fs.build({2025:self.db},{'years':'2024,2025'})
     def test_saved_text_mapping_currency_and_cash_reconciliation(self):
         self.voucher(100)
@@ -43,8 +46,8 @@ class FinancialStatementsTest(unittest.TestCase):
         self.assertEqual(fs.year_data(self.db,2025,'LBP')['extra'],{})
         cfg['mapping']={};fs.save_config(self.db,cfg,1)
         pack=fs.build({2025:self.db},{'years':[2025]})
-        cf=next(s for s in pack['sections'] if s['heading'].startswith('Statement of cash flows'))
-        self.assertEqual(cf['rows'][-1][1],0)
+        cf=next(s for s in pack['sections'] if s['heading'].startswith('STATEMENT OF CASH FLOWS'))
+        self.assertEqual(cf['rows'][-1][2],100)
         self.assertIn('Company-specific text',str(pack))
         self.assertEqual(fs.year_data(self.db,2025,'USD')['profit'],100)
     def test_validation_and_lebanese_classification(self):
@@ -64,8 +67,8 @@ class FinancialStatementsTest(unittest.TestCase):
         d=fs.year_data(self.db,2025,'USD')
         self.assertEqual(d['profit'],-50)
         pack=fs.build({2025:self.db},{'years':'2025'})
-        self.assertIn('REVIEW REQUIRED',str(pack))
-        self.assertIn('No opinion has been generated',str(pack))
+        self.assertIn('PREPARER REVIEW POINTS',str(pack))
+        self.assertIn('In our opinion',str(pack))
     def test_exports_include_years_and_disclosures(self):
         from report_export import export_sections_excel,export_sections_pdf
         from openpyxl import load_workbook
@@ -75,9 +78,9 @@ class FinancialStatementsTest(unittest.TestCase):
         xlsx=Path(self.folder.name)/'pack.xlsx';pdf=Path(self.folder.name)/'pack.pdf'
         export_sections_excel(xlsx,pack['title'],pack['meta'],pack['sections'])
         export_sections_pdf(pdf,pack['title'],pack['meta'],pack['sections'])
-        wb=load_workbook(xlsx); self.assertIn('2025 (USD)',str(list(wb.active.values)));wb.close()
+        wb=load_workbook(xlsx); self.assertIn('31-12-2025 (USD)',str(list(wb.active.values)));wb.close()
         text=' '.join(p.extract_text() for p in PdfReader(pdf).pages)
-        self.assertIn('DRAFT',text);self.assertIn('2025',text);self.assertIn('Statement of financial position',text)
+        self.assertIn("INDEPENDENT AUDITOR",text);self.assertIn('2025',text);self.assertIn('STATEMENT OF FINANCIAL POSITION',text)
 
 
 class FinancialStatementsApiTest(unittest.TestCase):
@@ -87,7 +90,7 @@ class FinancialStatementsApiTest(unittest.TestCase):
         from server import ApiHandler
         from company_manager import CompanyManager
         from client import ApiClient
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
             path=Path(folder)/'master.db';db=Database(path);db.initialize('secret12345')
             manager=CompanyManager(path)
             handler=type('FinancialTestHandler',(ApiHandler,),dict(db=db,master_db=db,company_manager=manager))
@@ -102,7 +105,7 @@ class FinancialStatementsApiTest(unittest.TestCase):
                 self.assertEqual(api.financial_config(2024),{})
                 self.assertEqual(api.financial_config(2025),cfg)
                 pack=api.business_report('financial_statements',{'years':'2024,2025','basis':'USD'})
-                self.assertIn('2025 (USD)',pack['sections'][1]['headers'])
+                self.assertIn('31-12-2025 (USD)',pack['sections'][1]['headers'])
                 with self.assertRaisesRegex(RuntimeError,'Fiscal year not found'):
                     api.business_report('financial_statements',{'years':'2023'})
                 registry=manager._read();registry['companies'][0]['years'][0]['status']='closed';manager._write(registry)

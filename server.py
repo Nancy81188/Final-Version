@@ -280,8 +280,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                 options = json.loads(self._query(parsed,"options","{}") or "{}")
                 if report == "financial_statements":
                     import financial_statements
-                    years = financial_statements.years_from(options.get("years"))
-                    databases = {year:self.company_manager.database(self.headers.get("X-Company-ID"),year) for year in years}
+                    if options.get("fs_mode")=="period":  # 2.9.69: a period of one year, with the same period one year before
+                        end_year=int(iso_date(options.get("date_to"))[:4]); databases={end_year:self.company_manager.database(self.headers.get("X-Company-ID"),end_year)}
+                        if options.get("fs_compare"):
+                            try: databases[end_year-1]=self.company_manager.database(self.headers.get("X-Company-ID"),end_year-1)
+                            except Exception: pass
+                    else:
+                        years = financial_statements.years_from(options.get("years"))
+                        databases = {year:self.company_manager.database(self.headers.get("X-Company-ID"),year) for year in years}
                     result = financial_statements.build(databases,options)
                 else:
                     result=business_reports.build(self.db,report,options)

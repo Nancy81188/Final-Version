@@ -43,7 +43,7 @@ def _documents(db, kind, start, end, options):
     statuses = ("posted", "review") if options.get("include_review") else ("posted",)
     only = str(options.get("only_currency") or "").upper()
     with db.connect() as connection:
-        invoices = [dict(r) for r in connection.execute("""SELECT i.*,p.name party_name,p.account_number FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
+        invoices = [dict(r) for r in connection.execute("""SELECT i.*,p.name party_name,p.account_number,p.tax_number party_vat_number,p.mof_number party_mof_number FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
             WHERE i.kind=? AND i.status<>'cancelled'""", (kind,))]
         items = {}
         for row in connection.execute("SELECT * FROM invoice_items ORDER BY id"): items.setdefault(row["invoice_id"], []).append(dict(row))
@@ -231,7 +231,9 @@ def top_parties(db, options):
     for invoice in _documents(db, kind, start, end, options):
         ht = convert(_d(invoice["subtotal"]) * invoice["sign"], invoice["currency"], invoice["iso_date"])
         vat = convert(_d(invoice["vat"]) * invoice["sign"], invoice["currency"], invoice["iso_date"])
-        row = totals.setdefault(invoice["party_name"] or "-", {"account": invoice.get("account_number") or "", "ht": ZERO, "vat": ZERO, "count": 0, "last": ""})
+        # 2.9.69: the VAT number of the client / supplier (MOF number when no VAT number was entered)
+        vat_number = invoice.get("party_vat_number") or invoice.get("party_mof_number") or ""
+        row = totals.setdefault(invoice["party_name"] or "-", {"account": vat_number, "ht": ZERO, "vat": ZERO, "count": 0, "last": ""})
         row["ht"] += ht; row["vat"] += vat; row["count"] += 1; row["last"] = max(row["last"], invoice["iso_date"])
     if side == "suppliers" and options.get("include_expenses", True):
         with db.connect() as connection: expenses = [dict(r) for r in connection.execute("SELECT * FROM expenses")]
@@ -256,7 +258,7 @@ def top_parties(db, options):
     rows.append(["", "TOTAL", "", _money(grand_ht), _money(grand_vat), _money(grand), "100%", "", sum(v["count"] for _k, v in ranked), ""])
     who = "Client" if side == "clients" else "Supplier"
     sections = [{"heading": f"Top {limit} {who.lower()}s - {'sales' if side == 'clients' else 'purchases and expenses'} {display_date(start)} to {display_date(end)}",
-                 "headers": ["Rank", who, "Account", f"HT ({basis})", "VAT", "TTC", "Share", "Cumulative", "Documents", "Last Document"], "rows": rows, "total_rows": [len(rows) - 1]}]
+                 "headers": ["Rank", who, "VAT Number", f"HT ({basis})", "VAT", "TTC", "Share", "Cumulative", "Documents", "Last Document"], "rows": rows, "total_rows": [len(rows) - 1]}]
     company = db.settings()
     meta = [f"Company: {company.get('company_name') or '-'}   Amounts in {basis}   HT + VAT = TTC   Credit notes deducted", f"Period: {display_date(start)} to {display_date(end)}"]
     return {"title": f"Top {who}s", "meta": meta, "sections": sections}

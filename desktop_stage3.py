@@ -733,6 +733,12 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             form["_chosen_party_id"] = party["id"]; form["_chosen_party_text"] = form["vars"]["party"].get()
 
     def delete_payment(self, form):
+        selected = form["tree"].selection()
+        if len(selected) > 1:  # 2.9.69: several selected
+            items = [(form["rows"][iid]["id"], form["rows"][iid].get("payment_number") or iid) for iid in selected if iid in form.get("rows", {})]
+            if not messagebox.askyesno("Payment & Receipt", f"Delete {len(items)} payments / receipts and their journal entries?"): return
+            bulk_action("Payment & Receipt", items, self.client.delete_payment)
+            self.load_transactions(); self.new_payment(form); self.load_journal(); self.load_trial(); return
         if not form["id"]: return messagebox.showwarning("Payment & Receipt", "Double-click a saved line to open it first")
         if not messagebox.askyesno("Payment & Receipt", f"Delete {form['vars']['number'].get()} and its journal entry?"): return
         try: self.client.delete_payment(form["id"])

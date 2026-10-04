@@ -1,5 +1,12 @@
 # Saber Accounting MVP
 
+## Version 2.9.69 (multi-select delete, show / hide columns, audit report pack)
+- Delete works on the whole selection (Ctrl / Shift / drag, or the Delete key): Uploaded Data, Purchases & Expenses, Payments & Receipts, Journal Vouchers. One question before, one summary after.
+- Uploaded Data: "Show:" ticks next to Search hide / show the Branch, Type, D and C columns (kept on this computer).
+- Business Reports > Top Clients / Top Suppliers: the VAT number (or MOF number) replaces the account number.
+- Financial Statements are now an audit report pack: Independent Auditor's Report (ISA 700 wording), Statement of Financial Position, Statement of Profit or Loss and OCI, Statement of Changes in Equity, Statement of Cash Flows (indirect method), Accounting Policies and Explanatory Notes with account breakdowns. For 2 years, or for a period (From - As of) with the same period of the previous year as comparative. All texts can be edited (Edit Texts).
+- Tests: test_v2_9_69.py, test_financial_statements.py updated.
+
 ## Version 2.9.68 (Uploaded Data filters)
 - Uploaded Data: Branch and Type are tick lists (one, several or All), and D / C ticks show the debit rows (sales), the credit rows (purchases, expenses) or both.
 - Tests: test_v2_9_68.py.

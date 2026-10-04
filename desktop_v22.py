@@ -223,9 +223,14 @@ class V22Mixin:
         tk.Label(bar2, text="measure", bg=LIGHT).pack(side="left"); ttk.Combobox(bar2, textvariable=self.br["measure"], values=["quantity", "ht", "vat", "ttc"], state="readonly", width=8).pack(side="left", padx=(2, 8))
         tk.Checkbutton(bar2, text="Include Review", variable=self.br_review, bg=LIGHT).pack(side="left", padx=4)
         fsbar = tk.Frame(page, bg=LIGHT); fsbar.pack(fill="x", padx=8, pady=3)
-        tk.Label(fsbar, text="Financial statements - years", bg=LIGHT).pack(side="left")
-        tk.Entry(fsbar, textvariable=self.br["years"], width=16).pack(side="left", padx=5)
-        tk.Label(fsbar, text="Example: 2024,2025 or 2025 | full calendar years; posted entries", bg=LIGHT).pack(side="left", padx=5)
+        # 2.9.69: two years, or a period (From / As of above) with the same period one year before
+        self.br_fs_mode = tk.StringVar(value="Years"); self.br_fs_compare = tk.BooleanVar(value=True)
+        tk.Label(fsbar, text="Financial statements:", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")
+        ttk.Combobox(fsbar, textvariable=self.br_fs_mode, values=["Years", "Period (From - As of)"], state="readonly", width=20).pack(side="left", padx=5)
+        tk.Label(fsbar, text="Years", bg=LIGHT).pack(side="left")
+        tk.Entry(fsbar, textvariable=self.br["years"], width=12).pack(side="left", padx=5)
+        tk.Checkbutton(fsbar, text="Period: compare with the same period last year", variable=self.br_fs_compare, bg=LIGHT).pack(side="left", padx=5)
+        tk.Label(fsbar, text="Years: 2024,2025 or 2025", bg=LIGHT, fg="#5f6b76").pack(side="left", padx=5)
         tk.Button(fsbar, text="Edit Notes / Audit / Mapping", command=self.edit_financial_report, bg=NAVY, fg="white").pack(side="left", padx=5)
         bar3 = tk.Frame(page, bg=LIGHT); bar3.pack(fill="x", padx=8, pady=(2, 4))
         tk.Button(bar3, text="Show", command=self.run_business_report, bg=GOLD, fg=NAVY, border=0, padx=22, pady=5, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 6))
@@ -256,14 +261,17 @@ class V22Mixin:
         options = {k: v.get().strip() for k, v in self.br.items() if k not in ("report",)}
         options.update(date_from=options.pop("from"), date_to=options.pop("to"), include_review=self.br_review.get(),
                        only_currency="" if options.get("only") == "All currencies" else options.get("only"))
-        options.pop("only", None); return options
+        options.pop("only", None)
+        if hasattr(self, "br_fs_mode"):
+            options.update(fs_mode="period" if self.br_fs_mode.get().startswith("Period") else "years", fs_compare=bool(self.br_fs_compare.get()))
+        return options
 
     def run_business_report(self):
         self.business_result = None
         try: result = self.client.business_report(self.BUSINESS_REPORTS[self.br["report"].get()], self.business_options())
         except Exception as exc: return messagebox.showerror("Business Reports", str(exc))
         if self.BUSINESS_REPORTS[self.br["report"].get()] == "financial_statements":
-            for index, width in enumerate([360, 260, 220, 160, 160]): self.br_viewer.column(f"c{index}",width=width)
+            for index, width in enumerate([380, 70, 170, 170, 160]): self.br_viewer.column(f"c{index}",width=width)
         else:
             for index, width in enumerate([170, 150, 110, 110, 110]): self.br_viewer.column(f"c{index}",width=width)
         self.business_result = result; self.show_sections(self.br_viewer, result["sections"]); self.br_info.config(text=f'{result["title"]}  |  ' + "   ".join(result["meta"]), fg=NAVY)
@@ -276,9 +284,12 @@ class V22Mixin:
     def edit_financial_report(self):
         from financial_statements import NARRATIVES, AUDIT, GROUPS, SUPPLEMENTS, years_from
         from tkinter.scrolledtext import ScrolledText
-        try: years = years_from(self.br["years"].get())
+        try:
+            if hasattr(self, "br_fs_mode") and self.br_fs_mode.get().startswith("Period"):
+                end_year = int(self.br["to"].get().strip()[-4:]); years = [end_year] + ([end_year - 1] if self.br_fs_compare.get() else [])
+            else: years = years_from(self.br["years"].get())
         except Exception as exc: return messagebox.showerror("Financial Statements", str(exc))
-        window = tk.Toplevel(self); window.title("Financial Statements - saved notes, audit draft and classification")
+        window = tk.Toplevel(self); window.title("Financial Statements - notes, auditor's report and classification")
         window.geometry("1000x720")
         top = ttk.Frame(window); top.pack(fill="x", padx=10, pady=8)
         ttk.Label(top, text="Edit fiscal year").pack(side="left")
@@ -288,16 +299,16 @@ class V22Mixin:
         notebook = ttk.Notebook(window); notebook.pack(fill="both", expand=True, padx=10, pady=5)
         text_fields = {}; entries = {}; state = {}; loaded = [None]
         for kind, definitions in (("notes",NARRATIVES),("audit",AUDIT)):
-            page = ttk.Frame(notebook); notebook.add(page,text="Notes" if kind=="notes" else "Audit report DRAFT")
+            page = ttk.Frame(notebook); notebook.add(page,text="Notes" if kind=="notes" else "Auditor's report")
             inner = ttk.Notebook(page); inner.pack(fill="both", expand=True)
             text_fields[kind] = {}
             for index, (name, default) in enumerate(definitions.items(), 1):
                 tab=ttk.Frame(inner); inner.add(tab,text=f"{'Note' if kind=='notes' else 'Section'} {index}")
-                ttk.Label(tab,text=name,font=("Segoe UI",11,"bold")).pack(anchor="w",padx=8,pady=6)
+                ttk.Label(tab,text=name+"   (words in {} are filled in: {company}, {end_text}, {period_text}, {basis})",font=("Segoe UI",10,"bold")).pack(anchor="w",padx=8,pady=6)
                 text=ScrolledText(tab,wrap="word",font=("Segoe UI",11)); text.pack(fill="both",expand=True,padx=6,pady=6)
                 text_fields[kind][name]=(text,default)
         page=ttk.Frame(notebook); notebook.add(page,text="OCI and Cash Flow")
-        ttk.Label(page,text="Cash flow: enter reviewed net totals. Positive = inflow, negative = outflow. Blank = review required.\nOCI is disclosure only; related asset/equity entries must already be posted.",wraplength=900).pack(anchor="w",padx=10,pady=10)
+        ttk.Label(page,text="Cash flow: calculated automatically (indirect method). To replace it, enter the three reviewed totals. Positive = inflow, negative = outflow.\nOCI is disclosure only; related asset/equity entries must already be posted.",wraplength=900).pack(anchor="w",padx=10,pady=10)
         for key,label in SUPPLEMENTS.items():
             row=ttk.Frame(page); row.pack(fill="x",padx=10,pady=8)
             ttk.Label(row,text=label,width=48).pack(side="left")
@@ -314,7 +325,10 @@ class V22Mixin:
             loaded[0]=int(selected.get()); state.clear(); state.update(saved)
             for kind,fields in text_fields.items():
                 for name,(widget,default) in fields.items():
-                    widget.delete("1.0","end"); widget.insert("1.0",saved.get(kind,{}).get(name) or default)
+                    from financial_statements import OLD_DEFAULTS
+                    value=saved.get(kind,{}).get(name) or default
+                    if str(value).strip() in OLD_DEFAULTS: value=default  # 2.9.69: the old placeholders get the full standard text
+                    widget.delete("1.0","end"); widget.insert("1.0",value)
             saved_basis=saved.get("basis",self.br["basis"].get())
             for key,var in entries.items(): var.set(saved.get("supplements",{}).get(key,"") if saved_basis==self.br["basis"].get() else "")
             mapping.delete("1.0","end"); mapping.insert("1.0","\n".join(f"{k} = {v}" for k,v in saved.get("mapping",{}).items()))

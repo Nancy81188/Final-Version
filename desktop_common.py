@@ -332,3 +332,41 @@ def selection_totals(tree, columns, label, hint=None):
         label.config(text=f"{len(selected)} selected   " + "   ".join(f"{title}: {total:,.2f}" for title, total in sums.items()))
     tree.bind("<<TreeviewSelect>>", update, add="+")
     return update
+
+
+def bulk_action(title, labels, action, parent=None):
+    """2.9.69: run `action(key)` for every selected record; one question before, one summary after.
+    labels = [(key, text shown)]. Returns the keys that were done."""
+    if not labels: return []
+    done, failed = [], []
+    for key, text in labels:
+        try: action(key); done.append(key)
+        except Exception as exc: failed.append(f"{text}: {exc}")
+    message = f"{len(done)} done" + (f", {len(failed)} not done:\n\n" + "\n".join(failed[:15]) + (f"\n... and {len(failed) - 15} more" if len(failed) > 15 else "") if failed else ".")
+    (messagebox.showwarning if failed else messagebox.showinfo)(title, message, **({"parent": parent} if parent else {}))
+    return done
+
+
+def column_toggles(tree, keys, store_key):
+    """2.9.69: tick boxes next to the Search box that show / hide some columns of a table (kept on this computer)."""
+    import desktop_layout
+    bar = getattr(tree, "_search_bar", None)
+    if bar is None: return {}
+    titles = getattr(tree, "_column_titles", {})
+    hidden = set(desktop_layout.layout_settings().get("hidden_columns", {}).get(store_key, []))
+    variables = {}
+    def apply():
+        shown = [key for key in tree["columns"] if key not in keys or variables[key].get()]
+        tree.configure(displaycolumns=shown)
+        saved = dict(desktop_layout.layout_settings().get("hidden_columns", {}))
+        saved[store_key] = [key for key in keys if not variables[key].get()]
+        desktop_layout.save_layout_settings(hidden_columns=saved)
+    box = tk.Frame(bar, bg=LIGHT); totals = getattr(tree, "_selection_totals", None)
+    box.pack(side="left", padx=(14, 0), **({"before": totals} if totals is not None else {}))
+    tk.Label(box, text="Show:", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")
+    for key in keys:
+        variables[key] = tk.BooleanVar(master=tree, value=key not in hidden)
+        tk.Checkbutton(box, text=titles.get(key, key), variable=variables[key], command=apply, bg=LIGHT).pack(side="left")
+    if hidden: tree.configure(displaycolumns=[key for key in tree["columns"] if key not in hidden])
+    tree._column_toggles = variables
+    return variables

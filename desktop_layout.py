@@ -37,7 +37,8 @@ def _settings_file():
 def layout_settings():
     try: data = json.loads(_settings_file().read_text(encoding="utf-8"))
     except Exception: data = {}
-    return {"side_menu": bool(data.get("side_menu", True)), "folded": [str(g) for g in data.get("folded", []) if g]}
+    return {"side_menu": bool(data.get("side_menu", True)), "folded": [str(g) for g in data.get("folded", []) if g],
+            "hidden_columns": {str(k): [str(c) for c in v] for k, v in (data.get("hidden_columns") or {}).items() if isinstance(v, list)}}
 
 
 def save_layout_settings(**changes):

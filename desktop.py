@@ -832,6 +832,7 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         tree.configure(selectmode="extended"); enable_drag_select(tree)
         totals=tk.Label(search_bar,text="",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")); totals.pack(side="left",padx=12)
         tree._selection_totals=selection_totals(tree,columns,totals,hint)
+        tree._search_bar=search_bar; tree._selection_totals=totals; tree._column_titles={key:label for key,label,_w in columns}
 
         real_insert,real_delete=tree.insert,tree.delete
         tree._search_rows=[]

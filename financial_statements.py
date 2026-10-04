@@ -33,25 +33,45 @@ LIABILITIES = ['noncurrent_liabilities','payables','current_liabilities']
 INCOME = ['revenue','other_income']
 EXPENSES = ['materials','services','staff','taxes','finance','depreciation','other_expenses','income_tax']
 NARRATIVES = {
- 'Entity and activities': '[Complete legal form, domicile, registered address, activities and ownership.]',
- 'Basis of preparation': '[Confirm applicable IFRS requirements, measurement basis, going concern and authorisation date. This draft does not assert compliance.]',
- 'Material accounting policies': '[Describe policies relevant to this entity: IFRS 15 revenue, IFRS 9 financial instruments, IFRS 16 leases, IAS 2 inventory, IAS 12 taxes, IAS 16 assets and IAS 19 employee benefits.]',
- 'Judgements and estimates': '[Describe material judgements, estimation uncertainty and impairment assessments.]',
- 'Currency and inflation': '[Confirm functional and presentation currencies, IAS 21 translation and applicability of IAS 29. Recorded book equivalents are used; no automatic IAS 21/IAS 29 restatement is performed.]',
- 'Related parties and commitments': '[Complete IAS 24 relationships, transactions, balances, commitments and contingencies; do not assume none.]',
- 'Events and going concern': '[Complete IAS 10 events after the reporting period, going concern assessment and authorisation for issue.]',
- 'Additional disclosures': '[Add entity-specific IFRS disclosures, financial risks, leases, tax reconciliation, asset roll-forwards and other material information.]',
+ 'Entity and activities': '{company} (the "Company") is registered in Lebanon{address_text}. [Complete: legal form, commercial register number, date of incorporation, shareholders and principal activities.]',
+ 'Basis of preparation': 'The financial statements have been prepared in accordance with International Financial Reporting Standards (IFRS) under the historical cost convention, and are presented in {basis}. Amounts recorded in other currencies are translated at the exchange rates recorded in the books. [Confirm the applicable framework, going concern and the date of authorisation for issue.]',
+ 'Material accounting policies': 'Revenue is recognised when control of the goods or services passes to the customer, net of discounts and value added tax.\nInventories are measured at the lower of cost and net realisable value; cost is determined using the {inventory_method} method.\nProperty, plant and equipment are stated at cost less accumulated depreciation; depreciation is charged on a straight-line basis over the useful lives of the assets.\nTrade receivables are stated at their invoiced amounts less an allowance for expected credit losses.\nCash and cash equivalents comprise cash on hand and balances with banks.\nTrade payables are stated at the amounts payable for goods and services received.\nTransactions in foreign currencies are recorded at the exchange rates of the transaction dates; monetary balances are translated at the rates recorded at the reporting date.\nValue added tax is accounted for in accordance with Lebanese VAT law; recoverable VAT is presented with receivables and VAT payable with payables.\nIncome tax is provided in accordance with Lebanese tax law.\nProvisions are recognised when the Company has a present obligation that can be measured reliably; end-of-service indemnities follow Lebanese labour law and NSSF regulations.',
+ 'Judgements and estimates': 'Preparing the financial statements requires management to make judgements and estimates, mainly for the expected credit losses on receivables, the net realisable value of inventories, the useful lives of property and equipment, and provisions. [Complete with entity-specific judgements.]',
+ 'Currency and inflation': 'The functional and presentation currency is {basis}. Balances in other currencies are translated using the rates recorded in the books. [Assess the effect of the Lebanese economic situation, multiple exchange rates and IAS 29 if relevant.]',
+ 'Related parties and commitments': '[List related parties (shareholders, directors, companies under common control), the transactions and balances with them, commitments and contingent liabilities.]',
+ 'Events and going concern': '[Describe events after the reporting date (IAS 10) and the going concern assessment.]',
+ 'Additional disclosures': '[Add other disclosures: financial risk management, taxation, leases, capital management.]',
 }
 AUDIT = {
- 'Addressee': '[Shareholders / appropriate addressee]',
- 'Opinion': '[Auditor to insert the opinion after completing the audit. No opinion has been generated.]',
- 'Basis for opinion': '[Auditor to complete applicable ISAs, ethics and independence requirements, and evidence supporting the opinion.]',
- 'Going concern / key audit matters': '[Auditor to assess applicable reporting requirements and complete or remove sections as appropriate.]',
- 'Other information': '[Auditor to assess ISA 720 applicability and insert appropriate wording.]',
- 'Management and governance responsibilities': '[Complete responsibilities for preparation, internal control, going concern and oversight.]',
- 'Auditor responsibilities': '[Auditor to insert engagement-appropriate ISA reporting wording.]',
- 'Other legal and regulatory requirements': '[Complete where applicable.]',
- 'Signature, address and report date': '[Auditor name, signature, address and date - to be completed by the auditor.]',
+ 'Addressee': 'To the Shareholders of {company}',
+ 'Opinion': 'We have audited the financial statements of {company} (the "Company"), which comprise the statement of financial position as at {end_text}, and the statement of profit or loss and other comprehensive income, the statement of changes in equity and the statement of cash flows for the {period_text} then ended, and notes to the financial statements, including material accounting policy information.\nIn our opinion, the accompanying financial statements present fairly, in all material respects, the financial position of the Company as at {end_text}, and its financial performance and its cash flows for the {period_text} then ended in accordance with International Financial Reporting Standards (IFRS).',
+ 'Basis for opinion': 'We conducted our audit in accordance with International Standards on Auditing (ISAs). Our responsibilities under those standards are further described in the Auditor\'s Responsibilities for the Audit of the Financial Statements section of our report. We are independent of the Company in accordance with the International Ethics Standards Board for Accountants\' International Code of Ethics for Professional Accountants (IESBA Code), together with the ethical requirements that are relevant to our audit of the financial statements in Lebanon, and we have fulfilled our other ethical responsibilities in accordance with these requirements and the IESBA Code. We believe that the audit evidence we have obtained is sufficient and appropriate to provide a basis for our opinion.',
+ 'Going concern / key audit matters': '',
+ 'Other information': '',
+ 'Management and governance responsibilities': 'Management is responsible for the preparation and fair presentation of the financial statements in accordance with IFRS, and for such internal control as management determines is necessary to enable the preparation of financial statements that are free from material misstatement, whether due to fraud or error.\nIn preparing the financial statements, management is responsible for assessing the Company\'s ability to continue as a going concern, disclosing, as applicable, matters related to going concern and using the going concern basis of accounting unless management either intends to liquidate the Company or to cease operations, or has no realistic alternative but to do so.\nThose charged with governance are responsible for overseeing the Company\'s financial reporting process.',
+ 'Auditor responsibilities': 'Our objectives are to obtain reasonable assurance about whether the financial statements as a whole are free from material misstatement, whether due to fraud or error, and to issue an auditor\'s report that includes our opinion. Reasonable assurance is a high level of assurance, but is not a guarantee that an audit conducted in accordance with ISAs will always detect a material misstatement when it exists. Misstatements can arise from fraud or error and are considered material if, individually or in the aggregate, they could reasonably be expected to influence the economic decisions of users taken on the basis of these financial statements.\nAs part of an audit in accordance with ISAs, we exercise professional judgement and maintain professional scepticism throughout the audit. We identify and assess the risks of material misstatement, obtain an understanding of internal control relevant to the audit, evaluate the appropriateness of accounting policies used and the reasonableness of accounting estimates, conclude on the appropriateness of management\'s use of the going concern basis of accounting, and evaluate the overall presentation, structure and content of the financial statements.\nWe communicate with those charged with governance regarding, among other matters, the planned scope and timing of the audit and significant audit findings, including any significant deficiencies in internal control that we identify during our audit.',
+ 'Other legal and regulatory requirements': '',
+ 'Signature, address and report date': '[Audit firm name]\n[Partner name - License No.]\n[Address]\n[Date]',
+}
+# The placeholders of 2.9.68 and before: a section still holding one of them gets the full text above.
+OLD_DEFAULTS = {
+ '[Complete legal form, domicile, registered address, activities and ownership.]',
+ '[Confirm applicable IFRS requirements, measurement basis, going concern and authorisation date. This draft does not assert compliance.]',
+ '[Describe policies relevant to this entity: IFRS 15 revenue, IFRS 9 financial instruments, IFRS 16 leases, IAS 2 inventory, IAS 12 taxes, IAS 16 assets and IAS 19 employee benefits.]',
+ '[Describe material judgements, estimation uncertainty and impairment assessments.]',
+ '[Confirm functional and presentation currencies, IAS 21 translation and applicability of IAS 29. Recorded book equivalents are used; no automatic IAS 21/IAS 29 restatement is performed.]',
+ '[Complete IAS 24 relationships, transactions, balances, commitments and contingencies; do not assume none.]',
+ '[Complete IAS 10 events after the reporting period, going concern assessment and authorisation for issue.]',
+ '[Add entity-specific IFRS disclosures, financial risks, leases, tax reconciliation, asset roll-forwards and other material information.]',
+ '[Shareholders / appropriate addressee]',
+ '[Auditor to insert the opinion after completing the audit. No opinion has been generated.]',
+ '[Auditor to complete applicable ISAs, ethics and independence requirements, and evidence supporting the opinion.]',
+ '[Auditor to assess applicable reporting requirements and complete or remove sections as appropriate.]',
+ '[Auditor to assess ISA 720 applicability and insert appropriate wording.]',
+ '[Complete responsibilities for preparation, internal control, going concern and oversight.]',
+ '[Auditor to insert engagement-appropriate ISA reporting wording.]',
+ '[Complete where applicable.]',
+ '[Auditor name, signature, address and date - to be completed by the auditor.]',
 }
 SUPPLEMENTS = {
  'oci': 'Other comprehensive income (net of tax, signed)',
@@ -123,121 +143,282 @@ def default_group(code, amount):
         if code.startswith(prefix): return group
     return 'unmapped'
 
-def load_year(db, year, basis):
-    """Use decimal text and recorded equivalents; never silently turn a missing FX rate into zero."""
+# ---------------------------------------------------------------- 2.9.69: audit-report layout, two years or a period
+CASH_GROUPS = ['cash']
+WORKING = ['inventory', 'receivables', 'current_assets', 'payables', 'current_liabilities', 'unmapped']
+INVESTING = ['ppe', 'intangible', 'noncurrent_assets']
+FINANCING = ['capital', 'reserves', 'retained', 'noncurrent_liabilities']
+LINE_TITLES = {'ppe': 'Property, plant and equipment', 'intangible': 'Intangible assets', 'noncurrent_assets': 'Other non-current assets',
+               'inventory': 'Inventories', 'receivables': 'Trade and other receivables', 'cash': 'Cash and cash equivalents',
+               'current_assets': 'Other current assets', 'capital': 'Share capital', 'reserves': 'Reserves', 'retained': 'Retained earnings',
+               'noncurrent_liabilities': 'Non-current liabilities and provisions', 'payables': 'Trade and other payables',
+               'current_liabilities': 'Other current liabilities', 'revenue': 'Revenue', 'other_income': 'Other income',
+               'materials': 'Cost of materials and goods', 'services': 'External services', 'staff': 'Staff costs', 'taxes': 'Taxes and duties',
+               'finance': 'Finance costs, net', 'depreciation': 'Depreciation and provisions', 'other_expenses': 'Other expenses',
+               'income_tax': 'Income tax', 'unmapped': 'Accounts to classify'}
+
+
+def _day(value):
+    return iso_date(value)
+
+
+def _fill(text, values):
+    for key, value in values.items(): text = text.replace('{' + key + '}', str(value))
+    return text
+
+
+def _text(cfg, kind, name, defaults, values):
+    saved = (cfg.get(kind, {}) or {}).get(name)
+    if saved is None or not str(saved).strip() or str(saved).strip() in OLD_DEFAULTS: saved = defaults[name]
+    return _fill(saved, values)
+
+
+def load_period(db, start, end, basis):
+    """Balances of one company-year file for the period start..end (inclusive), in `basis`.
+    Returns opening and closing balances (balance-sheet accounts), the P&L of the period, the profit of the year before the period."""
+    fy_start = end[:4] + '-01-01'
     with db.connect() as conn:
         rows = [dict(r) for r in conn.execute("""SELECT j.*,a.code,a.name_en,e.entry_date,e.source_type,e.voucher_type,e.description entry_description,e.currency
           FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
           LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
           WHERE (e.source_type!='invoice' OR i.status IN ('posted','cancelled') OR i.status IS NULL)""")]
-    balances = defaultdict(lambda: ZERO); opening = defaultdict(lambda: ZERO); names = {}; count = 0
+    closing = defaultdict(lambda: ZERO); opening = defaultdict(lambda: ZERO); pnl = defaultdict(lambda: ZERO); before = defaultdict(lambda: ZERO)
+    names = {}; count = 0
     for row in rows:
-        day = iso_date(row['entry_date'])
-        if day > f'{year}-12-31': continue
-        if day >= f'{year}-01-01' and (row['source_type'] == 'year_close' or (row['voucher_type'] == '05' and (row['entry_description'] or '').startswith('CLOSING 6&7 - '))): continue
+        day = _day(row['entry_date'])
+        if day > end: continue
+        if day >= fy_start and (row['source_type'] == 'year_close' or (row['voucher_type'] == '05' and (row['entry_description'] or '').startswith('CLOSING 6&7 - '))): continue
         code = row['code']; names[code] = row['name_en']
         value = number(row['debit']) - number(row['credit'])
-        if row['line_currency'] and row['amount'] not in (None,''):
+        if row['line_currency'] and row['amount'] not in (None, ''):
             raw = row['amount_usd'] if basis == 'USD' else row['amount_lbp']
-            if raw in (None,''): raise ValueError(f'Missing {basis} equivalent for account {code}, {day}')
+            if raw in (None, ''): raise ValueError(f'Missing {basis} equivalent for account {code}, {day}')
             value = number(raw) * (1 if value >= 0 else -1)
         elif row['currency'] != basis:
-            value = db._converted_amount(value,row['currency'],basis,day)
-        is_opening = day < f'{year}-01-01' or row['source_type'] == 'opening' or row['voucher_type'] == '04'
-        if is_opening:
-            opening[code] += value
-            if code[:1] not in '67': balances[code] += value
-        else:
-            balances[code] += value; count += 1
-    return balances, opening, names, count
+            value = db._converted_amount(value, row['currency'], basis, day)
+        is_opening = day < fy_start or row['source_type'] == 'opening' or row['voucher_type'] == '04'
+        if code[:1] in '67':
+            if is_opening: continue  # profit of earlier years is already in retained earnings
+            if day < start: before[code] += value
+            else: pnl[code] += value; count += 1
+            continue
+        closing[code] += value
+        if is_opening or day < start: opening[code] += value
+        else: count += 1
+    return dict(closing=closing, opening=opening, pnl=pnl, before=before, names=names, count=count)
 
-def year_data(db, year, basis):
-    cfg = config(db); balances, opening, names, count = load_year(db,year,basis)
-    mapping = cfg.get('mapping', {})
+
+def period_data(db, start, end, basis, label):
+    cfg = config(db); raw = load_period(db, start, end, basis); mapping = cfg.get('mapping', {})
     def group(code, value):
         found = [p for p in mapping if code.startswith(p)]
-        return mapping[max(found,key=len)] if found else default_group(code,value)
-    totals = defaultdict(lambda: ZERO); starts = defaultdict(lambda: ZERO); detail = []
-    for code in sorted(set(balances) | set(opening)):
-        value = balances[code]; g = group(code,value)
-        # Class 6/7 opening balances are never current-year profit.
-        totals[g] += value
-        starts[group(code,opening[code])] += opening[code]
-        if value or opening[code]: detail.append([code,names[code],GROUPS[g],money(opening[code]),money(value)])
-    profit = -sum((totals[g] for g in INCOME + EXPENSES),ZERO)
-    equity_start = -sum((starts[g] for g in EQUITY),ZERO)
-    equity_end = -sum((totals[g] for g in EQUITY),ZERO) + profit
-    supplements = cfg.get('supplements', {}) if cfg.get('basis',basis) == basis else {}
-    extra = {k:number(v) for k,v in supplements.items() if v != ''}
-    return dict(config=cfg,totals=totals,opening=starts,profit=profit,detail=detail,count=count,
-                equity_start=equity_start,equity_end=equity_end,extra=extra)
+        return mapping[max(found, key=len)] if found else default_group(code, value)
+    close_g = defaultdict(lambda: ZERO); open_g = defaultdict(lambda: ZERO); pnl_g = defaultdict(lambda: ZERO); accounts = defaultdict(dict)
+    for code in sorted(set(raw['closing']) | set(raw['opening'])):
+        g = group(code, raw['closing'][code])
+        close_g[g] += raw['closing'][code]; open_g[group(code, raw['opening'][code])] += raw['opening'][code]
+        if raw['closing'][code]: accounts[g][code] = (raw['names'][code], raw['closing'][code])
+    for code in sorted(raw['pnl']):
+        g = group(code, raw['pnl'][code]); pnl_g[g] += raw['pnl'][code]
+        if raw['pnl'][code]: accounts[g][code] = (raw['names'][code], raw['pnl'][code])
+    profit = -sum(raw['pnl'].values(), ZERO); profit_before = -sum(raw['before'].values(), ZERO)
+    depreciation = pnl_g['depreciation']
+    def delta(groups): return sum((close_g[g] - open_g[g] for g in groups), ZERO)
+    supplements = cfg.get('supplements', {}) if cfg.get('basis', basis) == basis else {}
+    extra = {k: number(v) for k, v in supplements.items() if v != ''}
+    cash_flow = {'profit': profit, 'depreciation': depreciation,
+                 'working': {g: -(close_g[g] - open_g[g]) for g in WORKING},
+                 'operating': profit + depreciation - delta(WORKING),
+                 'investing': -(delta(INVESTING) + depreciation),
+                 'financing': -delta(FINANCING)}
+    reviewed = all(k in extra for k in ('cf_operating', 'cf_investing', 'cf_financing'))
+    if reviewed:
+        cash_flow.update(operating=extra['cf_operating'], investing=extra['cf_investing'], financing=extra['cf_financing'], fx=extra.get('cf_fx', ZERO))
+    cash_flow['reviewed'] = reviewed
+    equity_open = -sum((open_g[g] for g in EQUITY), ZERO) + profit_before
+    equity_close = -sum((close_g[g] for g in EQUITY), ZERO) + profit_before + profit
+    return dict(label=label, start=start, end=end, config=cfg, close=close_g, open=open_g, pnl=pnl_g, accounts=accounts, profit=profit,
+                profit_before=profit_before, equity_open=equity_open, equity_close=equity_close, cash=cash_flow, extra=extra, count=raw['count'])
+
+
+def periods_from(options, available_years):
+    """[(year of the file, start, end, label)] - newest first. Two years: full calendar years. Period: From / As of
+    (inside one fiscal year), and the same period one year before when asked and available."""
+    if options.get('fs_mode') == 'period':
+        start, end = _day(options.get('date_from')), _day(options.get('date_to'))
+        if start > end: raise ValueError('From must be on or before As of')
+        if start[:4] != end[:4]: raise ValueError('A period must stay inside one fiscal year (each year has its own books)')
+        year = int(end[:4]); result = [(year, start, end, f'{start[8:]}-{start[5:7]} to {end[8:]}-{end[5:7]}-{end[:4]}')]
+        if options.get('fs_compare') and (year - 1) in available_years:
+            ps, pe = f'{year - 1}{start[4:]}', f'{year - 1}{end[4:]}'
+            if pe[5:] == '02-29': pe = pe[:8] + '28'
+            result.append((year - 1, ps, pe, f'{ps[8:]}-{ps[5:7]} to {pe[8:]}-{pe[5:7]}-{pe[:4]}'))
+        return result
+    return [(y, f'{y}-01-01', f'{y}-12-31', f'31-12-{y}') for y in years_from(options.get('years'))]
+
 
 def build(databases, options):
-    years = years_from(options.get('years')); basis = options.get('basis','USD')
-    if basis not in ('USD','LBP'): raise ValueError('Choose USD or LBP')
-    missing = [str(y) for y in years if y not in databases]
+    basis = options.get('basis', 'USD')
+    if basis not in ('USD', 'LBP'): raise ValueError('Choose USD or LBP')
+    periods = periods_from(options, set(databases))
+    missing = [str(y) for y, *_rest in periods if y not in databases]
     if missing: raise ValueError('Fiscal year not found: ' + ', '.join(missing))
-    data = {y:year_data(databases[y],y,basis) for y in years}
-    latest = data[years[0]]; settings = databases[years[0]].settings(); sections = []
-    warnings = ['DRAFT - accountant review required. No IFRS compliance assertion or audit opinion is generated.',
-                'All selected years use posted books, opening balances and recorded currency equivalents. Closing P&L transfers are excluded.',
-                'Default Lebanese account classifications require review, including maturity, offsetting, cash equivalents and OCI.',
-                'Supplementary OCI and cash-flow figures are presentation inputs, not journal entries. Post accounting adjustments separately.']
-    if len(years)==1: warnings.append('Single-year presentation: prior-year comparatives required by IAS 1 are omitted.')
-    elif years[0]-years[1]!=1: warnings.append('Selected years are not consecutive: preceding-year IAS 1 comparatives are missing.')
-    if years[0]>=2027: warnings.append('Assess IFRS 18 applicability: this pack uses the IAS 1 presentation structure, not an IFRS 18 implementation.')
-    def table(title, specs):
-        rows=[]; total_rows=[]
-        for label, fn, total in specs:
-            rows.append([label]+[money(fn(data[y])) if isinstance(fn(data[y]),Decimal) else fn(data[y]) for y in years])
-            if total: total_rows.append(len(rows)-1)
-        sections.append(dict(heading=title,headers=['Description']+[f'{y} ({basis})' for y in years],rows=rows,total_rows=total_rows))
-    def amount(g): return lambda d:d['totals'][g] * (-1 if g in EQUITY+LIABILITIES+INCOME else 1)
-    specs=[(GROUPS[g],amount(g),False) for g in ASSETS]
-    specs += [('TOTAL ASSETS',lambda d:sum((d['totals'][g] for g in ASSETS),ZERO),True)]
-    specs += [(GROUPS[g],amount(g),False) for g in EQUITY]
-    specs += [('Current-year profit / (loss)',lambda d:d['profit'],False),('TOTAL EQUITY',lambda d:d['equity_end'],True)]
-    specs += [(GROUPS[g],amount(g),False) for g in LIABILITIES]
-    specs += [('TOTAL LIABILITIES',lambda d:-sum((d['totals'][g] for g in LIABILITIES),ZERO),True),
-              ('TOTAL EQUITY AND LIABILITIES',lambda d:d['equity_end']-sum((d['totals'][g] for g in LIABILITIES),ZERO),True),
-              ('Balance check (must be zero)',lambda d:sum((d['totals'][g] for g in ASSETS+LIABILITIES),ZERO)-d['equity_end'],True)]
-    table('Statement of financial position at 31 December', specs)
-    table('Statement of profit or loss and other comprehensive income',
-          [(GROUPS[g],amount(g),False) for g in INCOME+EXPENSES]+[
-              ('PROFIT / (LOSS)',lambda d:d['profit'],True),
-              ('Other comprehensive income (net of tax)',lambda d:d['extra'].get('oci','REVIEW REQUIRED'),False),
-              ('TOTAL COMPREHENSIVE INCOME',lambda d:d['profit']+d['extra']['oci'] if 'oci' in d['extra'] else 'REVIEW REQUIRED',True)])
-    for year in years:
-        d=data[year]; oci=d['extra'].get('oci'); rows=[]
-        # Separate opening, direct movements and earnings by equity component.
-        for g in EQUITY:
-            start=-d['opening'][g]; end=-d['totals'][g]; result=d['profit'] if g=='retained' else ZERO
-            rows.append([GROUPS[g],money(start),money(end-start),money(result),money(end+result)])
-        rows.append(['TOTAL',money(d['equity_start']),money(-sum((d['totals'][g]-d['opening'][g] for g in EQUITY),ZERO)),money(d['profit']),money(d['equity_end'])])
-        sections.append(dict(heading=f'Statement of changes in equity - {year} ({basis})',headers=['Component','Opening','Direct book movements*','Profit / loss','Closing'],rows=rows,total_rows=[3]))
-        warnings.append(f'{year}: equity direct movements require separation of owner transactions, OCI and restatements in the notes; OCI input is not added twice to book equity.')
-    table('Statement of cash flows - classified totals (IAS 7 review)',[
-        ('Opening cash and cash equivalents',lambda d:d['opening']['cash'],False),
-        *[(label,lambda d,k=k:d['extra'].get(k,'REVIEW REQUIRED'),False) for k,label in SUPPLEMENTS.items() if k.startswith('cf_')],
-        ('Closing cash and cash equivalents',lambda d:d['totals']['cash'],True),
-        ('Unreconciled cash movement (must be zero)',lambda d:d['totals']['cash']-d['opening']['cash']-sum((d['extra'][k] for k in SUPPLEMENTS if k.startswith('cf_')),ZERO) if all(k in d['extra'] for k in SUPPLEMENTS if k.startswith('cf_')) else 'REVIEW REQUIRED',True)])
-    for year in years:
-        d=data[year]
-        difference = sum((d['totals'][g] for g in ASSETS+LIABILITIES),ZERO)-d['equity_end']
-        if abs(difference) >= Decimal('.01'): warnings.append(f'{year}: financial position does not balance ({money(difference)} {basis}). Resolve classification or book differences.')
-        if d['config'].get('basis',basis) != basis and d['config'].get('supplements'):
-            warnings.append(f'{year}: saved supplementary amounts use another currency; enter reviewed {basis} amounts.')
-        if not d['count']: warnings.append(f'{year}: no posted operating movements found. Confirm opening balances and completeness.')
-        if any(row[2] == GROUPS['unmapped'] for row in d['detail']): warnings.append(f'{year}: unmapped balance {money(d["totals"]["unmapped"])} {basis}. Review account mapping.')
-        sections.append(dict(heading=f'Notes: account schedules - {year} ({basis})',headers=['Account','Name','Statement line','Opening signed','Closing / movement signed'],rows=d['detail'] or [['No posted balances','','','','']],total_rows=[]))
-    for index,(name,default) in enumerate(NARRATIVES.items(),1):
-        # Keep each year's disclosures separate rather than silently applying current text to comparatives.
-        rows=[[str(y),data[y]['config'].get('notes',{}).get(name) or default] for y in years]
-        sections.append(dict(heading=f'Note {index} - {name}',headers=['Year','Disclosure'],rows=rows,total_rows=[],narrative=True))
-    for name, default in AUDIT.items():
-        text=latest['config'].get('audit',{}).get(name) or default
-        sections.append(dict(heading='Independent auditor report DRAFT - '+name,headers=['Text'],rows=[[p] for p in text.splitlines() if p.strip()] or [[default]],total_rows=[],narrative=True))
-    sections.insert(0,dict(heading='Preparation and review',headers=['Review points'],rows=[[w] for w in warnings],total_rows=[],narrative=True))
-    return dict(title='Financial Statements, Notes and Audit Report - DRAFT',
-                meta=[f"Company: {settings.get('company_name') or '-'}",'Years: '+', '.join(map(str,years))+f' | Presentation currency: {basis}',
-                      'Annual periods ending 31 December | IAS 1 / IAS 7 structure | Audit report: ISA 700 review template'],sections=sections)
+    data = [period_data(databases[y], s, e, basis, label) for y, s, e, label in periods]
+    current = data[0]; settings = databases[periods[0][0]].settings(); cfg = current['config']
+    company = settings.get('company_name') or '[Company name]'
+    full_year = current['start'][5:] == '01-01' and current['end'][5:] == '12-31'
+    end_text = f"{int(current['end'][8:])} {['January','February','March','April','May','June','July','August','September','October','November','December'][int(current['end'][5:7]) - 1]} {current['end'][:4]}"
+    period_text = 'year' if full_year else f"period from {current['start'][8:]}-{current['start'][5:7]}-{current['start'][:4]}"
+    for_period = f'for the year ended {end_text}' if full_year else f"for the period from {current['start'][8:]}-{current['start'][5:7]}-{current['start'][:4]} to {end_text}"
+    values = {'company': company, 'end_text': end_text, 'period_text': period_text, 'basis': basis,
+              'address_text': f", {settings['company_address']}" if settings.get('company_address') else '',
+              'inventory_method': 'first-in first-out (FIFO)' if settings.get('inventory_method') == 'fifo' else 'weighted average cost'}
+    heads = [f"{d['label']} ({basis})" for d in data]
+    as_at = [f"{d['end'][8:]}-{d['end'][5:7]}-{d['end'][:4]} ({basis})" for d in data]
+    sections = []; warnings = []
+    q = lambda v: money(v) if isinstance(v, Decimal) else v
+
+    # ---- Independent auditor's report
+    audit_rows = [[_text(cfg, 'audit', 'Addressee', AUDIT, values)]]
+    for name, title in (('Opinion', 'Opinion'), ('Basis for opinion', 'Basis for Opinion'), ('Going concern / key audit matters', 'Key Audit Matters'),
+                        ('Other information', 'Other Information'), ('Management and governance responsibilities', 'Responsibilities of Management and Those Charged with Governance for the Financial Statements'),
+                        ('Auditor responsibilities', "Auditor's Responsibilities for the Audit of the Financial Statements"),
+                        ('Other legal and regulatory requirements', 'Report on Other Legal and Regulatory Requirements'), ('Signature, address and report date', '')):
+        text = _text(cfg, 'audit', name, AUDIT, values).strip()
+        if not text: continue
+        if title: audit_rows.append([title.upper()])
+        audit_rows += [[line] for line in text.splitlines() if line.strip()]
+    sections.append(dict(heading="INDEPENDENT AUDITOR'S REPORT", headers=['Text'], rows=audit_rows, total_rows=[], narrative=True, page_break=True))
+
+    # ---- note numbers for the statement lines that have amounts
+    note_no = {}; next_note = [5]
+    def note_for(group):
+        if not any(d['accounts'].get(group) for d in data): return ''
+        if group not in note_no: note_no[group] = next_note[0]; next_note[0] += 1
+        return str(note_no[group])
+    sign = lambda g: -1 if g in EQUITY + LIABILITIES + INCOME else 1
+
+    # ---- Statement of financial position
+    rows = []; totals = []
+    def line(label, fn, total=False, note=''):
+        rows.append([label, note] + [q(fn(d)) for d in data])
+        if total: totals.append(len(rows) - 1)
+    def heading(label): rows.append([label, ''] + ['' for _ in data])
+    heading('ASSETS'); heading('Non-current assets')
+    for g in ['ppe', 'intangible', 'noncurrent_assets']:
+        if any(d['close'][g] for d in data): line(LINE_TITLES[g], lambda d, g=g: d['close'][g], note=note_for(g))
+    line('Total non-current assets', lambda d: sum((d['close'][g] for g in ['ppe', 'intangible', 'noncurrent_assets']), ZERO), True)
+    heading('Current assets')
+    for g in ['inventory', 'receivables', 'current_assets', 'cash']:
+        if any(d['close'][g] for d in data): line(LINE_TITLES[g], lambda d, g=g: d['close'][g], note=note_for(g))
+    line('Total current assets', lambda d: sum((d['close'][g] for g in ['inventory', 'receivables', 'current_assets', 'cash']), ZERO), True)
+    line('TOTAL ASSETS', lambda d: sum((d['close'][g] for g in ASSETS), ZERO), True)
+    heading('EQUITY AND LIABILITIES'); heading('Equity')
+    for g in EQUITY:
+        if any(d['close'][g] for d in data): line(LINE_TITLES[g], lambda d, g=g: -d['close'][g], note=note_for(g))
+    line('Profit for the year' if full_year else 'Profit for the year to date', lambda d: d['profit'] + d['profit_before'])
+    line('Total equity', lambda d: d['equity_close'], True)
+    heading('Liabilities')
+    for g in LIABILITIES:
+        if any(d['close'][g] for d in data): line(LINE_TITLES[g], lambda d, g=g: -d['close'][g], note=note_for(g))
+    line('Total liabilities', lambda d: -sum((d['close'][g] for g in LIABILITIES), ZERO), True)
+    line('TOTAL EQUITY AND LIABILITIES', lambda d: d['equity_close'] - sum((d['close'][g] for g in LIABILITIES), ZERO), True)
+    if any(abs(d['close']['unmapped']) >= Decimal('.01') for d in data):
+        line(LINE_TITLES['unmapped'] + ' (see review points)', lambda d: d['close']['unmapped'], note=note_for('unmapped'))
+    sections.append(dict(heading=f'STATEMENT OF FINANCIAL POSITION as at {end_text}', headers=['', 'Notes'] + as_at, rows=rows, total_rows=totals, page_break=True, fixed=True))
+
+    # ---- Statement of profit or loss
+    rows = []; totals = []
+    for g in INCOME:
+        if any(d['pnl'][g] for d in data): line(LINE_TITLES[g], lambda d, g=g: -d['pnl'][g], note=note_for(g))
+    line('Total income', lambda d: -sum((d['pnl'][g] for g in INCOME), ZERO), True)
+    for g in EXPENSES:
+        if g != 'income_tax' and any(d['pnl'][g] for d in data): line(LINE_TITLES[g], lambda d, g=g: -d['pnl'][g], note=note_for(g))
+    line('Profit / (loss) before tax', lambda d: d['profit'] + d['pnl']['income_tax'], True)
+    if any(d['pnl']['income_tax'] for d in data): line(LINE_TITLES['income_tax'], lambda d: -d['pnl']['income_tax'], note=note_for('income_tax'))
+    line('PROFIT / (LOSS) FOR THE ' + ('YEAR' if full_year else 'PERIOD'), lambda d: d['profit'], True)
+    line('Other comprehensive income', lambda d: d['extra'].get('oci', ZERO))
+    line('TOTAL COMPREHENSIVE INCOME', lambda d: d['profit'] + d['extra'].get('oci', ZERO), True)
+    sections.append(dict(heading=f"STATEMENT OF PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME {for_period}",
+                         headers=['', 'Notes'] + heads, rows=rows, total_rows=totals, page_break=True, fixed=True))
+
+    # ---- Statement of changes in equity (oldest period first)
+    rows = []; totals = []
+    for d in reversed(data):
+        open_c = {g: -d['open'][g] for g in EQUITY}; close_c = {g: -d['close'][g] for g in EQUITY}
+        open_c['retained'] += d['profit_before']; close_c['retained'] += d['profit_before']
+        rows.append([f"Balance at start ({d['start'][8:]}-{d['start'][5:7]}-{d['start'][:4]})"] + [q(open_c[g]) for g in EQUITY] + [q(d['equity_open'])])
+        rows.append(['Profit / (loss) for the period'] + [ZERO, ZERO, q(d['profit'])] + [q(d['profit'])])
+        movement = {g: close_c[g] - open_c[g] for g in EQUITY}
+        if any(movement[g] for g in EQUITY):
+            rows.append(['Capital movements, dividends and transfers'] + [q(movement[g]) for g in EQUITY] + [q(sum(movement.values(), ZERO))])
+        close_c['retained'] += d['profit']
+        rows.append([f"Balance at end ({d['end'][8:]}-{d['end'][5:7]}-{d['end'][:4]})"] + [q(close_c[g]) for g in EQUITY] + [q(d['equity_close'])])
+        totals.append(len(rows) - 1)
+    sections.append(dict(heading=f'STATEMENT OF CHANGES IN EQUITY ({basis})', headers=['', 'Share capital', 'Reserves', 'Retained earnings', 'Total'],
+                         rows=rows, total_rows=totals, page_break=True, fixed=True))
+
+    # ---- Statement of cash flows (indirect method)
+    rows = []; totals = []
+    heading('CASH FLOWS FROM OPERATING ACTIVITIES')
+    line('Profit / (loss) for the period', lambda d: d['cash']['profit'])
+    line('Adjustment: depreciation and provisions', lambda d: d['cash']['depreciation'])
+    for g in WORKING:
+        if any(d['cash']['working'][g] for d in data):
+            label = {'inventory': '(Increase) / decrease in inventories', 'receivables': '(Increase) / decrease in trade and other receivables',
+                     'current_assets': '(Increase) / decrease in other current assets', 'payables': 'Increase / (decrease) in trade and other payables',
+                     'current_liabilities': 'Increase / (decrease) in other current liabilities', 'unmapped': 'Movement in accounts to classify'}[g]
+            line(label, lambda d, g=g: d['cash']['working'][g])
+    line('Net cash from operating activities', lambda d: d['cash']['operating'], True)
+    heading('CASH FLOWS FROM INVESTING ACTIVITIES')
+    line('Acquisition / (disposal) of non-current assets, net', lambda d: d['cash']['investing'])
+    line('Net cash used in investing activities', lambda d: d['cash']['investing'], True)
+    heading('CASH FLOWS FROM FINANCING ACTIVITIES')
+    line('Capital, borrowings and dividends, net', lambda d: d['cash']['financing'])
+    line('Net cash from financing activities', lambda d: d['cash']['financing'], True)
+    line('NET INCREASE / (DECREASE) IN CASH', lambda d: d['cash']['operating'] + d['cash']['investing'] + d['cash']['financing'] + d['cash'].get('fx', ZERO), True)
+    line('Cash and cash equivalents at start', lambda d: d['open']['cash'])
+    line('CASH AND CASH EQUIVALENTS AT END', lambda d: d['close']['cash'], True)
+    sections.append(dict(heading=f'STATEMENT OF CASH FLOWS {for_period}', headers=['', ''] + heads, rows=rows, total_rows=totals, page_break=True, fixed=True))
+
+    # ---- Notes
+    notes = [('1. GENERAL INFORMATION', 'Entity and activities'), ('2. BASIS OF PREPARATION', 'Basis of preparation'),
+             ('3. MATERIAL ACCOUNTING POLICIES', 'Material accounting policies'), ('4. JUDGEMENTS AND ESTIMATES', 'Judgements and estimates')]
+    first = True
+    for title, name in notes:
+        sections.append(dict(heading='NOTES TO THE FINANCIAL STATEMENTS - ' + title if first else title, headers=['Text'],
+                             rows=[[p] for p in _text(cfg, 'notes', name, NARRATIVES, values).splitlines() if p.strip()], total_rows=[], narrative=True, page_break=first))
+        first = False
+    for group, number_ in sorted(note_no.items(), key=lambda item: item[1]):
+        codes = sorted(set().union(*(d['accounts'].get(group, {}).keys() for d in data)))
+        rows = []
+        for code in codes:
+            name = next((d['accounts'][group][code][0] for d in data if code in d['accounts'].get(group, {})), '')
+            rows.append([code, name] + [q(sign(group) * d['accounts'].get(group, {}).get(code, ('', ZERO))[1]) for d in data])
+        rows.append(['', 'TOTAL'] + [q(sign(group) * (d['close'][group] if group in ASSETS + EQUITY + LIABILITIES + ['unmapped'] else d['pnl'][group])) for d in data])
+        sections.append(dict(heading=f'{number_}. {LINE_TITLES[group].upper()}', headers=['Account', 'Name'] + heads, rows=rows, total_rows=[len(rows) - 1], fixed=True))
+    n = next_note[0]
+    for name in ('Currency and inflation', 'Related parties and commitments', 'Events and going concern', 'Additional disclosures'):
+        text = _text(cfg, 'notes', name, NARRATIVES, values)
+        sections.append(dict(heading=f'{n}. {name.upper()}', headers=['Text'], rows=[[p] for p in text.splitlines() if p.strip()], total_rows=[], narrative=True)); n += 1
+
+    # ---- review points for the preparer (last page, remove before issue)
+    for d in data:
+        difference = sum((d['close'][g] for g in ASSETS + LIABILITIES), ZERO) - d['equity_close']
+        if abs(difference) >= Decimal('.01'): warnings.append(f"{d['label']}: the statement of financial position does not balance ({money(difference)} {basis}) - check classifications.")
+        if abs(d['close']['unmapped']) >= Decimal('.01') or d['pnl']['unmapped']: warnings.append(f"{d['label']}: accounts to classify ({money(d['close']['unmapped'] + d['pnl']['unmapped'])} {basis}) - Edit Notes / Audit / Mapping.")
+        if not d['count']: warnings.append(f"{d['label']}: no posted movements in the period.")
+        if not d['cash']['reviewed']: warnings.append(f"{d['label']}: cash flows are calculated from the balance sheet movements (indirect method); review the classification of investing and financing items.")
+    if len(data) == 1: warnings.append('Single period: IAS 1 requires comparative figures for the preceding period.')
+    warnings.append("The auditor's report is a template: the auditor completes and signs it after the audit. Remove this page before issuing.")
+    sections.append(dict(heading='PREPARER REVIEW POINTS (remove before issue)', headers=['Point'], rows=[[w] for w in warnings], total_rows=[], narrative=True, page_break=True))
+    return dict(title='Financial Statements, Notes and Audit Report',
+                meta=[company, ('Year ended ' if full_year else 'Period ended ') + end_text + ' - with comparative figures' * (len(data) > 1), f'Presentation currency: {basis}'],
+                sections=sections)
+
+
+def year_data(db, year, basis):
+    """Full calendar year (kept for older callers): period_data plus equity_start / equity_end."""
+    data = period_data(db, f'{int(year)}-01-01', f'{int(year)}-12-31', basis, f'31-12-{int(year)}')
+    data.update(equity_start=data['equity_open'], equity_end=data['equity_close'], totals=data['close'])
+    return data

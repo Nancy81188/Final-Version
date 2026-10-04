@@ -474,7 +474,7 @@ def export_sections_pdf(path, title, meta, sections):
     # ReportLab frames add 6pt padding on each side of doc.width.
     available = doc.width - 12
     for section in sections:
-        if financial and (section["heading"].startswith(("Statement of", "Notes: account")) or section["heading"].endswith("DRAFT - Addressee")):
+        if (financial and (section["heading"].startswith(("Statement of", "Notes: account")) or section["heading"].endswith("DRAFT - Addressee"))) or (section.get("page_break") and story):
             from reportlab.platypus import PageBreak
             story.append(PageBreak())
         story.append(pdf_paragraph(section["heading"], styles["Heading3"], True))
@@ -505,6 +505,10 @@ def export_sections_pdf(path, title, meta, sections):
         if financial and count == 5:
             weights = [13, 24, 29, 20, 23] if headers[0] == "Account" else [35, 16, 23, 16, 16]
             widths = [weight * available / sum(weights) for weight in weights]
+        if financial and len(headers) >= 3 and headers[0] == "" and headers[1] in ("", "Notes"):
+            # 2.9.69: statements - wide caption column, narrow Notes column, equal amount columns
+            amounts = count - 2; first = available * (0.55 if amounts <= 2 else 0.42); notes = available * 0.08
+            widths = [first, notes] + [(available - first - notes) / amounts] * amounts
         # Keep a readable minimum font and column width rather than shrinking the whole table.
         # Wide sections are divided into consecutive bands, repeating the identifying first column.
         bands = []

@@ -706,6 +706,12 @@ class PurchasesMixin:
         f["pdf_label"].config(text=f"Editing {row['invoice_number']} ({row.get('attachment_count') or 0} document(s) attached)", fg=NAVY); self.purchase_amounts_changed("none")
 
     def delete_purchase(self):
+        f = self.purchase_form; selected = f["tree"].selection()
+        if len(selected) > 1:  # 2.9.69: several selected
+            items = [(f["rows"][iid]["id"], f["rows"][iid]["invoice_number"]) for iid in selected if iid in f["rows"]]
+            if not messagebox.askyesno("Purchases", f"Mark {len(items)} purchases DELETED? Their numbers stay in the invoice list; their journal entries are removed."): return
+            bulk_action("Purchases", items, self.client.delete_invoice)
+            self.new_purchase(); self.load_purchases(); self.load_invoices(); self.load_journal(); self.load_trial(); return
         row = self.selected_purchase() if not self.purchase_form["id"] else self.purchase_form["rows"].get(str(self.purchase_form["id"]))
         if not row: return messagebox.showwarning("Purchases", "Select a purchase first")
         if not messagebox.askyesno("Purchases", f"Mark purchase {row['invoice_number']} DELETED? Its number stays in the invoice list; the journal entry is removed."): return
