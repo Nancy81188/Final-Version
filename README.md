@@ -1,5 +1,13 @@
 # Saber Accounting MVP
 
+## Version 2.9.66 (accounts tools, several rows, trial balance options)
+- Fixed: Financial Reports opened before the Inventory page was ready ("no attribute 'ageing_tab'").
+- Fixed: Switch Company / Year while pages were still loading showed up to 17 "page could not be loaded" messages.
+- Chart of Accounts: Delete Selected (one or many, any kind: clients, suppliers, expenses...; only accounts without transactions, and a customer / supplier file that only holds that account goes with it), Delete Unused Accounts... (list by kind, select some or all), Move / Transfer... (move all the transactions of an account to another - and merge the customer / supplier - or transfer its balance with a journal voucher). Official chart accounts are never deleted.
+- Every table: select several rows with Ctrl / Shift or by dragging the mouse; the count and the totals of the amount columns appear above the table.
+- Trial Balance / Statement: "Without Opening entries" and "Without Closing entries".
+- Tests: test_v2_9_66.py.
+
 ## Version 2.9.65 (Production)
 - Inventory > Production:
   - Recipes: the materials (and an extra cost per unit) that make a quantity of a product. A material can have its own recipe; a recipe can never go round in a circle.

@@ -166,6 +166,11 @@ class ApiClient:
     def next_account_number(self,prefix): return self.request("GET",f"/api/accounts/next-number?{urlencode({'prefix':prefix})}")["account_number"]
     def save_account(self,item): return self.request("POST","/api/accounts",item)["account"]
     def rename_account(self,code,name): return self.request("PUT",f"/api/accounts/{code}",{"name_en":name})["account"]
+    def account_usage(self,codes=None): return self.request("GET","/api/accounts/usage?"+urlencode({"codes":",".join(codes or [])}))["items"]
+    def unused_accounts(self,scope="all"): return self.request("GET","/api/accounts/unused?"+urlencode({"scope":scope}))["items"]
+    def delete_accounts(self,codes): return self.request("POST","/api/accounts/delete",{"codes":list(codes)})
+    def move_account(self,source,target,merge_party=False): return self.request("POST","/api/accounts/move",{"from":source,"to":target,"merge_party":merge_party})
+    def transfer_account_balance(self,source,target,date,description=""): return self.request("POST","/api/accounts/transfer-balance",{"from":source,"to":target,"date":date,"description":description})
     def update_account(self,code,item): return self.request("PUT",f"/api/accounts/{code}",item)["account"]
     def parties(self): return self.request("GET", "/api/parties")["items"]
     def branches(self): return self.request("GET","/api/branches")["items"]

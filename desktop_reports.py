@@ -55,6 +55,7 @@ class ReportsMixin:
             ("account","Account",85),("account_name","Account Name",190),("party","Customer / Supplier",165),
             ("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
         self.journal_tree.bind("<Double-1>",self.edit_journal_selection)  # double-click a line: edit its entry
+        self.journal_tree._totals_skip={"balance"}  # running balance: not added up for the selected lines
         flow_toolbars(filters,finder,actions)  # 2.9.59: wrap instead of being cut off on 1366-px screens
         self.load_journal()
 
@@ -300,6 +301,13 @@ class ReportsMixin:
         messagebox.showinfo("Refresh Opening",f'Opening {year+1} refreshed successfully.\nVouchers: {", ".join(result.get("opening_vouchers",[])) or "No balances"}\n{status}')
 
     def build_financial_reports(self):
+        # 2.9.66: the Ageing Report page lives in Inventory; opening Financial Reports first (before the pages built in the
+        # background reached Inventory) failed with "no attribute 'ageing_tab'". Build Inventory first in that case.
+        if "ageing_tab" not in self.__dict__:
+            pending=self.__dict__.get("_pending_builders") or []
+            builder=next((b for b in pending if getattr(b,"__name__","")=="build_inventory"),None)
+            if builder is not None: pending.remove(builder); self._run_page_builder(builder)
+            if "ageing_tab" not in self.__dict__: self.ageing_tab=tk.Frame(self.reports_tab,bg=LIGHT)
         controls=tk.Frame(self.reports_tab,bg=LIGHT); controls.pack(fill="x",padx=10,pady=10)
         tk.Label(controls,text="From:",bg=LIGHT).pack(side="left"); self.date_entry(controls,self.report_from_date,13).pack(side="left",padx=(4,10))
         tk.Label(controls,text="To:",bg=LIGHT).pack(side="left"); self.date_entry(controls,self.report_to_date,13).pack(side="left",padx=(4,10))
@@ -316,7 +324,7 @@ class ReportsMixin:
         gl=tk.Frame(nested,bg=LIGHT); bs=tk.Frame(nested,bg=LIGHT); vat=tk.Frame(nested,bg=LIGHT); cash=tk.Frame(nested,bg=LIGHT); cash_outlook=tk.Frame(nested,bg=LIGHT); aging=self.ageing_tab; comparative=tk.Frame(nested,bg=LIGHT)
         nested.add(gl,text="General Ledger"); nested.add(bs,text="Balance Sheet"); nested.add(vat,text="Lebanese VAT Report"); nested.add(cash,text="Cash Flow"); nested.add(cash_outlook,text="Cash Flow Outlook"); nested.add(comparative,text="Comparative P&L"); self.ageing_page=aging; self.build_budget_page(nested); self.build_projection_page(nested); self.build_business_reports_page(nested)
         self.ledger_tree=self.table(gl,[("date","Date",95),("entry","Entry",90),("account","Account",85),("currency","Currency",70),("name","Account Name",180),("description","Description",200),("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
-        self.report_buttons(gl,"ledger")
+        self.report_buttons(gl,"ledger"); self.ledger_tree._totals_skip={"balance"}
         self.balance_tree=self.table(bs,[("type","Type",90),("account","Account",90),("currency","Currency",80),("name","Account Name",280),("debit","Debit",120),("credit","Credit",120),("balance","Balance",130)])
         self.report_buttons(bs,"balance")
         self.vat_tree=self.table(vat,[("currency","Currency",85),("type","Type",100),("invoices","Count",75),("subtotal","Before VAT",130),("vat","VAT",110),("total","Total",130)])

@@ -14,6 +14,7 @@ from desktop_dimensions import DimensionsMixin
 from desktop_stage3 import Stage3Mixin
 from desktop_inventory import InventoryMixin
 from desktop_production import ProductionMixin
+from desktop_account_tools import AccountToolsMixin
 from desktop_v22 import V22Mixin
 from desktop_invoices import InvoicesMixin
 from desktop_parties import PartiesMixin
@@ -23,7 +24,7 @@ from desktop_settings import SettingsMixin
 from desktop_payroll_sheet import PayrollSheetMixin
 from desktop_projection import ProjectionMixin
 
-class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, ProductionMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
+class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, ProductionMixin, AccountToolsMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
@@ -480,6 +481,9 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         threading.Thread(target=work,daemon=True).start()
 
     def main_screen(self):
+        # 2.9.66: pages of the previous company / year that were still waiting are dropped first (switching company
+        # while they were being built opened them on removed frames: 17 "page could not be loaded" messages)
+        self.__dict__["_pending_builders"]=[]; self._page_generation=getattr(self,"_page_generation",0)+1
         self.start_automatic_backup()
         if not hasattr(self, "show_department"): self.show_department=tk.BooleanVar(value=True)
         if not hasattr(self, "show_project"): self.show_project=tk.BooleanVar(value=True)
@@ -672,7 +676,8 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         # Only reached when normal lookup fails: a widget of a page that is not built yet.
         pending=self.__dict__.get("_pending_builders")
         # While a page is being built, a missing attribute means exactly what it meant before (not built yet).
-        if pending and not name.startswith("__") and not self.__dict__.get("_building_depth",0):
+        # 2.9.66: flags such as _update_checked are not page widgets: never build pages for them
+        if pending and not name.startswith("_") and not self.__dict__.get("_building_depth",0):
             self.build_pending_pages()
             try: return object.__getattribute__(self,name)
             except AttributeError: pass
@@ -804,7 +809,7 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         tk.Label(search_bar,text="Search:",bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left")
         search_entry=tk.Entry(search_bar,textvariable=search_var,width=36); search_entry._is_search_entry=True
         search_entry.pack(side="left",padx=8)
-        tk.Label(search_bar,text="Ctrl+F  |  searches every column; amounts and dates work with or without , and -",bg=LIGHT,fg="#5f6b76",font=("Segoe UI",8)).pack(side="right")
+        hint=tk.Label(search_bar,text="Ctrl+F  |  searches every column; amounts and dates work with or without , and -",bg=LIGHT,fg="#5f6b76",font=("Segoe UI",8)); hint.pack(side="right")
         tk.Button(search_bar,text="Clear",command=lambda:search_var.set(""),bg=NAVY,fg="white",
                   border=0,padx=12,pady=3).pack(side="left")
 
@@ -823,6 +828,10 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
             fitted["width"]=event.width; total=sum(planned.values()) or 1; factor=min(1.0,max(0.45,(event.width-4)/total))
             for key,width in planned.items(): tree.column(key,width=max(40,int(width*factor)))
         tree.bind("<Configure>",fit_columns,add="+")
+        # 2.9.66: several rows with Ctrl / Shift or by dragging the mouse; their totals appear above the table
+        tree.configure(selectmode="extended"); enable_drag_select(tree)
+        totals=tk.Label(search_bar,text="",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")); totals.pack(side="left",padx=12)
+        tree._selection_totals=selection_totals(tree,columns,totals,hint)
 
         real_insert,real_delete=tree.insert,tree.delete
         tree._search_rows=[]

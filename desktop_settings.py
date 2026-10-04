@@ -16,12 +16,15 @@ class SettingsMixin:
         ttk.Combobox(controls,textvariable=self.new_account_type,values=["asset","liability","equity","income","expense"],state="readonly",width=9).pack(side="left",padx=3)
         self.action_button(controls,"Create Account",self.save_new_account).pack(side="left",padx=5)
         tk.Button(controls,text="Edit Selected Account",command=self.edit_selected_account,bg=GOLD,fg=NAVY,border=0,padx=12,pady=6,font=("Segoe UI",9,"bold")).pack(side="left",padx=5)
+        self.account_tool_buttons(controls)  # 2.9.66: delete (one or many), delete unused, move / transfer
         self.action_button(controls,tr(self.language.get(),"refresh"),self.load_accounts).pack(side="right")
         self.accounts_tree=self.table(self.accounts_tab,[
             ("code","Account",100),("parent","Parent",80),("english","English",270),
             ("french","French",270),("arabic","Arabic",270),("type","Type",90)])
         self.accounts_tree.bind("<Double-1>",lambda _event:self.edit_selected_account())
         self.accounts_tree.bind("<Return>",lambda _event:self.edit_selected_account())
+        self.accounts_tree.bind("<Delete>",lambda _event:self.delete_selected_accounts())
+        flow_toolbars(controls)
         self.load_accounts()
 
     def save_new_account(self):

@@ -50,6 +50,11 @@ def _load_lines(db, options):
     if branch_ids: among("e.branch_id", branch_ids)
     if options.get("exclude_closing", _truthy(options.get("profit_loss_only", False)) or _truthy(options.get("budget", False))):
         conditions.append("NOT (e.source_type='year_close' OR (e.voucher_type='05' AND e.description LIKE 'CLOSING 6&7 - %'))")
+    # 2.9.66: Trial balance / statement without the opening entries and / or without the closing entries
+    if _truthy(options.get("without_opening", False)):
+        conditions.append("NOT (e.source_type='opening' OR COALESCE(e.voucher_type,'')='04')")
+    if _truthy(options.get("without_closing", False)):
+        conditions.append("NOT (e.source_type='year_close' OR COALESCE(e.voucher_type,'')='05')")
     if department_ids: among("j.department_id", department_ids)
     if project_ids: among("j.project_id", project_ids)
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
@@ -318,6 +323,7 @@ def build_account_report(db, options):
             f"Accounts: {options.get('account_from') or 'first'} to {options.get('account_to') or 'last'}   Currencies: {', '.join(options.get('currencies') or []) or 'All'}   Columns: {column_text}",
             f"Period: {display_date(date_from) if date_from != '0000-01-01' else 'beginning'} to {display_date(date_to) if date_to != '9999-12-31' else 'today'}"
             + ("   (with carried-forward opening balances)" if carry else ""),
+            ("Without opening entries   " if _truthy(options.get("without_opening", False)) else "") + ("Without closing entries   " if _truthy(options.get("without_closing", False)) else "") +
             (f"Filters: {options['filter_text']}   " if options.get("filter_text") else "Department / project filter applied   " if options.get("department_id") or options.get("project_id") or options.get("department_ids") or options.get("project_ids") else "") + f"Printed: {display_date(options.get('print_date')) if options.get('print_date') else datetime.now().strftime('%d-%m-%Y')}"]
     return {"title": title, "meta": meta, "sections": sections, "account_count": len(items)}
 

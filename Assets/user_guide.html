@@ -27,7 +27,7 @@
 <header><h1>Saber Accounting — User Guide · دليل الاستخدام</h1><p>Saber for Audit</p></header>
 <nav>
   <a href="#start">Start · البداية</a><a href="#sales">Invoices · الفواتير</a><a href="#import">Import · الاستيراد</a>
-  <a href="#payroll">Payroll · الرواتب</a><a href="#vat">VAT · الضريبة</a><a href="#close">Closing · الإقفال</a>
+  <a href="#payroll">Payroll · الرواتب</a><a href="#vat">VAT · الضريبة</a><a href="#production">Production · الإنتاج</a><a href="#close">Closing · الإقفال</a>
   <a href="#backup">Backups · النسخ الاحتياطية</a><a href="#help">Problems · المشاكل</a>
 </nav>
 <main>
@@ -115,12 +115,27 @@
 </ol></div>
 </div></section>
 
-<section id="close"><h2>6. Closing the books · إقفال الفترة</h2><div class="pair">
+<section id="production"><h2>6. Production · الإنتاج</h2><div class="pair">
+<div><ol>
+<li><span class="path">Inventory &gt; Production &gt; Recipes</span>: choose the product, enter how many units the recipe makes, the materials and their quantities, and an extra cost per unit (labour, energy...). Press <b>Save Recipe</b>. A material can itself have a recipe.</li>
+<li><span class="path">Production Orders</span>: choose the product and the quantity; the materials are calculated from the recipe. For a special order change <b>Qty Used</b> or add / delete materials: only this order changes, the recipe stays as it is. Red = not enough in stock, amber = different from the recipe.</li>
+<li><b>Save Production</b>: the materials leave the "Materials from" warehouse and the product enters the "Product into" warehouse. Its cost = materials at their real cost (average or FIFO) + extra cost. If a purchase is entered later with an earlier date, the cost is updated by itself.</li>
+<li>No journal entry is needed: the stock (37) is valued at the year end with the products at their production cost. <span class="path">Production Report</span> shows what was made and what was used.</li>
+</ol></div>
+<div class="ar"><ol>
+<li><span class="path">Inventory &gt; Production &gt; Recipes</span>: اختر المنتج، وأدخل عدد الوحدات التي تنتجها الوصفة، والمواد وكمياتها، وكلفة إضافية لكل وحدة (يد عاملة، طاقة...). اضغط <b>Save Recipe</b>. يمكن أن يكون للمادة نفسها وصفة.</li>
+<li><span class="path">Production Orders</span>: اختر المنتج والكمية، فتُحسب المواد من الوصفة. لطلبية خاصة غيّر <b>Qty Used</b> أو أضف / احذف مواد: يتغيّر هذا الأمر فقط وتبقى الوصفة كما هي. الأحمر = المخزون غير كافٍ، والبرتقالي = مختلف عن الوصفة.</li>
+<li><b>Save Production</b>: تخرج المواد من مستودع "Materials from" ويدخل المنتج إلى مستودع "Product into". كلفته = المواد بكلفتها الفعلية (المتوسط أو FIFO) + الكلفة الإضافية. إذا أُدخلت فاتورة شراء لاحقاً بتاريخ أقدم، تتحدّث الكلفة تلقائياً.</li>
+<li>لا حاجة لقيد محاسبي: يُقيَّم المخزون (37) في آخر السنة والمنتجات بكلفة إنتاجها. <span class="path">Production Report</span> يعرض ما أُنتج وما استُهلك.</li>
+</ol></div>
+</div></section>
+
+<section id="close"><h2>7. Closing the books · إقفال الفترة</h2><div class="pair">
 <div><p>After filing a period: <span class="path">Settings &gt; Backup &amp; Restore &gt; Close the books</span>, enter the last date (for example 31-03-2026) and press <b>Lock</b>. Nothing dated on or before it can be added, changed or deleted. Only the administrator can <b>Unlock</b>. A backup is made before each lock and unlock.</p></div>
 <div class="ar"><p>بعد تقديم فترة: <span class="path">Settings &gt; Backup &amp; Restore &gt; Close the books</span>، أدخل آخر تاريخ (مثلاً 31-03-2026) واضغط <b>Lock</b>. لا يمكن إضافة أو تعديل أو حذف أي شيء بتاريخ قبله. المدير فقط يستطيع <b>Unlock</b>. تُنشأ نسخة احتياطية قبل كل إقفال وفتح.</p></div>
 </div></section>
 
-<section id="backup"><h2>7. Backups · النسخ الاحتياطية</h2><div class="pair">
+<section id="backup"><h2>8. Backups · النسخ الاحتياطية</h2><div class="pair">
 <div><ul>
 <li>A backup is made automatically every day when a company is opened (the newest 30 are kept).</li>
 <li>Every new backup is checked at once; the <b>Checked</b> column shows <b>ok</b>. If a check fails you are told immediately.</li>
@@ -135,7 +150,7 @@
 </ul></div>
 </div></section>
 
-<section id="help"><h2>8. Problems and updates · المشاكل والتحديثات</h2><div class="pair">
+<section id="help"><h2>9. Problems and updates · المشاكل والتحديثات</h2><div class="pair">
 <div><ul>
 <li>When something goes wrong, the details are written to the log: <span class="path">Settings &gt; Backup &amp; Restore &gt; Open Log Folder</span>. Send <b>saber.log</b> to support.</li>
 <li>When a new version exists, a gold button <b>New version … available</b> appears at the top. Make a backup, download <b>SaberAccountingSetup.exe</b> and run it; your data is kept.</li>

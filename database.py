@@ -16,9 +16,10 @@ from db_reports import ReportsStore
 from db_payroll import PayrollStore
 from db_dimensions import DimensionsStore
 from db_vat import VatStore
+from db_accounts import AccountsStore
 
 
-class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, RatesStore, ReportsStore, PayrollStore, DimensionsStore, VatStore):
+class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, RatesStore, ReportsStore, PayrollStore, DimensionsStore, VatStore, AccountsStore):
     _locks = {}
     _locks_guard = threading.Lock()
 

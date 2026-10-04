@@ -275,3 +275,60 @@ def flow_toolbars(*frames):
     for frame in frames:
         try: flow_toolbar(frame)
         except Exception: logging.getLogger("saber.ignored").debug("Toolbar left as it was", exc_info=True)
+
+
+# ---------------------------------------------------------------- 2.9.66: select several rows, see their totals
+def enable_drag_select(tree):
+    """Ctrl+click and Shift+click already select several rows; this adds: press the mouse on a row and drag over the
+    rows below (or above) to select them all."""
+    state = {"anchor": None}
+    def press(event):
+        state["anchor"] = None
+        if event.state & 0x0005: return  # Shift / Ctrl: the Treeview's own multi-selection
+        if tree.identify_region(event.x, event.y) in ("cell", "tree"): state["anchor"] = tree.identify_row(event.y) or None
+    def drag(event):
+        anchor = state["anchor"]
+        if not anchor or not tree.exists(anchor): return
+        row = tree.identify_row(event.y)
+        if not row:  # dragged above / below the visible rows: scroll and take the edge row
+            rows = tree.get_children("")
+            if not rows: return
+            if event.y < 0: tree.yview_scroll(-1, "units")
+            elif event.y > tree.winfo_height(): tree.yview_scroll(1, "units")
+            return
+        rows = list(tree.get_children("")); a, b = rows.index(anchor), rows.index(row)
+        tree.selection_set(rows[min(a, b):max(a, b) + 1]); tree.focus(row)
+    tree.bind("<ButtonPress-1>", press, add="+"); tree.bind("<B1-Motion>", drag, add="+")
+    return tree
+
+
+def _amount(value):
+    text = str(value if value is not None else "").replace(",", "").strip()
+    if text.startswith("(") and text.endswith(")"): text = "-" + text[1:-1]
+    try: return float(text)
+    except ValueError: return None
+
+
+def selection_totals(tree, columns, label, hint=None):
+    """With 2 or more rows selected, the label shows how many and the total of every amount column (Debit, Credit,
+    Total, VAT...): an automatic sum like the status bar of Excel."""
+    amount_columns = [(index, key, title) for index, (key, title, *_rest) in enumerate(columns) if is_amount_column(key, title)]
+    def update(_event=None):
+        skip = getattr(tree, "_totals_skip", ())  # e.g. a running balance, whose sum means nothing
+        try: selected = tree.selection()
+        except tk.TclError: return
+        if len(selected) < 2 or not amount_columns:
+            label.config(text="")
+            if hint is not None and not hint.winfo_manager(): hint.pack(side="right")
+            return
+        if hint is not None and hint.winfo_manager(): hint.pack_forget()  # room for the totals
+        sums = {}
+        for iid in selected:
+            values = tree.item(iid, "values")
+            for index, key, title in amount_columns:
+                if key in skip: continue
+                number = _amount(values[index]) if index < len(values) else None
+                if number is not None: sums[title] = sums.get(title, 0.0) + number
+        label.config(text=f"{len(selected)} selected   " + "   ".join(f"{title}: {total:,.2f}" for title, total in sums.items()))
+    tree.bind("<<TreeviewSelect>>", update, add="+")
+    return update

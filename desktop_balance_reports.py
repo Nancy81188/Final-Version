@@ -18,7 +18,8 @@ class BalanceReportsMixin:
              "posting": tk.StringVar(value="Posted only"), "first_column": tk.StringVar(value="account"), "second_column": tk.StringVar(value="LBP"), "party": tk.StringVar()}
         flags = {name: tk.BooleanVar(value=default) for name, default in (("summary", False), ("by_due_date", False), ("reference", statement), ("with_branch", False),
                  ("detailed", statement), ("include_zero", False), ("order_by_description", False), ("non_zero_only", False), ("chapters", False), ("sub_chapters", False),
-                 ("balance_sheet_only", False), ("profit_loss_only", False), ("balance_format", False), ("carry_forward", True), ("monthly", False))}
+                 ("balance_sheet_only", False), ("profit_loss_only", False), ("balance_format", False), ("carry_forward", True), ("monthly", False),
+                 ("without_opening", False), ("without_closing", False))}
         currencies = {code: tk.BooleanVar(value=True) for code in self.currency_codes}
         box = tk.LabelFrame(page, text="Statement of Account - options" if statement else "Balance des Comptes - options", bg=LIGHT, padx=8, pady=6)
         box.pack(fill="x", padx=10, pady=(8, 4))
@@ -51,7 +52,8 @@ class BalanceReportsMixin:
         groups = [("Lines", [("summary", "Summary (Resume)"), ("by_due_date", "By Due Date"), ("reference", "Reference"), ("with_branch", "With Branch")]),
                   ("Accounts", [("detailed", "Detailed Account (statement)"), ("include_zero", "All accounts"), ("order_by_description", "Order by Description"), ("non_zero_only", "Non-zero Balances only")]),
                   ("Grouping", [("chapters", "Chapters (class)"), ("sub_chapters", "Sub-chapters"), ("balance_sheet_only", "Balance Sheet (1-5)"), ("profit_loss_only", "Profit & Loss (6-7)")]),
-                  ("Format", [("balance_format", "Format Balance (Dr / Cr balance)"), ("carry_forward", "With Carry Forward (opening)"), ("monthly", "Monthly")])]
+                  ("Format", [("balance_format", "Format Balance (Dr / Cr balance)"), ("carry_forward", "With Carry Forward (opening)"), ("monthly", "Monthly"),
+                              ("without_opening", "Without Opening entries"), ("without_closing", "Without Closing entries")])]
         for title, items in groups:
             frame = tk.LabelFrame(options, text=title, bg=LIGHT, padx=4); frame.pack(side="left", fill="y", padx=(0, 6))
             for name, label in items: tk.Checkbutton(frame, text=label, variable=flags[name], bg=LIGHT, anchor="w").pack(anchor="w")

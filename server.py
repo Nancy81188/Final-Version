@@ -376,6 +376,11 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200,document)
         if path == "/api/accounts":
             return self._json(200, {"items": self.db.list_accounts()})
+        if path == "/api/accounts/usage":  # 2.9.66
+            codes=[c for c in self._query(parsed,"codes","").split(",") if c.strip()]
+            return self._json(200,{"items":list(self.db.account_usage(codes or None).values())})
+        if path == "/api/accounts/unused":
+            return self._json(200,{"items":self.db.unused_accounts(self._query(parsed,"scope","all"))})
         if path == "/api/accounts/next-number":
             query=parse_qs(parsed.query)
             try: return self._json(200,{"account_number":self.db.next_account_number(query.get("prefix",[""])[0])})
@@ -649,6 +654,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             try: result=self.db.save_branch(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(201,{"branch":result})
+        if path in ("/api/accounts/delete","/api/accounts/move","/api/accounts/transfer-balance"):  # 2.9.66
+            if user["role"]=="viewer": return self._json(403,{"error":"Viewer accounts cannot change the chart of accounts"})
+            if path=="/api/accounts/delete" and not self.master_db.user_can(user,"delete"):
+                return self._json(403,{"error":"You do not have permission to delete. Ask the administrator."})
+            try:
+                if path=="/api/accounts/delete": result=self.db.delete_accounts(body.get("codes") or [],user["id"])
+                elif path=="/api/accounts/move": result=self.db.move_account(body.get("from"),body.get("to"),user["id"],bool(body.get("merge_party")))
+                else: result=self.db.transfer_balance(body.get("from"),body.get("to"),body.get("date"),user["id"],body.get("description") or "")
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+            return self._json(200,result)
         if path == "/api/accounts":
             try: account=self.db.save_account(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
