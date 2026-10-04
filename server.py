@@ -379,6 +379,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/accounts/usage":  # 2.9.66
             codes=[c for c in self._query(parsed,"codes","").split(",") if c.strip()]
             return self._json(200,{"items":list(self.db.account_usage(codes or None).values())})
+        if path == "/api/accounts/lines":  # 2.9.67
+            try: return self._json(200,{"items":self.db.account_lines(self._query(parsed,"code",""),self._query(parsed,"from"),self._query(parsed,"to"))})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/accounts/unused":
             return self._json(200,{"items":self.db.unused_accounts(self._query(parsed,"scope","all"))})
         if path == "/api/accounts/next-number":
@@ -654,13 +657,14 @@ class ApiHandler(BaseHTTPRequestHandler):
             try: result=self.db.save_branch(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(201,{"branch":result})
-        if path in ("/api/accounts/delete","/api/accounts/move","/api/accounts/transfer-balance"):  # 2.9.66
+        if path in ("/api/accounts/delete","/api/accounts/move","/api/accounts/transfer-balance","/api/accounts/move-lines"):  # 2.9.66
             if user["role"]=="viewer": return self._json(403,{"error":"Viewer accounts cannot change the chart of accounts"})
             if path=="/api/accounts/delete" and not self.master_db.user_can(user,"delete"):
                 return self._json(403,{"error":"You do not have permission to delete. Ask the administrator."})
             try:
                 if path=="/api/accounts/delete": result=self.db.delete_accounts(body.get("codes") or [],user["id"])
                 elif path=="/api/accounts/move": result=self.db.move_account(body.get("from"),body.get("to"),user["id"],bool(body.get("merge_party")))
+                elif path=="/api/accounts/move-lines": result=self.db.move_lines(body.get("from"),body.get("to"),body.get("line_ids") or [],user["id"],bool(body.get("change_party",True)))
                 else: result=self.db.transfer_balance(body.get("from"),body.get("to"),body.get("date"),user["id"],body.get("description") or "")
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)

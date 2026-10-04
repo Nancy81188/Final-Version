@@ -75,28 +75,69 @@ class AccountToolsMixin:
         load(); return window
 
     def move_account_dialog(self):
+        """2.9.67: move the CHOSEN transactions of an account to another one (replacement on the same entries), move all of
+        them, or transfer the balance with a voucher."""
         selected = self.selected_account_codes()
-        window = tk.Toplevel(self); window.title("Move / Transfer an account"); window.configure(bg=LIGHT); window.transient(self); self.fit_dialog(window, 720, 400)
-        v = {"from": tk.StringVar(value=selected[0] if selected else ""), "to": tk.StringVar(), "mode": tk.StringVar(value="move"),
-             "merge": tk.BooleanVar(value=True), "date": tk.StringVar(value=self.fiscal_today()), "description": tk.StringVar()}
-        grid = tk.Frame(window, bg=LIGHT); grid.pack(fill="x", padx=14, pady=10)
+        window = tk.Toplevel(self); window.title("Move / Transfer between accounts"); window.configure(bg=LIGHT); window.transient(self); self.fit_dialog(window, 1060, 680, 900, 560)
+        year = getattr(self, "current_fiscal_year", "")
+        v = {"from": tk.StringVar(value=selected[0] if selected else ""), "to": tk.StringVar(), "mode": tk.StringVar(value="lines"), "merge": tk.BooleanVar(value=True),
+             "date": tk.StringVar(value=self.fiscal_today()), "description": tk.StringVar(), "date_from": tk.StringVar(value=f"01-01-{year}" if year else ""),
+             "date_to": tk.StringVar(value=f"31-12-{year}" if year else "")}
+        grid = tk.Frame(window, bg=LIGHT); grid.pack(fill="x", padx=14, pady=(10, 4))
         for row, (label, key) in enumerate((("From account", "from"), ("To account", "to"))):
-            tk.Label(grid, text=label, bg=LIGHT, font=("Segoe UI", 9, "bold")).grid(row=row, column=0, sticky="w", pady=4)
-            self.account_search_box(grid, v[key], 40).grid(row=row, column=1, sticky="w", padx=6, pady=4)
-        modes = tk.LabelFrame(window, text="What to do", bg=LIGHT, padx=8, pady=6); modes.pack(fill="x", padx=14, pady=4)
-        tk.Radiobutton(modes, text="Move ALL its transactions to the other account (history is reclassified; documents follow)", variable=v["mode"], value="move", bg=LIGHT).pack(anchor="w")
-        tk.Checkbutton(modes, text="   and merge the customer / supplier of the From account into the one of the To account", variable=v["merge"], bg=LIGHT).pack(anchor="w")
+            tk.Label(grid, text=label, bg=LIGHT, font=("Segoe UI", 9, "bold")).grid(row=row, column=0, sticky="w", pady=3)
+            self.account_search_box(grid, v[key], 44).grid(row=row, column=1, sticky="w", padx=6, pady=3)
+        modes = tk.LabelFrame(window, text="What to do", bg=LIGHT, padx=8, pady=4); modes.pack(fill="x", padx=14, pady=4)
+        tk.Radiobutton(modes, text="Move the CHOSEN transactions below to the To account (the same entries, the account is replaced - no new voucher)",
+                       variable=v["mode"], value="lines", bg=LIGHT).pack(anchor="w")
+        tk.Radiobutton(modes, text="Move ALL its transactions to the To account", variable=v["mode"], value="move", bg=LIGHT).pack(anchor="w")
+        tk.Checkbutton(modes, text="   both accounts are customers / suppliers: the documents moved go to the customer / supplier of the To account (Move ALL: merge them)",
+                       variable=v["merge"], bg=LIGHT).pack(anchor="w")
         balance = tk.Frame(modes, bg=LIGHT); balance.pack(anchor="w", fill="x")
-        tk.Radiobutton(balance, text="Transfer its BALANCE on", variable=v["mode"], value="balance", bg=LIGHT).pack(side="left")
+        tk.Radiobutton(balance, text="Transfer only its BALANCE on", variable=v["mode"], value="balance", bg=LIGHT).pack(side="left")
         self.date_entry(balance, v["date"], 11).pack(side="left", padx=4)
         tk.Label(balance, text="with a journal voucher (history stays). Details", bg=LIGHT).pack(side="left")
         tk.Entry(balance, textvariable=v["description"], width=22).pack(side="left", padx=4)
+        lines_box = tk.LabelFrame(window, text="Transactions of the From account - choose with Ctrl / Shift or drag the mouse", bg=LIGHT, padx=6, pady=4)
+        lines_box.pack(fill="both", expand=True, padx=14, pady=4)
+        bar = tk.Frame(lines_box, bg=LIGHT); bar.pack(fill="x")
+        tk.Label(bar, text="From", bg=LIGHT).pack(side="left"); self.date_entry(bar, v["date_from"], 11).pack(side="left", padx=(4, 8))
+        tk.Label(bar, text="To", bg=LIGHT).pack(side="left"); self.date_entry(bar, v["date_to"], 11).pack(side="left", padx=(4, 8))
+        self.action_button(bar, "Show Transactions", lambda: load()).pack(side="left", padx=4)
+        tk.Button(bar, text="Select All", command=lambda: tree.selection_set(tree.get_children()), bg=NAVY, fg="white", border=0, padx=10, pady=4).pack(side="left", padx=4)
+        totals = tk.Label(bar, text="", bg=LIGHT, fg=NAVY, font=("Segoe UI", 9, "bold")); totals.pack(side="left", padx=10)
+        frame = tk.Frame(lines_box, bg=LIGHT); frame.pack(fill="both", expand=True, pady=4)
+        columns = [("date", "Date", 90), ("entry", "Entry", 120), ("description", "Description", 300), ("party", "Customer / Supplier", 170),
+                   ("currency", "Currency", 70), ("debit", "Debit", 100), ("credit", "Credit", 100)]
+        tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", selectmode="extended", height=10)
+        for key, label, width in columns: tree.heading(key, text=label); tree.column(key, width=width, anchor="e" if key in ("debit", "credit") else "w")
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview); tree.configure(yscrollcommand=scroll.set)
+        tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y")
+        enable_drag_select(tree); selection_totals(tree, columns, totals)
+        def code(key): return v[key].get().split(" - ", 1)[0].strip()
+        def load():
+            if not code("from"): return messagebox.showwarning("Move / Transfer", "Choose the From account", parent=window)
+            try: rows = self.client.account_lines(code("from"), v["date_from"].get().strip(), v["date_to"].get().strip())
+            except Exception as exc: return messagebox.showerror("Move / Transfer", str(exc), parent=window)
+            tree.delete(*tree.get_children())
+            for r in rows:
+                text = r["description"] + (f' - {r["line_description"]}' if r["line_description"] and r["line_description"] != r["description"] else "")
+                tree.insert("", "end", iid=str(r["id"]), values=(r["entry_date"], r["entry_number"], text, r["party_name"], r["currency"],
+                                                                f'{r["debit"]:,.2f}' if r["debit"] else "", f'{r["credit"]:,.2f}' if r["credit"] else ""))
+            lines_box.config(text=f"{len(rows)} transaction(s) of {code('from')} - choose with Ctrl / Shift or drag the mouse")
         def run():
-            source = v["from"].get().split(" - ", 1)[0].strip(); target = v["to"].get().split(" - ", 1)[0].strip()
+            source, target = code("from"), code("to")
             if not source or not target: return messagebox.showwarning("Move / Transfer", "Choose both accounts", parent=window)
             try:
-                if v["mode"].get() == "move":
-                    if not messagebox.askyesno("Move / Transfer", f"Move every transaction of {source} to {target}?\nA backup is advised first.", parent=window): return
+                if v["mode"].get() == "lines":
+                    chosen = list(tree.selection())
+                    if not chosen: return messagebox.showwarning("Move / Transfer", "Show the transactions and choose the ones to move", parent=window)
+                    if not messagebox.askyesno("Move / Transfer", f"Book {len(chosen)} transaction(s) of {source} on {target} instead?", parent=window): return
+                    result = self.client.move_account_lines(source, target, chosen, bool(v["merge"].get()))
+                    text = (f'{result["lines"]} transaction(s) moved from {source} to {target}; {result["documents"]} document(s) now name {target}.' +
+                            (f'\nCustomer / supplier changed: {result["party_changed"]}.' if result.get("party_changed") else ""))
+                elif v["mode"].get() == "move":
+                    if not messagebox.askyesno("Move / Transfer", f"Move EVERY transaction of {source} to {target}?\nA backup is advised first.", parent=window): return
                     result = self.client.move_account(source, target, bool(v["merge"].get()))
                     text = (f'{result["lines"]} journal line(s) and {result["documents"]} document field(s) moved from {source} to {target}.' +
                             (f'\n{result["merged_party"]} merged into the customer / supplier of {target}.' if result.get("merged_party") else "") +
@@ -106,11 +147,14 @@ class AccountToolsMixin:
                     text = "\n".join(f'{x["voucher"]}: {abs(x["amount"]):,.2f} {x["currency"]} from {source} to {target}' for x in result["vouchers"])
             except Exception as exc: return messagebox.showerror("Move / Transfer", str(exc), parent=window)
             self._after_account_change()
-            for loader in ("load_journal",):
-                try: getattr(self, loader)()
-                except Exception: pass
-            messagebox.showinfo("Move / Transfer", text, parent=window); window.destroy()
-        buttons = tk.Frame(window, bg=LIGHT); buttons.pack(fill="x", padx=14, pady=10)
-        tk.Button(buttons, text="Run", command=run, bg=GOLD, fg=NAVY, border=0, padx=20, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left")
-        tk.Button(buttons, text="Cancel", command=window.destroy, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=6)
+            try: self.load_journal()
+            except Exception: pass
+            messagebox.showinfo("Move / Transfer", text, parent=window)
+            if v["mode"].get() == "lines": load()
+            else: window.destroy()
+        buttons = tk.Frame(window, bg=LIGHT); buttons.pack(fill="x", padx=14, pady=8)
+        tk.Button(buttons, text="Run", command=run, bg=GOLD, fg=NAVY, border=0, padx=22, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left")
+        tk.Button(buttons, text="Close", command=window.destroy, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=6)
+        window._load_lines = load; window._tree = tree; window._vars = v; window._run = run
+        if v["from"].get(): window.after(50, load)
         return window

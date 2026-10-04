@@ -1,5 +1,13 @@
 # Saber Accounting MVP
 
+## Version 2.9.68 (Uploaded Data filters)
+- Uploaded Data: Branch and Type are tick lists (one, several or All), and D / C ticks show the debit rows (sales), the credit rows (purchases, expenses) or both.
+- Tests: test_v2_9_68.py.
+
+## Version 2.9.67 (move chosen transactions between accounts)
+- Chart of Accounts > Move / Transfer...: "Move the CHOSEN transactions" lists the transactions of the From account (date range), choose some (Ctrl / Shift / drag, their total shows) and Run: those same entries are booked on the To account (replacement, no new voucher). The invoice / payment / expense behind each line names the new account too (editing it later keeps the change); when both accounts are customers / suppliers, those documents move to the new customer / supplier (can be unticked).
+- Tests: test_v2_9_67.py.
+
 ## Version 2.9.66 (accounts tools, several rows, trial balance options)
 - Fixed: Financial Reports opened before the Inventory page was ready ("no attribute 'ageing_tab'").
 - Fixed: Switch Company / Year while pages were still loading showed up to 17 "page could not be loaded" messages.

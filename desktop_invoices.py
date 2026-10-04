@@ -8,7 +8,21 @@ class InvoicesMixin:
     def build_invoices(self):
         l=self.language.get(); self.invoice_tree=self.table(self.invoices_tab,[("no",tr(l,"invoice_no"),90),("status","Status",85),("date",tr(l,"date"),90),("party",tr(l,"party"),150),("branch","Branch",120),("kind","Type",90),("currency",tr(l,"currency"),60),("deductible","Deductible",95),("non_deductible","Non-Deductible",105),("total",tr(l,"total"),90),("payment_method","Payment Method",110),("paid","Paid Amount",100),("lbp","LBP Eq.",105),("usd","USD Eq.",90),("debit","D",80),("credit","C",80),("vat_status","VAT Deductible",95)])
         invoice_actions=tk.Frame(self.invoices_tab,bg=LIGHT); invoice_actions.pack(fill="x",anchor="w",pady=(0,10))
-        tk.Label(invoice_actions,text="Branch:",bg=LIGHT).pack(side="left"); self.branch_selector(invoice_actions,self.invoice_branch,15,True).pack(side="left",padx=4)
+        # 2.9.68: Branch and Type are tick lists (one, several or All); D / C show the debit and / or credit rows
+        from multi_select import MultiSelect
+        if self.invoice_branch.get() in ("","All Branches"): self.invoice_branch.set("All")
+        self.invoice_type_filter=tk.StringVar(master=self,value="All"); self.invoice_show_debit=tk.BooleanVar(master=self,value=True); self.invoice_show_credit=tk.BooleanVar(master=self,value=True)
+        def branch_names(box=None):
+            try: names=[row["name"] for row in self.client.branches()]
+            except Exception: names=[]
+            if box is not None: box["values"]=names
+            return names
+        tk.Label(invoice_actions,text="Branch:",bg=LIGHT).pack(side="left")
+        MultiSelect(invoice_actions,self.invoice_branch,branch_names(),width=15,title="Branch",on_change=self.load_invoices,before_open=branch_names,bg=LIGHT).pack(side="left",padx=4)
+        tk.Label(invoice_actions,text="Type:",bg=LIGHT).pack(side="left",padx=(6,0))
+        self.invoice_type_box=MultiSelect(invoice_actions,self.invoice_type_filter,[],width=14,title="Type",on_change=self.load_invoices,bg=LIGHT); self.invoice_type_box.pack(side="left",padx=4)
+        tk.Checkbutton(invoice_actions,text="D",variable=self.invoice_show_debit,command=self.load_invoices,bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left")
+        tk.Checkbutton(invoice_actions,text="C",variable=self.invoice_show_credit,command=self.load_invoices,bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,6))
         tk.Label(invoice_actions,text="Sort By:",bg=LIGHT).pack(side="left",padx=(8,2))
         ttk.Combobox(invoice_actions,textvariable=self.invoice_sort_by,state="readonly",width=16,
             values=["Date","Invoice Number","Customer / Supplier","Account","Amount","Currency"]).pack(side="left",padx=2)
@@ -58,7 +72,15 @@ class InvoicesMixin:
         if account: rows=[row for row in rows if account in (str(row.get("supplier_account") or ""),str(row.get("vat_account") or ""),str(row.get("expense_account") or ""),str(row.get("expense_no_vat_account") or ""))]
         selected=self.view_currency.get()
         rows=[r for r in rows if selected=="All Currencies" or r["currency"]==selected]
-        if self.invoice_branch.get()!="All Branches": rows=[r for r in rows if r.get("branch_name")==self.invoice_branch.get()]
+        from multi_select import chosen_values, matches
+        branches=chosen_values(self.invoice_branch.get()) if self.invoice_branch.get()!="All Branches" else []
+        if branches: rows=[r for r in rows if matches(r.get("branch_name") or "Head Office",self.invoice_branch.get())]
+        if hasattr(self,"invoice_type_box"):  # 2.9.68: Type tick list, D / C ticks
+            self.invoice_type_box["values"]=sorted({self.invoice_entry_label(r) for r in rows})
+            if chosen_values(self.invoice_type_filter.get()): rows=[r for r in rows if matches(self.invoice_entry_label(r),self.invoice_type_filter.get())]
+            show_debit,show_credit=self.invoice_show_debit.get(),self.invoice_show_credit.get()
+            if not (show_debit and show_credit):
+                rows=[r for r in rows if (show_debit and float(r.get("debit") or 0)) or (show_credit and float(r.get("credit") or 0))]
         sort_name=self.invoice_sort_by.get()
         def invoice_key(row):
             if sort_name=="Date": return sortable_date(row.get("invoice_date"))
@@ -72,12 +94,16 @@ class InvoicesMixin:
         self.invoice_tree.delete(*self.invoice_tree.get_children())
         for r in rows:
             lbp,usd=self.exchange_equivalents(float(r["total"] or 0),r["currency"],rates)
-            entry_label=(("Sales" if r.get("kind")=="sale" else "Purchase")+" Return" if r.get("is_return")
-                         else ("Sales" if r.get("kind")=="sale" else "Supplier")+" Credit Note" if r.get("doc_subtype")=="credit_note"
-                         else ("Sales" if r.get("kind")=="sale" else "Supplier")+" Debit Note" if r.get("doc_subtype")=="debit_note"
-                         else r.get("entry_type") or r["kind"])
+            entry_label=self.invoice_entry_label(r)
             self.invoice_tree.insert("","end",iid=str(r["id"]),values=(r["invoice_number"],"DELETED" if r.get("status")=="deleted" else str(r.get("status") or "").title(),r["invoice_date"],r["party_name"],r.get("branch_name") or "Head Office",entry_label,r["currency"],r.get("deductible_subtotal",r["subtotal"]),r.get("non_deductible_subtotal",0),r["total"],r.get("payment_method") or "",r.get("amount_paid") or 0,"" if lbp is None else f"{lbp:,.2f}","" if usd is None else f"{usd:,.2f}",r["debit"],r["credit"],("Yes" if r.get("vat_recoverable",1) else "NO") if r.get("kind")=="purchase" and float(r.get("vat") or 0) else ""),tags=("deleted",) if r.get("status")=="deleted" else ())
         self.invoice_tree.tag_configure("deleted",foreground="#8B1E1E")
+
+    @staticmethod
+    def invoice_entry_label(r):
+        return (("Sales" if r.get("kind")=="sale" else "Purchase")+" Return" if r.get("is_return")
+                else ("Sales" if r.get("kind")=="sale" else "Supplier")+" Credit Note" if r.get("doc_subtype")=="credit_note"
+                else ("Sales" if r.get("kind")=="sale" else "Supplier")+" Debit Note" if r.get("doc_subtype")=="debit_note"
+                else r.get("entry_type") or r["kind"])
 
     def vat_classification_dialog(self):
         selected=self.invoice_tree.selection()

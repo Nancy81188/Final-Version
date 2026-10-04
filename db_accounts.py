@@ -175,3 +175,63 @@ class AccountsStore:
             vouchers.append({"currency": row["currency"], "amount": float(amount), "voucher": saved["voucher"]["entry_number"]})
         if not vouchers: raise ValueError(f"{old['code']} has no balance on {display_date(day)}")
         return {"from": old["code"], "to": new["code"], "vouchers": vouchers}
+
+    # ------------------------------------------------------------ 2.9.67: move chosen transactions only
+    SOURCE_TABLES = {"invoice": "invoices", "invoice_payment": "invoices", "vat_reclass": "invoices", "payment": "payments", "expense": "expenses"}
+
+    def account_lines(self, code, date_from=None, date_to=None):
+        """The journal lines of one account (newest last), to choose which ones move to another account."""
+        day = """CASE WHEN e.entry_date GLOB '??-??-????' THEN substr(e.entry_date,7,4)||'-'||substr(e.entry_date,4,2)||'-'||substr(e.entry_date,1,2) ELSE e.entry_date END"""
+        conditions = ["a.code=?"]; parameters = [_code(code)]
+        if date_from: conditions.append(f"{day}>=?"); parameters.append(iso_date(date_from))
+        if date_to: conditions.append(f"{day}<=?"); parameters.append(iso_date(date_to))
+        with self.connect() as db:
+            self._account_row(db, code, "From")
+            rows = [dict(r) for r in db.execute(f"""SELECT j.id,{day} entry_date,e.entry_number,e.description,COALESCE(j.description,'') line_description,e.currency,
+                CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit,COALESCE(p.name,'') party_name,e.source_type,e.source_id
+                FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id LEFT JOIN parties p ON p.id=j.party_id
+                WHERE {' AND '.join(conditions)} ORDER BY {day},e.id,j.id""", parameters)]
+        return rows
+
+    def move_lines(self, source, target, line_ids, user_id, change_party=True):
+        """The chosen lines of `source` are booked on `target` instead (a replacement, no new voucher). The document
+        behind each line (invoice, payment, expense) gets the new account too, so editing it later keeps the change.
+        With change_party, when both accounts belong to a customer / supplier, those documents move to the new one."""
+        ids = sorted({int(i) for i in line_ids or [] if str(i).strip().lstrip("-").isdigit()})
+        if not ids: raise ValueError("Select the transactions to move")
+        with self.connect() as db:
+            old = self._account_row(db, source, "From"); new = self._account_row(db, target, "To")
+            if old["id"] == new["id"]: raise ValueError("Choose two different accounts")
+            if db.execute("SELECT 1 FROM accounts WHERE parent_id=? LIMIT 1", (new["id"],)).fetchone() and len(new["code"]) < 9:
+                raise ValueError(f"{new['code']} is a heading account (it has sub-accounts): choose a detail account")
+            marks = ",".join("?" * len(ids))
+            rows = [dict(r) for r in db.execute(f"""SELECT j.id,j.account_id,j.party_id,e.entry_date,e.source_type,e.source_id FROM journal_lines j
+                JOIN journal_entries e ON e.id=j.entry_id WHERE j.id IN ({marks})""", ids)]
+            if len(rows) != len(ids) or any(r["account_id"] != old["id"] for r in rows):
+                raise ValueError(f"Some of the chosen lines are not on account {old['code']} any more: refresh the list")
+        for day in sorted({r["entry_date"] for r in rows}): self._assert_period_open(day)
+        with self.connect() as db:
+            old_party = db.execute("SELECT * FROM parties WHERE account_number=? ORDER BY id LIMIT 1", (old["code"],)).fetchone()
+            new_party = db.execute("SELECT * FROM parties WHERE account_number=? ORDER BY id LIMIT 1", (new["code"],)).fetchone()
+            swap_party = bool(change_party and old_party and new_party and old_party["id"] != new_party["id"])
+            db.execute(f"UPDATE journal_lines SET account_id=? WHERE id IN ({marks})", [new["id"]] + ids)
+            if swap_party: db.execute(f"UPDATE journal_lines SET party_id=? WHERE id IN ({marks}) AND party_id=?", [new_party["id"]] + ids + [old_party["id"]])
+            columns = {}
+            for table, column in self._existing_columns(db): columns.setdefault(table, []).append(column)
+            documents = set()
+            for row in rows:
+                table = self.SOURCE_TABLES.get(row["source_type"])
+                if not table or not row["source_id"] or (table, row["source_id"]) in documents: continue
+                documents.add((table, row["source_id"]))
+                for column in columns.get(table, []):
+                    db.execute(f"UPDATE {table} SET {column}=? WHERE id=? AND ({column}=? OR {column} LIKE ?)", (new["code"], row["source_id"], old["code"], old["code"] + " - %"))
+                if swap_party and table in ("invoices", "payments"):
+                    db.execute(f"UPDATE {table} SET party_id=? WHERE id=? AND party_id=?", (new_party["id"], row["source_id"], old_party["id"]))
+                    # the other lines of that document (VAT, cash...) name the customer / supplier too
+                    db.execute("""UPDATE journal_lines SET party_id=? WHERE party_id=? AND entry_id IN (SELECT id FROM journal_entries WHERE source_type=? AND source_id=?)""",
+                               (new_party["id"], old_party["id"], row["source_type"], row["source_id"]))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
+                       (user_id, "move-lines", "account", json.dumps({"from": old["code"], "to": new["code"], "lines": ids, "documents": len(documents),
+                                                                     "party": [old_party["name"], new_party["name"]] if swap_party else None}, ensure_ascii=False), utcnow()))
+        return {"from": old["code"], "to": new["code"], "lines": len(ids), "documents": len(documents),
+                "party_changed": f'{old_party["name"]} -> {new_party["name"]}' if swap_party else None}
