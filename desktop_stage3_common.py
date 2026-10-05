@@ -16,6 +16,7 @@ from importer import read_customs_costs, read_expenses, read_invoices
 from chart_extra import EXPENSE_VAT, PURCHASE_VAT, SALES_VAT
 from pdf_import import asset_pdf_details, read_invoice_pdf, read_invoice_pdf_pages
 from report_export import export_excel, export_pdf
+from desktop_common import bulk_action  # 2.9.72: several purchases / expenses / payments deleted at once (was "bulk_action is not defined")
 
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
 PURCHASE_USES = {"Mixed (partial deduction)": "mixed", "Taxable sales only (100%)": "taxable", "Exempt sales only (0%)": "exempt"}

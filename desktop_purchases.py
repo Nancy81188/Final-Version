@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
 
@@ -37,7 +38,7 @@ class PurchasesMixin:
     # ---- purchases
     def build_purchases_page(self, page, totals_parent=None, cost_parent=None):
         f = {"id": None, "pdf": None, "vars": {k: tk.StringVar() for k in ("supplier", "number", "date", "due", "currency", "type", "taxable", "exempt", "rate", "vat", "account", "vat_account")}}
-        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["type"].set("Purchases"); v["rate"].set("11"); v["account"].set("601100000"); v["vat_account"].set("44210")
+        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["type"].set("Purchases"); v["rate"].set(f"{vat_rate(self):g}"); v["account"].set("601100000"); v["vat_account"].set("44210")
         f["department"] = tk.StringVar(); f["project"] = tk.StringVar(); f["vat_typed"] = False; self.purchase_form = f
         f["use"] = tk.StringVar(value="Mixed (partial deduction)"); f["reverse"] = tk.BooleanVar(value=False)
         f["discount_percent"] = tk.StringVar(value="0"); f["discount_amount"] = tk.StringVar(value="0"); f["discount_mode"] = "percent"
@@ -254,7 +255,7 @@ class PurchasesMixin:
                     if not self.item_by_code(item["sku"]): created += 1
                     cost = line["unit_price"] * (1 - (line.get("discount_percent") or 0) / 100)
                     lines.append({"item_code": item["sku"], "description": item["name"], "quantity": line["quantity"], "unit": line.get("unit") or item.get("unit"), "unit_price": round(cost, 4),
-                                  "vat_rate": line.get("vat_rate", 11), "discount_percent": line.get("discount_percent") or 0, "warehouse": invoice.get("warehouse") or "MAIN"})
+                                  "vat_rate": line.get("vat_rate", vat_rate(self)), "discount_percent": line.get("discount_percent") or 0, "warehouse": invoice.get("warehouse") or "MAIN"})
                 self.client.create_manual_invoice({"invoice_number": invoice["invoice_number"], "invoice_date": invoice["invoice_date"], "party_name": invoice["party_name"], "kind": "purchases",
                                                    "currency": invoice["currency"], "status": "posted", "source_file": Path(path).name}, lines); done += 1
                 self.load_inventory()
@@ -694,7 +695,7 @@ class PurchasesMixin:
                            ("exempt", f'{float(row.get("non_deductible_subtotal") or 0):.2f}'), ("vat", f'{float(row.get("vat") or 0):.2f}'), ("account", row.get("expense_account") or ""),
                            ("vat_account", row.get("vat_account") or "")):
             v[key].set(value)
-        taxable = float(row.get("deductible_subtotal") or 0); v["rate"].set(f'{float(row.get("vat") or 0) / taxable * 100:g}' if taxable else "11")
+        taxable = float(row.get("deductible_subtotal") or 0); v["rate"].set(f'{float(row.get("vat") or 0) / taxable * 100:g}' if taxable else f"{vat_rate(self):g}")
         lists = self.dimension_lists()
         f["department"].set(next((f'{d["code"]} - {d["name"]}' for d in lists["departments"] if d["id"] == row.get("department_id")), "(none)"))
         f["project"].set(next((f'{p["code"]} - {p["name"]}' for p in lists["projects"] if p["id"] == row.get("project_id")), "(none)"))

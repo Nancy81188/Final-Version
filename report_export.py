@@ -243,7 +243,8 @@ def export_invoice_pdf(path, invoice, items, logo_path=None, company=None):
     story.extend([table,Spacer(1,5*mm)])
 
     export=invoice.get("vat_treatment") in ("zero_rated","exempt")
-    vat_label="VAT 11%" if not export else "<strike>VAT 11%</strike> Export - zero rated (Art. 19)" if invoice.get("vat_treatment")=="zero_rated" else "<strike>VAT 11%</strike> Exempt (Art. 16-17)"
+    rate_text=invoice.get("vat_rate_text") or "11%"; vat_cur=invoice.get("vat_currency") or "LBP"  # 2.9.72: the company's VAT rate and currency
+    vat_label=f"VAT {rate_text}" if not export else f"<strike>VAT {rate_text}</strike> Export - zero rated (Art. 19)" if invoice.get("vat_treatment")=="zero_rated" else f"<strike>VAT {rate_text}</strike> Exempt (Art. 16-17)"
     tl=ParagraphStyle("t-l",parent=styles["Normal"],fontSize=9,alignment=TA_LEFT,textColor=colors.HexColor("#243544"))
     tr=ParagraphStyle("t-r",parent=styles["Normal"],fontSize=9,alignment=TA_RIGHT,textColor=colors.HexColor("#243544"))
     tlw=ParagraphStyle("t-lw",parent=tl,fontName="Helvetica-Bold",fontSize=10.5,textColor=colors.white)
@@ -262,9 +263,11 @@ def export_invoice_pdf(path, invoice, items, logo_path=None, company=None):
            [Paragraph("TOTAL",tlw),Paragraph(f"{money(total)} {cur}",trw)]]
     total_row=len(trows)-1; grey_rows=[]
     if invoice.get("lbp_rate"):
-        trows.append([Paragraph("VAT LBP Rate",tlg),Paragraph(f"{float(invoice['lbp_rate']):,.0f}",trg)]); grey_rows.append(len(trows)-1)
+        rate_value=float(invoice['lbp_rate']); rate_shown=f"{rate_value:,.0f}" if rate_value>=100 else f"{rate_value:,.4f}"
+        trows.append([Paragraph(f"VAT {vat_cur} Rate",tlg),Paragraph(rate_shown,trg)]); grey_rows.append(len(trows)-1)
     if invoice.get("vat_lbp") is not None:
-        trows.append([Paragraph("VAT 11% (LBP)",tlg),Paragraph(f"{float(invoice['vat_lbp']):,.0f} LBP",trg)]); grey_rows.append(len(trows)-1)
+        amount_shown=f"{float(invoice['vat_lbp']):,.0f}" if vat_cur=="LBP" else money(float(invoice['vat_lbp']))
+        trows.append([Paragraph(f"VAT {rate_text} ({vat_cur})",tlg),Paragraph(f"{amount_shown} {vat_cur}",trg)]); grey_rows.append(len(trows)-1)
     trows.append([Paragraph("Balance Due",tlw),Paragraph(f"{money(balance)} {'DB' if balance>=0 else 'CR'}",trw)])
     balance_row=len(trows)-1
     totals_table=Table(trows,colWidths=[42*mm,38*mm])

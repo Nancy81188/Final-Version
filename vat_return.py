@@ -66,8 +66,18 @@ def _lbp(value):
     return Decimal(str(value or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
+def _vat_setup(db):
+    """2.9.72: (standard rate as a fraction, VAT currency, second VAT currency) of this company: 0.11, LBP, USD in Lebanon."""
+    try: rate = Decimal(str(db.vat_rate_percent())) / Decimal("100")
+    except Exception: rate = RATE
+    try: first, second = db.vat_currencies()
+    except Exception: first, second = "LBP", "USD"
+    return rate, str(first or "LBP").upper(), str(second or "USD").upper()
+
+
 def _documents(db, start, end, currency, include_review):
     statuses = ("posted", "review") if include_review else ("posted",)
+    std_rate = _vat_setup(db)[0]
     documents = []; skipped = []; review_excluded = 0
     with db.connect() as connection:
         invoices = [dict(row) for row in connection.execute("""SELECT i.*,p.name party_name,COALESCE(NULLIF(p.mof_number,''),p.tax_number) party_mof FROM invoices i
@@ -90,7 +100,7 @@ def _documents(db, start, end, currency, include_review):
             "category": category, "currency": row["currency"], "base": _money(row.get("deductible_subtotal") or row.get("subtotal")),
             "exempt": _money(row.get("non_deductible_subtotal")), "vat": _money(row.get("vat")), "status": row["status"],
             "recoverable": category == "sales" or bool(int(row.get("vat_recoverable") if row.get("vat_recoverable") is not None else 1)),
-            "treatment": row.get("vat_treatment") or "standard", "use": row.get("vat_use") or "mixed"})
+            "treatment": row.get("vat_treatment") or "standard", "use": row.get("vat_use") or "mixed", "std_rate": std_rate})
         if row.get("doc_subtype") == "credit_note":  # a credit note reduces the supplies and the VAT of the period
             documents[-1].update(base=-documents[-1]["base"], exempt=-documents[-1]["exempt"], vat=-documents[-1]["vat"])
     for row in expenses:
@@ -101,7 +111,7 @@ def _documents(db, start, end, currency, include_review):
             "party": row.get("description") or "", "category": "expenses", "currency": row["currency"],
             "base": _money(row.get("with_vat_subtotal") or row.get("subtotal")), "exempt": _money(row.get("without_vat_subtotal")),
             "vat": _money(row.get("vat")), "status": "posted", "recoverable": bool(int(row.get("vat_recoverable") if row.get("vat_recoverable") is not None else 1)),
-            "treatment": "standard", "use": row.get("vat_use") or "mixed"})
+            "treatment": "standard", "use": row.get("vat_use") or "mixed", "std_rate": std_rate})
     documents.sort(key=lambda item: (item["date"], item["category"], str(item["number"])))
     return documents, skipped, review_excluded
 
@@ -155,7 +165,7 @@ def _classify(doc):
         return {"sales_base": base, "sales": vat, "sales_exempt": exempt}
     result = {}
     if doc["treatment"] == "reverse_charge":
-        vat = vat if vat else ((base + exempt) * RATE).quantize(CENT, rounding=ROUND_HALF_UP)
+        vat = vat if vat else ((base + exempt) * Decimal(str(doc.get("std_rate", RATE)))).quantize(CENT, rounding=ROUND_HALF_UP)
         result["reverse_output"] = vat
     if not doc["recoverable"] or doc["use"] == "exempt": result["blocked"] = vat
     else: result[doc["category"]] = vat; result["mixed" if doc["use"] == "mixed" else "full"] = vat  # "export" and "taxable" uses are fully deductible
@@ -192,13 +202,17 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
     start, end = quarter_range(year, quarter)
     currency = str(currency).upper() if currency and str(currency).upper() not in ("ALL", "ALL CURRENCIES") else None
     documents, skipped, review_excluded = _documents(db, start, end, currency, include_review)
+    # 2.9.72: everything is added up in the company's VAT currency (LBP in Lebanon: whole pounds, as before;
+    # another currency such as AED or EUR: 2 decimals). The "_lbp" names are kept for the saved returns.
+    std_rate, vat_currency, vat_second = _vat_setup(db)
+    rnd = _lbp if vat_currency == "LBP" else _money
     rates = {}
     def rate_of(code, day):
-        if code == "LBP": return Decimal("1")
+        if code == vat_currency: return Decimal("1")
         key = (code, day)
-        if key not in rates: rates[key] = db._converted_amount(Decimal("1"), code, "LBP", day)
+        if key not in rates: rates[key] = db._converted_amount(Decimal("1"), code, vat_currency, day)
         return rates[key]
-    to_lbp = lambda amount, code, day: _lbp(Decimal(amount) * rate_of(code, day))
+    to_lbp = lambda amount, code, day: rnd(Decimal(amount) * rate_of(code, day))
     # ---- partial deduction ratio (Art. 31): provisional for Q1-Q3, final annual ratio in Q4
     year_start = f"{int(year)}-01-01"; year_end = f"{int(year)}-12-31"
     ytd_detail = {}
@@ -229,7 +243,9 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
             line = values[key]; line["vat"] += value; line["vat_lbp"] += to_lbp(value, doc["currency"], doc["date"]); line["count"] += 1
             if key in ("purchases", "assets", "expenses", "customs", "reverse_output", "blocked"): line["base"] += base
         doc["deductible_share"] = "0%" if "blocked" in parts else (f"{ratio * 100:.2f}%" if doc["use"] == "mixed" else "100%")
-    if any(doc["currency"] != "LBP" for doc in documents):
+    if vat_currency != "LBP":
+        warnings.append(f"VAT return in {vat_currency} at {(std_rate * 100).normalize():f}%: the Lebanese MoF forms (Q11-2, recoverable-rate sheet) apply to LBP returns only - use the summary in {vat_currency}.")
+    elif any(doc["currency"] != "LBP" for doc in documents):
         warnings.append("Foreign-currency VAT uses the saved document-date accounting rate as an estimate. Decree 11230/2023 distinguishes imports (customs rate), professional customers (then-Sayrafa rate), telecom invoices and airport/port fees; it also addresses VAT actually collected at a higher value. Verify the applicable current rate, tax-point date and deductible VAT on each document before filing.")
     adjustments = list_adjustments(db, year, quarter)
     for adjustment in adjustments:
@@ -257,14 +273,14 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
             mixed = sum((values["mixed"]["vat_lbp"] for values in previous["per_currency"].values()), ZERO)
             saved = saved_return(db, year, previous_q)
             applied = Decimal(str(saved["deduction_ratio"])) if saved and saved.get("deduction_ratio") not in (None, "") else previous["deduction_ratio"]
-            change = (mixed * (ratio - applied)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            change = rnd(mixed * (ratio - applied))
             if mixed: adjustment_detail.append({"quarter": previous_q, "mixed_vat_lbp": mixed, "ratio_applied": applied, "adjustment_lbp": change})
             annual_adjustment += change
         totals_lbp["annual_adjustment"] = annual_adjustment
         totals_lbp["total_input"] += annual_adjustment; totals_lbp["net"] -= annual_adjustment; totals_lbp["non_deductible"] -= annual_adjustment
     source = "none"
     if credit_brought_forward not in (None, ""):
-        credit_bf = _lbp(credit_brought_forward); source = "manual"
+        credit_bf = rnd(credit_brought_forward); source = "manual"
     else:
         credit_bf = ZERO; previous_year, previous_q = previous_quarter(year, quarter)
         for candidate in ([db] if previous_year == int(year) else [previous_year_db, db]):
@@ -272,27 +288,33 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
             try: previous = saved_return(candidate, previous_year, previous_q)
             except Exception: previous = None
             if previous:
-                credit_bf = _lbp(previous["credit_carried_forward_lbp"]); source = f"Q{previous_q} {previous_year} saved return"; break
+                credit_bf = rnd(previous["credit_carried_forward_lbp"]); source = f"Q{previous_q} {previous_year} saved return"; break
     net_after_credit = totals_lbp["net"] - credit_bf
-    payable = _rounded_up(net_after_credit, end) if net_after_credit > 0 else ZERO
-    if net_after_credit > 0 and end >= "2024-11-25":
+    payable = (_rounded_up(net_after_credit, end) if vat_currency == "LBP" else rnd(net_after_credit)) if net_after_credit > 0 else ZERO
+    if net_after_credit > 0 and end >= "2024-11-25" and vat_currency == "LBP":
         warnings.append("Payable is estimated by rounding up to LBP 10,000; the cited MoF decision 1195 has not been verified as a VAT payable rule. Confirm the current filing/payment rounding with the VAT Directorate before filing.")
     credit = -net_after_credit if net_after_credit < 0 else ZERO
-    refund = _lbp(refund_requested) if refund_requested not in (None, "") else ZERO
+    refund = rnd(refund_requested) if refund_requested not in (None, "") else ZERO
     if refund < 0: raise ValueError("The refund requested cannot be negative")
-    if refund > credit: raise ValueError(f"The refund requested cannot exceed the credit of {credit:,.0f} LBP")
+    if refund > credit: raise ValueError(f"The refund requested cannot exceed the credit of {credit:,.2f} {vat_currency}")
     if refund:
         warnings.append("Refund eligibility is not validated. MoF guidance permits semiannual requests after Q2 or annual requests after year-end; quarterly requests require qualifying exporter status and are limited by the export proportion (Art. 30).")
     credit_cf = credit - refund
     saved = saved_return(db, year, quarter)
-    changed = bool(saved) and (_lbp(saved["net_lbp"]) != _lbp(totals_lbp["net"]) or _lbp(saved["credit_brought_forward_lbp"]) != credit_bf)
+    changed = bool(saved) and (rnd(saved["net_lbp"]) != rnd(totals_lbp["net"]) or rnd(saved["credit_brought_forward_lbp"]) != credit_bf)
+    # 2.9.72: the main figures also in the second VAT currency, at the rate of the last day of the period
+    try: second_rate = db._converted_amount(Decimal("1"), vat_currency, vat_second, end) if vat_second != vat_currency else Decimal("1")
+    except Exception: second_rate = None
+    second = {key: (_money(value * second_rate) if second_rate is not None else None) for key, value in
+              (("net", totals_lbp["net"]), ("payable", payable), ("credit_carried_forward", credit_cf), ("credit_brought_forward", credit_bf))}
     return {"year": int(year), "quarter": int(quarter), "date_from": start, "date_to": end, "due_date": due_date(year, quarter), "currency_filter": currency or "All",
         "include_review": bool(include_review), "per_currency": per_currency, "totals_lbp": totals_lbp,
         "deduction_ratio": ratio, "ratio_source": ratio_source, "ytd_turnover_lbp": {"taxable": ytd_taxable, "exempt": ytd_exempt}, "ytd_turnover_detail": ytd_detail if int(quarter) != 4 else final_detail, "annual_adjustment_detail": adjustment_detail,
         "credit_brought_forward_lbp": credit_bf, "credit_source": source, "net_after_credit_lbp": net_after_credit,
         "payable_lbp": payable, "refund_requested_lbp": refund, "credit_carried_forward_lbp": credit_cf, "documents": documents, "adjustments": adjustments,
         "skipped": skipped, "review_excluded": review_excluded, "warnings": warnings, "saved": saved, "changed_since_saved": changed,
-        "status": "saved" if saved and not changed else "changed after saving" if changed else "not saved"}
+        "status": "saved" if saved and not changed else "changed after saving" if changed else "not saved",
+        "vat_currency": vat_currency, "vat_second_currency": vat_second, "vat_rate": (std_rate * 100).normalize(), "second_rate": second_rate, "second": second}
 
 
 def _ensure_not_saved(db, year, quarter):
@@ -364,41 +386,51 @@ def export_sections(result):
     """Export an internal VAT calculation schedule plus supporting documents."""
     title = f"Quarterly VAT Calculation Schedule - Q{result['quarter']} {result['year']} | {ARABIC_TITLE}"
     ratio = Decimal(str(result.get("deduction_ratio", 1)))
+    vc = result.get("vat_currency") or "LBP"; vc2 = result.get("vat_second_currency") or "USD"  # 2.9.72
+    rate_text = f"{Decimal(str(result.get('vat_rate') or 11)).normalize():f}%"
+    label_of = lambda label: label.replace("11%", rate_text)
     meta = [f"Period: {display_date(result['date_from'])} to {display_date(result['date_to'])}   Due date: {display_date(result['due_date'])}   Currency filter: {result['currency_filter']}",
             f"Partial deduction ratio (Art. 31): {ratio * 100:.2f}% ({result.get('ratio_source', '')})   Status: {result['status']}",
             "Internal schedule references only: A-F labels are not certified Ministry of Finance form box numbers.",
-            "Conversion uses saved accounting rates at each document date; the legally applicable tax-point/rate can differ (Decree 11230/2023). The 10,000 LBP payable ceiling from 25-11-2024 is an unverified worksheet estimate, not a certified VAT filing rule."]
+            "Conversion uses saved accounting rates at each document date; the legally applicable tax-point/rate can differ (Decree 11230/2023). The 10,000 LBP payable ceiling from 25-11-2024 is an unverified worksheet estimate, not a certified VAT filing rule."
+            if vc == "LBP" else f"VAT return in {vc} at {rate_text}, converted at the saved accounting rate of each document date; second currency {vc2} at the rate of the last day of the period."]
     if result["review_excluded"]: meta.append(f"Note: {result['review_excluded']} document(s) in Review status are excluded from this return")
     for warning in result.get("warnings", []): meta.append("Check: " + warning)
     keys = [key for _, key, _ in LINES]; totals_index = [keys.index(k) for k in ("total_output", "total_input", "net")]
     no_base = ("adj_output", "adj_input", "net", "prorata", "annual_adjustment", "total_output")
     sections = []
     for code, values in sorted(result["per_currency"].items()):
-        rows = [[number, label, ARABIC.get(key, ""), values[key]["base"] if key not in no_base else "", values[key]["vat"] if key not in ("sales_zero", "sales_exempt", "sales_out") else "",
+        rows = [[number, label_of(label), ARABIC.get(key, ""), values[key]["base"] if key not in no_base else "", values[key]["vat"] if key not in ("sales_zero", "sales_exempt", "sales_out") else "",
                  values[key]["vat_lbp"] if key not in ("sales_zero", "sales_exempt", "sales_out") else ""] for number, key, label in LINES if key in values]
-        sections.append({"heading": f"VAT calculation by currency - {code}", "headers": ["Internal ref.", "Description", "البيان", f"Base ({code})", f"VAT ({code})", "VAT (LBP)"],
+        sections.append({"heading": f"VAT calculation by currency - {code}", "headers": ["Internal ref.", "Description", "البيان", f"Base ({code})", f"VAT ({code})", f"VAT ({vc})"],
                          "rows": rows, "total_rows": totals_index})
     totals = result["totals_lbp"]
-    summary = [[number, label, ARABIC.get(key, ""), totals.get(key, ZERO)] for number, key, label in LINES if key not in ("sales_zero", "sales_exempt", "sales_out")]
+    summary = [[number, label_of(label), ARABIC.get(key, ""), totals.get(key, ZERO)] for number, key, label in LINES if key not in ("sales_zero", "sales_exempt", "sales_out")]
     summary += [["F1", f"Credit brought forward ({result['credit_source']})", ARABIC["credit_bf"], result["credit_brought_forward_lbp"]],
                 ["F2", "VAT PAYABLE TO THE MINISTRY OF FINANCE", ARABIC["payable"], result["payable_lbp"]],
                 ["F3", "Refund of VAT credit requested (Art. 30)", ARABIC["refund"], result.get("refund_requested_lbp", ZERO)],
                 ["F4", "Credit carried forward to the next period", ARABIC["credit_cf"], result["credit_carried_forward_lbp"]]]
     labels = [row[1] for row in summary]
-    sections.append({"heading": "VAT calculation summary - all currencies in LBP | ملخص احتساب الضريبة", "headers": ["Internal ref.", "Description", "البيان", "Amount (LBP)"], "rows": summary,
+    second_rate = result.get("second_rate")
+    headers = ["Internal ref.", "Description", "البيان", f"Amount ({vc})"]
+    if vc2 and vc2 != vc and second_rate is not None:  # 2.9.72: the same figures in the second VAT currency
+        headers.append(f"Amount ({vc2})")
+        for row in summary: row.append(_money(Decimal(str(row[3] or 0)) * Decimal(str(second_rate))) if row[3] not in ("", None) else "")
+        meta.append(f"{vc2} equivalent at 1 {vc} = {Decimal(str(second_rate)):.6g} {vc2} ({display_date(result['date_to'])}).")
+    sections.append({"heading": f"VAT calculation summary - all currencies in {vc} | ملخص احتساب الضريبة", "headers": headers, "rows": summary,
                      "total_rows": [labels.index(l) for l in ("TOTAL OUTPUT VAT", "TOTAL DEDUCTIBLE VAT", "NET VAT FOR THE PERIOD (output VAT less deductible input VAT)", "VAT PAYABLE TO THE MINISTRY OF FINANCE", "Credit carried forward to the next period")]})
     turnover = result.get("ytd_turnover_lbp", {})
-    ratio_rows = [["Taxable and zero-rated turnover (LBP, year to date)", turnover.get("taxable", ZERO)], ["Exempt turnover (LBP, year to date)", turnover.get("exempt", ZERO)],
+    ratio_rows = [[f"Taxable and zero-rated turnover ({vc}, year to date)", turnover.get("taxable", ZERO)], [f"Exempt turnover ({vc}, year to date)", turnover.get("exempt", ZERO)],
                   ["Deduction ratio applied", f"{ratio * 100:.2f}%"], ["Basis", result.get("ratio_source", "")]]
     for item in result.get("annual_adjustment_detail", []):
-        ratio_rows.append([f"Q{item['quarter']}: mixed-use VAT {item['mixed_vat_lbp']:,.0f} LBP at {Decimal(str(item['ratio_applied'])) * 100:.2f}%", item["adjustment_lbp"]])
+        ratio_rows.append([f"Q{item['quarter']}: mixed-use VAT {item['mixed_vat_lbp']:,.2f} {vc} at {Decimal(str(item['ratio_applied'])) * 100:.2f}%", item["adjustment_lbp"]])
     sections.append({"heading": "Partial deduction right (Art. 31)", "headers": ["Item", "Value"], "rows": ratio_rows, "total_rows": [2]})
     detail = [[display_date(d["date"]), d["number"], d["party"], CATEGORIES[d["category"]], d.get("treatment", "standard").replace("_", " "),
                d.get("deductible_share", ""), d["currency"], d["base"], d["vat"], d["lbp_rate"], d["vat_lbp"], d["status"]] for d in result["documents"]]
     sections.append({"heading": "Supporting documents", "headers": ["Date", "Document", "Customer / Supplier", "Category", "VAT Treatment", "Deductible",
-                     "Currency", "Base", "VAT", "LBP Rate", "VAT (LBP)", "Status"], "rows": detail or [["No documents in this quarter"] + [""] * 11], "total_rows": []})
+                     "Currency", "Base", "VAT", f"{vc} Rate", f"VAT ({vc})", "Status"], "rows": detail or [["No documents in this quarter"] + [""] * 11], "total_rows": []})
     if result["adjustments"]:
-        sections.append({"heading": "Manual adjustments", "headers": ["Type", "Currency", "Amount", "Amount (LBP)", "Reason", "Entered by", "Entered at"],
+        sections.append({"heading": "Manual adjustments", "headers": ["Type", "Currency", "Amount", f"Amount ({vc})", "Reason", "Entered by", "Entered at"],
             "rows": [[ADJUSTMENT_TYPES[a["adjustment_type"]], a["currency"], _money(a["amount"]), a.get("amount_lbp", ""), a["reason"],
                       a.get("created_by_name") or "", str(a["created_at"])[:16].replace("T", " ")] for a in result["adjustments"]], "total_rows": []})
     return title, meta, sections
@@ -626,7 +658,7 @@ def recoverable_rate_sheet(result, company):
         index = groups.get(doc["category"], 3); rate = D(doc.get("lbp_rate") or 1)
         vat = D(doc["vat"]) * rate
         if doc.get("treatment") == "reverse_charge" and not D(doc["vat"]):
-            vat = ((D(doc["base"]) + D(doc["exempt"])) * RATE).quantize(CENT, rounding=ROUND_HALF_UP) * rate
+            vat = ((D(doc["base"]) + D(doc["exempt"])) * D(doc.get("std_rate", RATE))).quantize(CENT, rounding=ROUND_HALF_UP) * rate
         blocked = not doc.get("recoverable", True) or doc.get("use") == "exempt"
         share = ZERO if blocked else (ratio if doc.get("use") == "mixed" else Decimal("1"))
         lines[index][0] += vat; lines[index][1] += vat * share; lines[index][2] += vat * (1 - share)

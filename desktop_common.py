@@ -24,7 +24,8 @@ from party_similarity import similar_parties
 from multi_select import MultiSelect, chosen_values  # 2.9.50: pick any combination in filters
 
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"
-SALE_TREATMENTS={"Taxable 11%":"standard","Zero-rated (export)":"zero_rated","Exempt (Art. 16-17)":"exempt","Out of scope":"out_of_scope"}
+TAXABLE_LABEL="Taxable (standard rate)"  # 2.9.72: the rate is the company's (Settings > General)
+SALE_TREATMENTS={TAXABLE_LABEL:"standard","Zero-rated (export)":"zero_rated","Exempt (Art. 16-17)":"exempt","Out of scope":"out_of_scope"}
 PURCHASE_USES={"Mixed (partial deduction)":"mixed","Taxable sales only (100%)":"taxable","Exempt sales only (0%)":"exempt"}
 
 def resource_path(relative_path):
@@ -334,20 +335,42 @@ def selection_totals(tree, columns, label, hint=None):
     return update
 
 
-def main_currency(app, which=1):
-    """2.9.71: the company's two main currencies (chosen when the company was created, changed in Settings > General):
-    1 = the first (base) currency, 2 = the second one. New vouchers, invoices, payments, imports and reports start with them."""
+def company_settings(app):
+    """2.9.71: the settings of the open company, read once per company / year (main currencies, VAT rate ...)."""
     client = getattr(app, "client", None)
     key = (getattr(client, "company_id", None), getattr(client, "fiscal_year", None))
     cache = getattr(app, "_main_currency_cache", None)
-    if not cache or cache[0] != key:
+    if not cache or cache[0] != key or not isinstance(cache[1], dict):
         try: values = client.settings() if client is not None else {}
         except Exception: values = {}
-        values = values if isinstance(values, dict) else {}
-        cache = (key, (str(values.get("base_currency") or "USD").upper(), str(values.get("second_currency") or "LBP").upper()))
+        cache = (key, values if isinstance(values, dict) else {})
         try: app._main_currency_cache = cache
         except Exception: pass
-    return cache[1][0 if int(which) == 1 else 1]
+    return cache[1]
+
+
+def main_currency(app, which=1):
+    """2.9.71: the company's two main currencies (chosen when the company was created, changed in Settings > General):
+    1 = the first (base) currency, 2 = the second one. New vouchers, invoices, payments, imports and reports start with them."""
+    values = company_settings(app)
+    return str(values.get("base_currency" if int(which) == 1 else "second_currency") or ("USD" if int(which) == 1 else "LBP")).upper()
+
+
+def vat_rate(app):
+    """2.9.72: the company's standard VAT rate in % as a number (11 in Lebanon, 5 in the Emirates ...)."""
+    try: return float(str(company_settings(app).get("vat_rate") or "11").replace("%", "").strip())
+    except (TypeError, ValueError): return 11.0
+
+
+def vat_rate_text(app):
+    """'11%', '5%', '7.5%'"""
+    return f"{vat_rate(app):g}%"
+
+
+def vat_currency(app, which=1):
+    """2.9.72: the currencies of the VAT return: 1 = LBP in Lebanon (AED, EUR ... elsewhere), 2 = the one shown next to it (USD)."""
+    values = company_settings(app)
+    return str(values.get("vat_currency" if int(which) == 1 else "vat_second_currency") or ("LBP" if int(which) == 1 else "USD")).upper()
 
 
 def bulk_action(title, labels, action, parent=None):

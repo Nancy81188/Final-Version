@@ -163,6 +163,14 @@ class SettingsMixin:
         ttk.Combobox(general,textvariable=self.company_vat_registered,values=["Yes","No"],state="readonly",width=15).grid(row=10,column=1,padx=14,pady=7,sticky="w")
         tk.Label(general,text="VAT Registration Date",bg=LIGHT).grid(row=11,column=0,padx=14,pady=7,sticky="w")
         self.date_entry(general,self.company_vat_date,42).grid(row=11,column=1,padx=14,pady=7,sticky="w")
+        # 2.9.72: the VAT of this company - standard rate and the two currencies of its VAT return
+        self.company_vat_rate=tk.StringVar(value="11"); self.company_vat_currency=tk.StringVar(value="LBP"); self.company_vat_second=tk.StringVar(value="USD")
+        tk.Label(general,text="VAT Rate %",bg=LIGHT).grid(row=10,column=2,padx=(24,6),pady=7,sticky="w")
+        tk.Entry(general,textvariable=self.company_vat_rate,width=8).grid(row=10,column=3,padx=6,pady=7,sticky="w")
+        tk.Label(general,text="VAT Return Currency 1 / 2",bg=LIGHT).grid(row=11,column=2,padx=(24,6),pady=7,sticky="w")
+        vat_boxes=tk.Frame(general,bg=LIGHT); vat_boxes.grid(row=11,column=3,padx=6,pady=7,sticky="w")
+        self.vat_currency_box=ttk.Combobox(vat_boxes,textvariable=self.company_vat_currency,values=self.currency_codes,state="readonly",width=7); self.vat_currency_box.pack(side="left")
+        self.vat_second_box=ttk.Combobox(vat_boxes,textvariable=self.company_vat_second,values=self.currency_codes,state="readonly",width=7); self.vat_second_box.pack(side="left",padx=(6,0))
         self.action_button(general,"Save Settings",self.save_general_settings).grid(row=12,column=0,columnspan=2,pady=14)
         import desktop_layout  # 2.9.60: menu style, kept on this computer
         tk.Label(general,text="Screen layout (this computer)",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=13,column=0,padx=14,pady=7,sticky="w")
@@ -181,6 +189,9 @@ class SettingsMixin:
                 if box is not None: box.configure(values=self.currency_codes)
             for key,var in self.company_fields.items(): var.set(settings.get(key,"Saber for Audit" if key=="company_name" else ""))
             self.company_vat_registered.set(settings.get("company_vat_registered","Yes") or "Yes"); self.company_vat_date.set(settings.get("company_vat_date","") or "")
+            if hasattr(self,"company_vat_rate"):
+                self.company_vat_rate.set(settings.get("vat_rate") or "11"); self.company_vat_currency.set(settings.get("vat_currency") or "LBP"); self.company_vat_second.set(settings.get("vat_second_currency") or "USD")
+                for box in (self.vat_currency_box,self.vat_second_box): box.configure(values=self.currency_codes)
         except Exception as exc: return messagebox.showerror("Settings",str(exc))
         self.rates_tree.delete(*self.rates_tree.get_children())
         for row in rates: self.rates_tree.insert("","end",values=(row["rate_date"],row["from_currency"],row["to_currency"],row["rate"],row.get("samples",0),row["created_at"][:19]))
@@ -383,6 +394,9 @@ class SettingsMixin:
         payload={"base_currency":self.base_currency.get(),"second_currency":self.second_currency.get(),"backup_interval_hours":self.backup_hours.get()}
         payload.update({key:var.get().strip() for key,var in self.company_fields.items()})
         payload["company_vat_registered"]=self.company_vat_registered.get(); payload["company_vat_date"]=self.company_vat_date.get().strip()
+        if hasattr(self,"company_vat_rate"):  # 2.9.72
+            if self.company_vat_currency.get()==self.company_vat_second.get(): return messagebox.showwarning("Settings","The two VAT return currencies must be different")
+            payload.update(vat_rate=self.company_vat_rate.get().strip(),vat_currency=self.company_vat_currency.get(),vat_second_currency=self.company_vat_second.get())
         try: self.client.save_settings(payload)
         except Exception as exc: return messagebox.showerror("Settings",str(exc))
         self._main_currency_cache=None  # 2.9.71: new documents use the new main currencies at once

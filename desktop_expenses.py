@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
 
@@ -63,7 +64,7 @@ class ExpensesMixin:
         if key == "vat": f["vat_typed"] = True
         if key == "with_vat" and not f.get("pdf_vat_review"): f["vat_typed"] = False
         base = _num(v["with_vat"].get()) or 0
-        if not f["vat_typed"] and not f.get("pdf_vat_review"): v["vat"].set(f"{base * 0.11:.2f}" if base else "")
+        if not f["vat_typed"] and not f.get("pdf_vat_review"): v["vat"].set(f"{base * vat_rate(self) / 100:.2f}" if base else "")
         total = base + (_num(v["without_vat"].get()) or 0) + (_num(v["vat"].get()) or 0)
         f["total"].config(text=f"Total: {total:,.2f} {v['currency'].get()}")
 

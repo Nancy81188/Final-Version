@@ -155,7 +155,9 @@ def save_item(database, item, user_id):
         if not supplier and str(item.get("supplier_name") or "").strip():
             row = db.execute("SELECT id FROM parties WHERE name=? ORDER BY id LIMIT 1", (str(item["supplier_name"]).strip(),)).fetchone(); supplier = row["id"] if row else None
         unit = str(item.get("unit") or "unit").strip() or "unit"; db.execute("INSERT OR IGNORE INTO item_units(name) VALUES(?)", (unit,))
-        default_vat = "0" if str(item.get("default_vat") or "11").strip() in ("0", "0.0", "0%") else "11"
+        # 2.9.72: an item is zero-rated ("0") or at the company's standard VAT rate (Settings > General)
+        company_rate = db.execute("SELECT value FROM app_settings WHERE key='vat_rate'").fetchone()
+        default_vat = "0" if str(item.get("default_vat") or "11").strip() in ("0", "0.0", "0%") else str((company_rate[0] if company_rate else None) or "11")
         cost_account = str(item.get("cost_account") or "").split(" - ", 1)[0].strip() or None
         brand = str(item.get("brand") or "").strip() or None
         values = (sku, name, unit, str(item.get("category") or "").strip() or None, str(reorder), str(price),

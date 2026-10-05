@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from desktop_common import *  # noqa: F401,F403
+from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 from desktop_common import main_currency  # 2.9.71
 
 
@@ -118,7 +119,7 @@ class InvoicesMixin:
         window=tk.Toplevel(self); window.title(f"VAT Treatment - {row['invoice_number']}"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
         treatment=tk.StringVar(); use=tk.StringVar(); reverse=tk.BooleanVar(value=row.get("vat_treatment")=="reverse_charge")
         if sale:
-            treatment.set(next((k for k,v in SALE_TREATMENTS.items() if v==(row.get("vat_treatment") or "standard")),"Taxable 11%"))
+            treatment.set(next((k for k,v in SALE_TREATMENTS.items() if v==(row.get("vat_treatment") or "standard")),TAXABLE_LABEL))
             tk.Label(window,text="Sale type (Law 379/2001)",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=0,padx=12,pady=10,sticky="w")
             ttk.Combobox(window,textvariable=treatment,values=list(SALE_TREATMENTS),state="readonly",width=24).grid(row=0,column=1,padx=12,pady=10)
             tk.Label(window,text="Zero-rated: exports and like transactions (Art. 19-21), deductible input VAT.\nExempt: Art. 16-17 activities and goods, reduces the deduction ratio.",bg=LIGHT,fg="#5f6b76",justify="left").grid(row=1,column=0,columnspan=2,padx=12,sticky="w")
@@ -557,7 +558,7 @@ class InvoicesMixin:
         selected=self.invoice_tree.selection()
         if not selected: return messagebox.showwarning("Invoices","Select one invoice row")
         invoice_id=int(selected[0]); window=tk.Toplevel(self); window.title("Add Item to Invoice"); window.configure(bg=LIGHT); window.transient(self); window.grab_set(); self.fit_dialog(window,520,420,360,300)
-        defaults={"description":"","quantity":"1","unit_price":"0","subtotal":"0","vat_rate":"11","vat":"0"}
+        defaults={"description":"","quantity":"1","unit_price":"0","subtotal":"0","vat_rate":f"{vat_rate(self):g}","vat":"0"}
         variables={key:tk.StringVar(value=value) for key,value in defaults.items()}
         fields=[("Description","description"),("Quantity","quantity"),("Unit Price","unit_price"),
                 ("Before VAT","subtotal"),("VAT %","vat_rate"),("VAT Amount","vat")]
@@ -641,7 +642,7 @@ class InvoicesMixin:
         tk.Label(vat_row,text="Amount Paid",bg=LIGHT).pack(side="left"); tk.Entry(vat_row,textvariable=self.sales_amount_paid,width=10).pack(side="left",padx=(4,10))
         self.sales_cash_account=tk.StringVar()
         tk.Label(vat_row,text="Paid into",bg=LIGHT).pack(side="left"); self.account_search_box(vat_row,self.sales_cash_account,12).pack(side="left",padx=(4,10))
-        self.sales_treatment=tk.StringVar(value="Taxable 11%")
+        self.sales_treatment=tk.StringVar(value=TAXABLE_LABEL)
         tk.Label(vat_row,text="VAT Treatment",bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left",padx=(6,4))
         treatment_box=ttk.Combobox(vat_row,textvariable=self.sales_treatment,values=list(SALE_TREATMENTS),state="readonly",width=19); treatment_box.pack(side="left")
         treatment_box.bind("<<ComboboxSelected>>",lambda _event:self.sales_treatment_changed())
@@ -689,7 +690,7 @@ class InvoicesMixin:
         box=tk.Frame(totals,bg="#dfe6ee",padx=6,pady=3); box.pack(side="top",fill="x")
         self.sales_total_labels={}
         for key,caption,row,column in (("Total","Total",0,0),("Discount","Discount",0,1),("Total HT","Total HT",0,2),
-                                       ("VAT","VAT 11%",1,0),("TOTAL","TOTAL TTC",1,1)):
+                                       ("VAT",f"VAT {vat_rate_text(self)}",1,0),("TOTAL","TOTAL TTC",1,1)):
             label=tk.Label(box,text=caption,bg="#dfe6ee",font=("Segoe UI",9,"bold" if key=="TOTAL" else "normal"))
             label.grid(row=row,column=column*2,sticky="e",padx=(6,2),pady=1)
             if key=="VAT": self.sales_vat_caption=label
@@ -706,8 +707,8 @@ class InvoicesMixin:
 
     # ---- sales invoice helpers
     def sales_treatment_changed(self):
-        """Zero-rated and exempt sales carry no VAT: set every line to 0% (Taxable puts them back to 11%)."""
-        rate=11 if self.sales_treatment.get()=="Taxable 11%" else 0
+        """Zero-rated and exempt sales carry no VAT: set every line to 0% (Taxable puts them back to the company's rate)."""
+        rate=vat_rate(self) if self.sales_treatment.get()==TAXABLE_LABEL else 0
         for item in self.sales_items:
             item["vat_rate"]=rate; item["_vat_typed"]=False; self.recalculate_sales_item(item)
             if self.sales_sheet.exists(item.get("_iid","")): self.sales_sheet.item(item["_iid"],values=self.sales_row_values(item))
@@ -868,7 +869,7 @@ class InvoicesMixin:
         self.sales_revenue_caption.config(text="Revenue Account")
         self.sales_supplier_side.set("D - Debit"); self.sales_vat_side.set("C - Credit"); self.sales_expense_side.set("C - Credit")
         self.sales_payment_method.set("On Account (Not Cash)"); self.sales_date.set(self.fiscal_today())
-        self.sales_department.set("(none)"); self.sales_project.set("(none)"); self.sales_treatment.set("Taxable 11%")
+        self.sales_department.set("(none)"); self.sales_project.set("(none)"); self.sales_treatment.set(TAXABLE_LABEL)
         self.sales_discount_percent.set("0"); self.sales_discount_amount.set("0")
         self.sales_category_changed()
         self.sales_mode_label.config(text="NEW INVOICE",bg=GOLD); self.load_sales_customer_list(); self.refresh_sales_number()
@@ -883,13 +884,13 @@ class InvoicesMixin:
     def recalculate_sales_item(self,item):
         """Line: Amount = Qty x Price, less the line discount %. VAT and the invoice discount are shared in update_sales_totals."""
         item["quantity"]=float(item.get("quantity") or 0); item["unit_price"]=float(item.get("unit_price") or 0)
-        item["discount_percent"]=float(item.get("discount_percent") or 0); item["vat_rate"]=float(item.get("vat_rate") if item.get("vat_rate") not in (None,"") else 11)
+        item["discount_percent"]=float(item.get("discount_percent") or 0); item["vat_rate"]=float(item.get("vat_rate") if item.get("vat_rate") not in (None,"") else vat_rate(self))
         item["gross_amount"]=round(item["quantity"]*item["unit_price"],2); item["net"]=round(item["gross_amount"]*(1-item["discount_percent"]/100),2)
         item.setdefault("unit",""); item.setdefault("subtotal",item["net"]); item.setdefault("vat",0.0); item.setdefault("total",item["net"])
         return item
 
     def add_sales_item(self,item=None):
-        item=self.recalculate_sales_item(dict(item or {"description":"","quantity":1,"unit":"","unit_price":0,"discount_percent":0,"vat_rate":0 if getattr(self,"sales_treatment",None) is not None and self.sales_treatment.get()!="Taxable 11%" else 11}))
+        item=self.recalculate_sales_item(dict(item or {"description":"","quantity":1,"unit":"","unit_price":0,"discount_percent":0,"vat_rate":0 if getattr(self,"sales_treatment",None) is not None and self.sales_treatment.get()!=TAXABLE_LABEL else vat_rate(self)}))
         self.sales_items.append(item); iid=self.sales_sheet.insert("","end",values=self.sales_row_values(item))
         item["_iid"]=iid; self.update_sales_totals()
         if not item["description"]:
@@ -938,7 +939,7 @@ class InvoicesMixin:
                     item["description"]=product["name"]; item["unit"]=product.get("unit") or ""
                     if product["sales_price"]: item["unit_price"]=product["sales_price"]
                     if product.get("default_vat") not in (None,""):
-                        item["vat_rate"]=float(str(product["default_vat"]).replace("%","") or 11); item["_vat_typed"]=False
+                        item["vat_rate"]=0.0 if str(product["default_vat"]).replace("%","").strip() in ("0","0.0") else vat_rate(self); item["_vat_typed"]=False  # 2.9.72
             else:
                 try: number=float(text.replace(",","") or 0)
                 except ValueError: return messagebox.showwarning("Sales Invoice",f"{self.sales_columns[column_index][1]} must be a number")
@@ -978,7 +979,7 @@ class InvoicesMixin:
         import invoice_calc
         from tafqeet import amount_in_words
         lines=[i for i in self.sales_items if str(i.get("description") or "").strip() or float(i.get("unit_price") or 0)]
-        export=getattr(self,"sales_treatment",None) is not None and self.sales_treatment.get()!="Taxable 11%"
+        export=getattr(self,"sales_treatment",None) is not None and self.sales_treatment.get()!=TAXABLE_LABEL
         try: result=invoice_calc.calculate(lines,self.sales_discount_percent.get() if hasattr(self,"sales_discount_percent") else 0,
                                            self.sales_discount_amount.get() if hasattr(self,"sales_discount_amount") else 0,export)
         except ValueError as exc:
@@ -994,7 +995,7 @@ class InvoicesMixin:
                     "Total HT":result["total_ht"],"VAT":result["vat"],"TOTAL":result["grand_total"]}
             for key,label in self.sales_total_labels.items():
                 label.config(text=f"{values[key]:,.2f} {currency}" if key=="TOTAL" else f"{values[key]:,.2f}",fg=NAVY)
-            self.sales_vat_caption.config(text="VAT 11%" if not export else f"VAT 11%  ({self.sales_treatment.get()})",font=("Segoe UI",9,"overstrike") if export else ("Segoe UI",9))
+            self.sales_vat_caption.config(text=f"VAT {vat_rate_text(self)}" if not export else f"VAT {vat_rate_text(self)}  ({self.sales_treatment.get()})",font=("Segoe UI",9,"overstrike") if export else ("Segoe UI",9))
             from report_export import shape_arabic
             words=amount_in_words(result["grand_total"],currency); self.sales_words.config(text=f'{words["en"]}\n{shape_arabic(words["ar"])}')
         self.sales_totals.config(text=f'{len(lines)} line(s)')
@@ -1098,7 +1099,7 @@ class InvoicesMixin:
         lists=self.dimension_lists(refresh=True)
         self.sales_department.set(next((f'{d["code"]} - {d["name"]}' for d in lists["departments"] if d["id"]==detail.get("department_id")),"(none)"))
         self.sales_project.set(next((f'{p["code"]} - {p["name"]}' for p in lists["projects"] if p["id"]==detail.get("project_id")),"(none)"))
-        self.sales_treatment.set(next((k for k,v in SALE_TREATMENTS.items() if v==(detail.get("vat_treatment") or "standard")),"Taxable 11%"))
+        self.sales_treatment.set(next((k for k,v in SALE_TREATMENTS.items() if v==(detail.get("vat_treatment") or "standard")),TAXABLE_LABEL))
         self.sales_cash_account.set(detail.get("payment_account") or "")
         self.sales_amount_paid.set(str(detail.get("amount_paid") or 0)); self.sales_due_date.set(safe_display_date(detail.get("due_date")) if detail.get("due_date") else "")
         self.sales_doc_type.set("Return" if detail.get("doc_subtype")=="credit_note" and detail.get("is_return") else

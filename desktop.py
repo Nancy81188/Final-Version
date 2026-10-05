@@ -453,14 +453,23 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         ttk.Combobox(window,textvariable=main1,values=choices,width=12).grid(row=7,column=1,sticky="w",padx=14,pady=7)
         tk.Label(window,text="Main Currency 2",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=8,column=0,sticky="w",padx=14,pady=7)
         ttk.Combobox(window,textvariable=main2,values=choices,width=12).grid(row=8,column=1,sticky="w",padx=14,pady=7)
+        # 2.9.72: the VAT of the company (Lebanon: 11%, VAT return in LBP with USD; Emirates: 5%, AED with USD ...)
+        vat_rate_var=tk.StringVar(value="11"); vat1=tk.StringVar(value="LBP"); vat2=tk.StringVar(value="USD")
+        tk.Label(window,text="VAT Rate %",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=9,column=0,sticky="w",padx=14,pady=7)
+        tk.Entry(window,textvariable=vat_rate_var,width=8).grid(row=9,column=1,sticky="w",padx=14,pady=7)
+        tk.Label(window,text="VAT Return Currency 1 / 2",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=10,column=0,sticky="w",padx=14,pady=7)
+        vat_boxes=tk.Frame(window,bg=LIGHT); vat_boxes.grid(row=10,column=1,sticky="w",padx=14,pady=7)
+        ttk.Combobox(vat_boxes,textvariable=vat1,values=choices,width=8).pack(side="left"); ttk.Combobox(vat_boxes,textvariable=vat2,values=choices,width=8).pack(side="left",padx=(6,0))
         def save():
             payload={key:var.get().strip() for key,var in fields.items()}
             payload["main_currency_1"]=main1.get().strip().upper(); payload["main_currency_2"]=main2.get().strip().upper()
+            payload.update(vat_rate=vat_rate_var.get().strip(),vat_currency_1=vat1.get().strip().upper(),vat_currency_2=vat2.get().strip().upper())
+            if payload["vat_currency_1"]==payload["vat_currency_2"]: return messagebox.showwarning("Create Company","Choose two different VAT return currencies",parent=window)
             if payload["main_currency_1"]==payload["main_currency_2"]: return messagebox.showwarning("Create Company","Choose two different main currencies",parent=window)
             try: self.client.create_company(payload)
             except Exception as exc: return messagebox.showerror("Create Company",str(exc),parent=window)
             window.destroy(); self.company_selection_screen()
-        self.action_button(window,"Create Company",save).grid(row=9,column=0,columnspan=2,pady=14)
+        self.action_button(window,"Create Company",save).grid(row=11,column=0,columnspan=2,pady=14)
 
     def manage_company_dialog(self,company):
         if not company: return

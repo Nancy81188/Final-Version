@@ -374,6 +374,10 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             db.execute("INSERT OR IGNORE INTO users(username,password_hash,role) VALUES(?,?,?)", ("admin", hash_password(admin_password), "admin"))
             db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('base_currency','USD')")
             db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('second_currency','LBP')")  # 2.9.71: the 2 main currencies
+            # 2.9.72: the VAT of the company - rate (Lebanon 11%) and the 2 currencies of the VAT return (LBP, with USD)
+            db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('vat_rate','11')")
+            db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('vat_currency','LBP')")
+            db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('vat_second_currency','USD')")
             db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('backup_interval_hours','24')")
             db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('last_scheduled_backup','')")
             default_brackets=json.dumps([[360000000,.02],[900000000,.04],[1800000000,.07],[3600000000,.11],[7200000000,.15],[13500000000,.20],[None,.25]])
@@ -837,6 +841,16 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
                 (user_id,"restore","database",json.dumps({"backup":source.name,"safety_backup":safety}),utcnow()))
         return {"restored":source.name,"safety_backup":safety}
 
+    def vat_rate_percent(self):
+        """2.9.72: the standard VAT rate of this company in % (Lebanon 11; for example 5 in the Emirates, 15 in Saudi Arabia)."""
+        try: return parse_vat_rate(self.settings().get("vat_rate") or "11")
+        except ValueError: return Decimal("11")
+
+    def vat_currencies(self):
+        """2.9.72: the currency of the VAT return (LBP in Lebanon) and the second one shown next to it (USD)."""
+        values=self.settings()
+        return (str(values.get("vat_currency") or "LBP").upper(), str(values.get("vat_second_currency") or "USD").upper())
+
     def settings(self):
         with self.connect() as db: return {row["key"]:row["value"] for row in db.execute("SELECT key,value FROM app_settings")}
 
@@ -859,8 +873,14 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         return {"code":code,"name":name}
 
     def save_settings(self, values, user_id):
-        allowed={"base_currency","second_currency","backup_interval_hours","company_name","company_address","company_phone","company_mof","company_nssf","company_email","company_website","company_logo","company_vat_registered","company_vat_date"}
+        allowed={"base_currency","second_currency","vat_rate","vat_currency","vat_second_currency","backup_interval_hours","company_name","company_address","company_phone","company_mof","company_nssf","company_email","company_website","company_logo","company_vat_registered","company_vat_date"}
         if str(values.get("base_currency") or "USD") not in self.currency_codes(): raise ValueError("Invalid base currency")
+        if "vat_rate" in values: values=dict(values); values["vat_rate"]=str(parse_vat_rate(values["vat_rate"]))  # 2.9.72
+        current=self.settings()
+        vat_pair=[str(values.get(key) or current.get(key) or default).upper() for key,default in (("vat_currency","LBP"),("vat_second_currency","USD"))]
+        if "vat_currency" in values or "vat_second_currency" in values:
+            if any(code not in self.currency_codes() for code in vat_pair): raise ValueError("Invalid VAT currency")
+            if vat_pair[0]==vat_pair[1]: raise ValueError("The two VAT currencies must be different")
         if "second_currency" in values:  # 2.9.71
             if str(values.get("second_currency") or "") not in self.currency_codes(): raise ValueError("Invalid second main currency")
             if str(values["second_currency"])==str(values.get("base_currency") or self.settings().get("base_currency") or "USD"):

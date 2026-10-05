@@ -221,7 +221,7 @@ class InvoicesStore:
             try:
                 quantity = Decimal(str(line.get("quantity") or 0))
                 unit_price = Decimal(str(line.get("unit_price") or 0))
-                vat_rate = Decimal(str(line.get("vat_rate") if line.get("vat_rate") not in (None, "") else 11))
+                vat_rate = Decimal(str(line.get("vat_rate") if line.get("vat_rate") not in (None, "") else self.vat_rate_percent()))
             except Exception as exc:
                 raise ValueError(f"Item {index}: invalid quantity, price, or VAT rate") from exc
             if quantity <= 0 or unit_price < 0 or vat_rate < 0:
@@ -471,7 +471,7 @@ class InvoicesStore:
             quantity = Decimal(str(line.get("quantity") or 0))
             unit_price = Decimal(str(line.get("unit_price") or 0))
             subtotal = Decimal(str(line.get("subtotal") if line.get("subtotal") not in (None, "") else quantity * unit_price))
-            vat_rate = Decimal(str(line.get("vat_rate") if line.get("vat_rate") not in (None, "") else 11))
+            vat_rate = Decimal(str(line.get("vat_rate") if line.get("vat_rate") not in (None, "") else self.vat_rate_percent()))
             vat = Decimal(str(line.get("vat") if line.get("vat") not in (None, "") else subtotal * vat_rate / Decimal("100")))
         except Exception as exc:
             raise ValueError("Invalid item amount") from exc

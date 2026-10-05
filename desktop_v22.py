@@ -8,9 +8,10 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
-TREATMENTS = {"Taxable": "standard", "Taxable 11%": "standard", "Zero-rated": "zero_rated", "Zero-rated (export)": "zero_rated", "Exempt": "exempt", "Exempt (Art. 16-17)": "exempt", "Out of scope": "out_of_scope"}
+TREATMENTS = {"Taxable": "standard", "Taxable 11%": "standard", "Taxable (standard rate)": "standard", "Zero-rated": "zero_rated", "Zero-rated (export)": "zero_rated", "Exempt": "exempt", "Exempt (Art. 16-17)": "exempt", "Out of scope": "out_of_scope"}
 
 
 def _dd(value):
@@ -66,16 +67,26 @@ class V22Mixin:
         invoice["party_code"] = self.sales_supplier_account.get().split(" - ", 1)[0].strip() or (party.get("account_number") or "")
         invoice["party_address"] = party.get("address") or ""
         invoice["party_mof"] = party.get("mof_number") or party.get("tax_number") or ""
-        # VAT 11% expressed in LBP using the exchange rate valid on the invoice date
+        # The VAT expressed in the company's VAT currency (LBP in Lebanon) at the exchange rate valid on the invoice date
+        invoice["vat_rate_text"] = vat_rate_text(self); vat_cur = vat_currency(self, 1); invoice["vat_currency"] = vat_cur  # 2.9.72
         try:
             rates = self.sales_rates_for_date(self.client.exchange_rates(), self.sales_date.get())
-            vat_lbp, _ = self.exchange_equivalents(float(calc["vat"] or 0), currency, rates)
-            if currency == "LBP":
+            def in_vat_currency(amount):
+                lbp, usd = self.exchange_equivalents(amount, currency, rates)
+                if vat_cur == "LBP": return lbp
+                if vat_cur == "USD": return usd
+                if usd is None: return None
+                for row in rates:  # USD -> the VAT currency (AED, EUR ...)
+                    rate = float(row["rate"])
+                    if row["from_currency"] == "USD" and row["to_currency"] == vat_cur: return usd * rate
+                    if row["from_currency"] == vat_cur and row["to_currency"] == "USD" and rate: return usd / rate
+                return None
+            vat_lbp = in_vat_currency(float(calc["vat"] or 0))
+            if currency == vat_cur:
                 invoice["vat_lbp"] = float(calc["vat"] or 0); invoice["lbp_rate"] = None
             elif vat_lbp is not None:
                 invoice["vat_lbp"] = vat_lbp
-                base_lbp, _ = self.exchange_equivalents(1.0, currency, rates)
-                invoice["lbp_rate"] = base_lbp
+                invoice["lbp_rate"] = in_vat_currency(1.0)
         except Exception:
             logging.getLogger("saber.desktop").warning("VAT in LBP could not be worked out for this invoice", exc_info=True)
         return invoice, calc["lines"]
@@ -120,6 +131,8 @@ class V22Mixin:
         for invoice in invoices:
             treatment = TREATMENTS.get(invoice["vat_treatment"].strip().capitalize(), TREATMENTS.get(invoice["vat_treatment"], "standard"))
             try:
+                for line in invoice["lines"]:  # 2.9.72: a line without its own rate takes the company's VAT rate
+                    if line.get("vat_rate") in (None, ""): line["vat_rate"] = vat_rate(self)
                 calc = invoice_calc.calculate(invoice["lines"], zero_vat=treatment != "standard")
                 header = {"invoice_number": invoice["invoice_number"], "invoice_date": invoice["invoice_date"], "party_name": invoice["party_name"], "kind": "sales",
                           "currency": invoice["currency"], "status": "review", "source_file": Path(path).name, "vat_treatment": treatment, "gross_before_discount": calc["total"]}
@@ -172,7 +185,7 @@ class V22Mixin:
             item = self.sales_item_for(iid); product = self.item_by_code(sku)
             if not item or not product: return
             item.update(item_code=product["sku"], description=product["name"], unit=product.get("unit") or "", unit_price=product["sales_price"] or item.get("unit_price") or 0)
-            if product.get("default_vat") not in (None,""): item["vat_rate"]=float(str(product["default_vat"]).replace("%","") or 11); item["_vat_typed"]=False
+            if product.get("default_vat") not in (None,""): item["vat_rate"]=0.0 if str(product["default_vat"]).replace("%","").strip() in ("0","0.0") else vat_rate(self); item["_vat_typed"]=False  # 2.9.72
             self.recalculate_sales_item(item); self.sales_sheet.item(iid, values=self.sales_row_values(item)); self.update_sales_totals()
         self.item_picker(chosen)
 

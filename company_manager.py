@@ -163,6 +163,13 @@ class CompanyManager:
         if main[0]==main[1]: raise ValueError("The two main currencies must be different")
         for code in main:
             if not re.fullmatch(r"[A-Z]{3}",code): raise ValueError(f"Currency {code or '(empty)'} must be a 3-letter code (for example EUR)")
+        # 2.9.72: the VAT of this company: rate and the two currencies of its VAT return (default 11%, LBP with USD)
+        from database_common import parse_vat_rate
+        vat_rate=parse_vat_rate(item.get("vat_rate") if str(item.get("vat_rate") or "").strip() else "11")
+        vat_pair=[str(item.get(key) or default).strip().upper() for key,default in (("vat_currency_1","LBP"),("vat_currency_2","USD"))]
+        if vat_pair[0]==vat_pair[1]: raise ValueError("The two VAT currencies must be different")
+        for code in vat_pair:
+            if not re.fullmatch(r"[A-Z]{3}",code): raise ValueError(f"VAT currency {code or '(empty)'} must be a 3-letter code (for example AED)")
         data=self._read(); company_id=re.sub(r"[^a-z0-9]+","-",name.lower()).strip("-") or uuid.uuid4().hex[:10]
         if any(c["id"]==company_id or c["name"].casefold()==name.casefold() for c in data["companies"]): raise ValueError("Company already exists")
         company_id=f"{company_id}-{uuid.uuid4().hex[:6]}"
@@ -170,8 +177,8 @@ class CompanyManager:
         target=Database(path); target.initialize(secrets.token_urlsafe(24))
         self._copy_master_data(master_db,target)
         with target.connect() as db:
-            for code in main: db.execute("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",(code,code))
-        settings={"base_currency":main[0],"second_currency":main[1],"company_name":name,"company_address":item.get("address","").strip(),"company_phone":item.get("phone","").strip(),
+            for code in main+vat_pair: db.execute("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",(code,code))
+        settings={"base_currency":main[0],"second_currency":main[1],"vat_rate":str(vat_rate),"vat_currency":vat_pair[0],"vat_second_currency":vat_pair[1],"company_name":name,"company_address":item.get("address","").strip(),"company_phone":item.get("phone","").strip(),
             "company_mof":item.get("mof_number","").strip(),"company_email":item.get("email","").strip(),"company_website":item.get("website","").strip()}
         with target.connect() as db:
             for key,value in settings.items(): db.execute("INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,value))
