@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from desktop_brains_common import *  # noqa: F401,F403
+from desktop_common import main_currency  # 2.9.71
 from desktop_brains_common import _date_text, _fmt, _num
 from desktop_balance_reports import BalanceReportsMixin
 
@@ -134,7 +135,11 @@ class EditableSheet:
             if done["flag"]: return
             done["flag"] = True; text = editor.get().strip()
             if iid not in self.rows or not self.tree.exists(iid): editor.destroy(); return
-            if self.on_change(iid, key, text) is False:
+            outcome = self.on_change(iid, key, text)
+            if outcome == "lookup" and key in self.lookup_columns:
+                # 2.9.71: the typed number is not one account - open the search with it, arrows choose
+                done["flag"]=False; self.app.after(1, lookup); return
+            if outcome is False or outcome == "lookup":
                 done["flag"]=False; editor.focus_set(); editor.select_range(0,"end"); return
             editor.destroy()
             self.refresh(iid)
@@ -308,8 +313,9 @@ class BrainsScreensMixin(BalanceReportsMixin):
         if key == "account":
             code = text.split(" - ", 1)[0].strip()
             if code:
-                account = self.account_by_code(code)
-                if not account: messagebox.showwarning("Journal Voucher", f"Account {code} was not found. Press F2 in the cell to search."); return False
+                account = self.account_by_code(code) or self.voucher_account_by_prefix(code)
+                if not account: return "lookup"  # 2.9.71: open the search with what was typed (arrows + Enter choose)
+                code = str(account["code"])
                 row["account_name"] = account["name_en"]
                 party = next((p for p in getattr(self, "party_rows", []) or [] if p.get("account_number") == code), None)
                 if party and party.get("currency") and not row.get("amount"): self.voucher_cell_changed(iid, "line_currency", party["currency"])
@@ -350,6 +356,15 @@ class BrainsScreensMixin(BalanceReportsMixin):
         self.recalculate_voucher_line(row); self.update_manual_totals(); self.voucher_line_selected((iid, row))
         rows = self.voucher_sheet.tree.get_children()
         if key == "reference" and rows and iid == rows[-1] and row.get("account") and row.get("amount"): self.add_manual_item(edit=False)
+
+    def voucher_account_by_prefix(self, typed):
+        """2.9.71: the posting account (9 digits or more) whose number starts with the typed digits, when only ONE does."""
+        typed = str(typed or "").strip()
+        if not typed.isdigit(): return None
+        self.account_by_code(typed)  # loads the list of accounts
+        matches = [a for code, a in (getattr(self, "_account_cache", None) or {}).items()
+                   if code.isdigit() and len(code) >= 9 and code.startswith(typed)]
+        return matches[0] if len(matches) == 1 else None
 
     def account_by_code(self, code):
         if not getattr(self, "_account_cache", None):
@@ -516,7 +531,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
     def new_manual_voucher(self, confirm=True):
         if confirm and self.voucher_lines() and not self.editing_voucher_id and not messagebox.askyesno("Journal Voucher", "Start a new voucher? Lines that are not saved will be cleared."): return
         self.editing_voucher_id = None; self.voucher_sheet.clear(); self.manual_details.delete("1.0", "end"); self.manual_find.set("")
-        self.manual_type.set(VOUCHER_TYPES[0]); self.manual_currency.set("USD"); self.manual_date.set(self.fiscal_today())
+        self.manual_type.set(VOUCHER_TYPES[0]); self.manual_currency.set(main_currency(self, 1)); self.manual_date.set(self.fiscal_today())
         self._account_cache = None; self.set_next_manual_voucher_number()
         for _ in range(2): self.voucher_sheet.insert(self.new_voucher_line())
         self.update_manual_totals(); self.manual_line_info.config(text="New voucher")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
 from desktop_common import flow_toolbars
 from desktop_purchases import PurchasesMixin
@@ -22,7 +23,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
     def build_import(self):
         page = self.import_tab; self.import_rows = []; self.import_mode = "excel"
         bar = tk.Frame(page, bg=LIGHT); bar.pack(fill="x", padx=10, pady=8)
-        self.import_type = tk.StringVar(value="Purchases"); self.currency = tk.StringVar(value="USD"); self.import_replace = tk.BooleanVar(value=False)
+        self.import_type = tk.StringVar(value="Purchases"); self.currency = tk.StringVar(value=main_currency(self, 1)); self.import_replace = tk.BooleanVar(value=False)
         tk.Label(bar, text="Default Type", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")
         ttk.Combobox(bar, textvariable=self.import_type, values=list(TYPES), state="readonly", width=11).pack(side="left", padx=(4, 10))
         tk.Label(bar, text="Default currency", bg=LIGHT).pack(side="left")
@@ -504,7 +505,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
 
     def build_payment_form(self, page, kind):
         form = {"kind": kind, "id": None, "vars": {k: tk.StringVar() for k in ("number", "date", "party", "currency", "amount", "method", "cash_account", "reference", "description", "bank_commission", "exchange_difference")}}
-        v = form["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set("USD"); v["method"].set("Cash"); v["cash_account"].set("531")
+        v = form["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["method"].set("Cash"); v["cash_account"].set("531")
         form["department"] = tk.StringVar(); form["project"] = tk.StringVar()
         box = tk.LabelFrame(page, text="Customer Receipt (RV)" if kind == "customer_receipt" else "Supplier Payment (PV)", bg=LIGHT, padx=8, pady=6); box.pack(fill="x", padx=8, pady=6)
         row = tk.Frame(box, bg=LIGHT); row.pack(fill="x")

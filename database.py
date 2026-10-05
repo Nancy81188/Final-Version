@@ -373,6 +373,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             if "vat_recoverable" not in expense_columns: db.execute("ALTER TABLE expenses ADD COLUMN vat_recoverable INTEGER NOT NULL DEFAULT 1")
             db.execute("INSERT OR IGNORE INTO users(username,password_hash,role) VALUES(?,?,?)", ("admin", hash_password(admin_password), "admin"))
             db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('base_currency','USD')")
+            db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('second_currency','LBP')")  # 2.9.71: the 2 main currencies
             db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('backup_interval_hours','24')")
             db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('last_scheduled_backup','')")
             default_brackets=json.dumps([[360000000,.02],[900000000,.04],[1800000000,.07],[3600000000,.11],[7200000000,.15],[13500000000,.20],[None,.25]])
@@ -858,8 +859,12 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         return {"code":code,"name":name}
 
     def save_settings(self, values, user_id):
-        allowed={"base_currency","backup_interval_hours","company_name","company_address","company_phone","company_mof","company_nssf","company_email","company_website","company_logo","company_vat_registered","company_vat_date"}
+        allowed={"base_currency","second_currency","backup_interval_hours","company_name","company_address","company_phone","company_mof","company_nssf","company_email","company_website","company_logo","company_vat_registered","company_vat_date"}
         if str(values.get("base_currency") or "USD") not in self.currency_codes(): raise ValueError("Invalid base currency")
+        if "second_currency" in values:  # 2.9.71
+            if str(values.get("second_currency") or "") not in self.currency_codes(): raise ValueError("Invalid second main currency")
+            if str(values["second_currency"])==str(values.get("base_currency") or self.settings().get("base_currency") or "USD"):
+                raise ValueError("The two main currencies must be different")
         try: hours=int(values.get("backup_interval_hours",24))
         except Exception as exc: raise ValueError("Backup interval must be a number") from exc
         if hours<1 or hours>720: raise ValueError("Backup interval must be between 1 and 720 hours")

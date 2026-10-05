@@ -171,6 +171,7 @@ class ApiClient:
     def delete_accounts(self,codes): return self.request("POST","/api/accounts/delete",{"codes":list(codes)})
     def move_account(self,source,target,merge_party=False): return self.request("POST","/api/accounts/move",{"from":source,"to":target,"merge_party":merge_party})
     def account_lines(self,code,date_from=None,date_to=None): return self.request("GET","/api/accounts/lines?"+urlencode({k:v for k,v in {"code":code,"from":date_from,"to":date_to}.items() if v}))["items"]
+    def set_invoices_account(self,invoice_ids,field,account): return self.request("POST","/api/invoices/set-account",{"invoice_ids":list(invoice_ids),"field":field,"account":account})
     def move_account_lines(self,source,target,line_ids,change_party=True): return self.request("POST","/api/accounts/move-lines",{"from":source,"to":target,"line_ids":list(line_ids),"change_party":change_party})
     def transfer_account_balance(self,source,target,date,description=""): return self.request("POST","/api/accounts/transfer-balance",{"from":source,"to":target,"date":date,"description":description})
     def update_account(self,code,item): return self.request("PUT",f"/api/accounts/{code}",item)["account"]
@@ -302,6 +303,7 @@ class ApiClient:
     def save_currency(self,code,name): return self.request("POST","/api/currencies",{"code":code,"name":name})["currency"]
     def save_exchange_rate(self,item): return self.request("POST","/api/exchange-rates",item)
     def restore_euro_rates(self): return self.request("POST","/api/exchange-rates/restore-euro",{})
+    def restore_all_rates(self): return self.request("POST","/api/exchange-rates/restore-all",{})
     def employees(self): return self.request("GET","/api/employees")["items"]
     def next_employee_number(self,prefix="1000"):
         return self.request("GET",f"/api/employees/next-number?{urlencode({'prefix':prefix})}")["employee_number"]

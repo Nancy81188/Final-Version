@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from desktop_common import *  # noqa: F401,F403
+from desktop_common import main_currency  # 2.9.71
 
 
 class PartiesMixin:
@@ -51,7 +52,7 @@ class PartiesMixin:
             self.party_account_number.set(prefix); self.party_account_typed()
 
     def new_party_account(self):
-        self.edit_party_id=None; self.party_name.set(""); self.party_kind.set("client"); self.party_account_number.set(""); self.party_tax.set(""); self.party_mof.set(""); self.party_address.set(""); self.party_contact.set(""); self.party_currency.set("USD"); self.party_due_days.set("0")
+        self.edit_party_id=None; self.party_name.set(""); self.party_kind.set("client"); self.party_account_number.set(""); self.party_tax.set(""); self.party_mof.set(""); self.party_address.set(""); self.party_contact.set(""); self.party_currency.set(main_currency(self, 1)); self.party_due_days.set("0")
         self.suggest_party_prefix()
 
     def save_party(self):

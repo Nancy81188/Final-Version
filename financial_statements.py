@@ -394,9 +394,10 @@ def build(databases, options):
         rows = []
         for code in codes:
             name = next((d['accounts'][group][code][0] for d in data if code in d['accounts'].get(group, {})), '')
-            rows.append([code, name] + [q(sign(group) * d['accounts'].get(group, {}).get(code, ('', ZERO))[1]) for d in data])
-        rows.append(['', 'TOTAL'] + [q(sign(group) * (d['close'][group] if group in ASSETS + EQUITY + LIABILITIES + ['unmapped'] else d['pnl'][group])) for d in data])
-        sections.append(dict(heading=f'{number_}. {LINE_TITLES[group].upper()}', headers=['Account', 'Name'] + heads, rows=rows, total_rows=[len(rows) - 1], fixed=True))
+            # 2.9.71: the notes of the audit report show the account names only (no account numbers)
+            rows.append([name or code] + [q(sign(group) * d['accounts'].get(group, {}).get(code, ('', ZERO))[1]) for d in data])
+        rows.append(['TOTAL'] + [q(sign(group) * (d['close'][group] if group in ASSETS + EQUITY + LIABILITIES + ['unmapped'] else d['pnl'][group])) for d in data])
+        sections.append(dict(heading=f'{number_}. {LINE_TITLES[group].upper()}', headers=['Description'] + heads, rows=rows, total_rows=[len(rows) - 1], fixed=True))
     n = next_note[0]
     for name in ('Currency and inflation', 'Related parties and commitments', 'Events and going concern', 'Additional disclosures'):
         text = _text(cfg, 'notes', name, NARRATIVES, values)

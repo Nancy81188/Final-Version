@@ -138,6 +138,60 @@ class RatesStore:
             db.execute("DELETE FROM app_settings WHERE key='exchange_history_loaded_through'")
         return self.sync_historical_exchange_rates()
 
+    # 2.9.71: currencies fixed to the US dollar (units of the currency for 1 USD); the internet is not needed for them.
+    PEGGED_TO_USD = {"AED": "3.6725", "SAR": "3.75", "QAR": "3.64", "BHD": "0.376", "OMR": "0.3845", "JOD": "0.709"}
+    # Currencies published by the European Central Bank (api.frankfurter.app).
+    ECB_CURRENCIES = {"AUD", "BGN", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK",
+                      "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN", "RON", "SEK", "SGD", "THB", "TRY", "USD", "ZAR"}
+
+    def _download_json(self, url, timeout=10):
+        request=urllib.request.Request(url,headers={"User-Agent":"SaberAccounting/2.9.71"})
+        with urllib.request.urlopen(request,timeout=timeout) as response: return json.loads(response.read().decode("utf-8"))
+
+    def restore_all_rates(self):
+        """2.9.71: the daily rate to USD from 01-01-2024 to today of EVERY currency of Settings > Currencies (EUR as before,
+        GBP, CHF, CAD ... from the European Central Bank, AED / SAR / QAR / BHD / OMR / JOD at their fixed USD rate).
+        Rates typed by hand are kept; only the automatic ones are replaced. LBP stays at 89,500 per USD."""
+        result=self.restore_euro_rates()
+        start=datetime(2024,1,1).date(); end=datetime.now().date()
+        others=[code for code in self.currency_codes() if code not in ("USD","LBP","EUR")]
+        pegged=[code for code in others if code in self.PEGGED_TO_USD]
+        downloadable=[code for code in others if code in self.ECB_CURRENCIES]
+        skipped=[code for code in others if code not in pegged and code not in downloadable]
+        collected={code:{} for code in downloadable}; failed=set()
+        if downloadable:
+            for year in range(start.year,end.year+1):
+                year_start=max(start,datetime(year,1,1).date()); year_end=min(end,datetime(year,12,31).date())
+                try:
+                    payload=self._download_json(f"https://api.frankfurter.app/{year_start.isoformat()}..{year_end.isoformat()}?from=USD&to={','.join(downloadable)}")
+                except Exception as exc:
+                    logging.getLogger("saber.database").info("Rates of %s were not downloaded: %s", year, exc); failed.add(year); continue
+                for rate_date,values in (payload.get("rates") or {}).items():
+                    for code,value in (values or {}).items():
+                        if code in collected and Decimal(str(value))>0: collected[code][rate_date]=Decimal(str(value))
+        rows=[]; restored=[]
+        for code in pegged+downloadable:
+            per_usd=None; days=collected.get(code,{})
+            if code in downloadable:
+                if not days: skipped.append(code); continue
+                per_usd=days[min(days)]
+            current=start
+            while current<=end:
+                if code in pegged: per_usd=Decimal(self.PEGGED_TO_USD[code])
+                elif current.isoformat() in days: per_usd=days[current.isoformat()]
+                rows.append((current.strftime("%d-%m-%Y"),code,"USD",str((Decimal("1")/per_usd).quantize(Decimal("0.0000000001"))),utcnow()))
+                current+=timedelta(days=1)
+            restored.append(code)
+        self.__dict__.pop("_rate_state", None)
+        with self.connect() as db:
+            for code in restored:
+                db.execute("DELETE FROM exchange_rates WHERE from_currency=? AND to_currency='USD' AND created_by IS NULL",(code,))
+            db.executemany("""INSERT INTO exchange_rates(rate_date,from_currency,to_currency,rate,created_at)
+                VALUES(?,?,?,?,?) ON CONFLICT(rate_date,from_currency,to_currency) DO NOTHING""",rows)
+        restored_all=["USD","LBP","EUR"]+restored
+        return {**result,"restored":[c for c in restored_all if c in self.currency_codes()],"skipped":sorted(skipped),
+                "offline_years":sorted(failed),"rates":result.get("rates",0)+len(rows)}
+
     def _converted_amount(self, amount, source, target, rate_date):
         """amount x the rate of that day. 2.9.58: the rate of a (currency pair, day) is looked up once and kept while the
         exchange-rate table does not change (reports used to query the rates for every journal line: a trial balance of

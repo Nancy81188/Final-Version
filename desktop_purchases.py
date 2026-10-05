@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
 
 
@@ -36,7 +37,7 @@ class PurchasesMixin:
     # ---- purchases
     def build_purchases_page(self, page, totals_parent=None, cost_parent=None):
         f = {"id": None, "pdf": None, "vars": {k: tk.StringVar() for k in ("supplier", "number", "date", "due", "currency", "type", "taxable", "exempt", "rate", "vat", "account", "vat_account")}}
-        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set("USD"); v["type"].set("Purchases"); v["rate"].set("11"); v["account"].set("601100000"); v["vat_account"].set("44210")
+        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["type"].set("Purchases"); v["rate"].set("11"); v["account"].set("601100000"); v["vat_account"].set("44210")
         f["department"] = tk.StringVar(); f["project"] = tk.StringVar(); f["vat_typed"] = False; self.purchase_form = f
         f["use"] = tk.StringVar(value="Mixed (partial deduction)"); f["reverse"] = tk.BooleanVar(value=False)
         f["discount_percent"] = tk.StringVar(value="0"); f["discount_amount"] = tk.StringVar(value="0"); f["discount_mode"] = "percent"

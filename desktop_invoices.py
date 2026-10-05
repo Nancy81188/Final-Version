@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from desktop_common import *  # noqa: F401,F403
+from desktop_common import main_currency  # 2.9.71
 
 
 class InvoicesMixin:
@@ -42,6 +43,7 @@ class InvoicesMixin:
         self.action_button(lifecycle,"Create Return (goods back)",self.return_selected_invoice).pack(side="left",padx=4)
         tk.Button(lifecycle,text="Cancel Invoice",command=self.cancel_selected_invoice,bg="#8B1E1E",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
         tk.Button(lifecycle,text="Delete Selected",command=self.delete_selected_invoice,bg="#6B1010",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
+        self.action_button(lifecycle,"One Account for Selected...",self.set_account_for_selected_invoices).pack(side="left",padx=4)
         self.action_button(lifecycle,"Attach PDF / Image",self.attach_to_selected_invoice).pack(side="left",padx=4)
         self.action_button(lifecycle,"Attachments",self.show_selected_attachments).pack(side="left",padx=4)
         self.action_button(lifecycle,"History",self.show_invoice_history).pack(side="left",padx=4)
@@ -271,6 +273,37 @@ class InvoicesMixin:
         if not messagebox.askyesno("Delete Invoice",f"Mark {len(names)} invoice(s) DELETED?\n{shown}\n\nTheir numbers and details stay visible; their journal entries are removed."): return
         bulk_action("Delete Uploaded Data",names,self.client.delete_invoice)
         self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial()
+
+    INVOICE_ACCOUNT_FIELDS = (("expense_account","Purchases / Expense / Sales account"),("vat_account","VAT account"),
+                              ("expense_no_vat_account","Non-deductible account"),("supplier_account","Customer / Supplier account"))
+
+    def set_account_for_selected_invoices(self):
+        """2.9.71: choose ONE account and it replaces that account on every selected row (Ctrl / Shift / drag)."""
+        selected=[iid for iid in self.invoice_tree.selection() if self.invoice_rows.get(iid,{}).get("status") not in ("deleted","cancelled")]
+        if not selected: return messagebox.showwarning("Invoices","Select the invoice rows first (Ctrl / Shift or drag the mouse for several)")
+        window=tk.Toplevel(self); window.title("One Account for the Selected Rows"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        tk.Label(window,text=f"{len(selected)} row(s) selected",bg=LIGHT,fg=NAVY,font=("Segoe UI",10,"bold")).grid(row=0,column=0,columnspan=2,sticky="w",padx=14,pady=(14,6))
+        labels=dict(self.INVOICE_ACCOUNT_FIELDS); field=tk.StringVar(value=labels["expense_account"]); account=tk.StringVar()
+        tk.Label(window,text="Account to change",bg=LIGHT).grid(row=1,column=0,sticky="w",padx=14,pady=5)
+        ttk.Combobox(window,textvariable=field,values=list(labels.values()),state="readonly",width=36).grid(row=1,column=1,sticky="w",padx=14,pady=5)
+        tk.Label(window,text="New account (number or F2)",bg=LIGHT).grid(row=2,column=0,sticky="w",padx=14,pady=5)
+        self.account_search_box(window,account,38).grid(row=2,column=1,sticky="w",padx=14,pady=5)
+        tk.Label(window,text="Only that account changes, on the invoice and its journal lines; amounts and the other lines stay as they are.",
+                 bg=LIGHT,fg="#5f6b76",wraplength=520,justify="left").grid(row=3,column=0,columnspan=2,sticky="w",padx=14,pady=(4,8))
+        def apply():
+            key=next((k for k,v in labels.items() if v==field.get()),"expense_account"); code=account.get().split(" - ",1)[0].strip()
+            if not code: return messagebox.showwarning("Invoices","Choose the new account",parent=window)
+            if not messagebox.askyesno("Invoices",f"Put account {code} as the {field.get().lower()} of {len(selected)} row(s)?",parent=window): return
+            try: result=self.client.set_invoices_account([int(i) for i in selected],key,code)
+            except Exception as exc: return messagebox.showerror("Invoices",str(exc),parent=window)
+            window.destroy(); self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial()
+            skipped=result.get("skipped") or []
+            text=f'{len(result.get("done") or [])} row(s) now use {result.get("account")}.'
+            if skipped: text+=f"\n\nNot changed ({len(skipped)}):\n"+"\n".join(skipped[:15])+(f"\n... and {len(skipped)-15} more" if len(skipped)>15 else "")
+            (messagebox.showwarning if skipped else messagebox.showinfo)("Invoices",text)
+        buttons=tk.Frame(window,bg=LIGHT); buttons.grid(row=4,column=0,columnspan=2,sticky="e",padx=14,pady=(0,14))
+        tk.Button(buttons,text="Apply to Selected",command=apply,bg=GOLD,fg=NAVY,border=0,padx=16,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
+        tk.Button(buttons,text="Cancel",command=window.destroy,bg="white",fg=NAVY,border=0,padx=14,pady=7).pack(side="left",padx=4)
 
     def duplicate_selected_invoice(self):
         invoice_id=self.selected_invoice_id()
@@ -830,7 +863,7 @@ class InvoicesMixin:
         self.sales_edit_id=None; self.sales_items=[]; self.sales_sheet.delete(*self.sales_sheet.get_children())
         self._sales_loaded_state=None
         self.sales_party.set(""); self.sales_supplier_account.set(""); self.sales_amount_paid.set("0"); getattr(self,"sales_cash_account",tk.StringVar()).set(""); self.sales_due_date.set(""); self.sales_open_choice.set("")
-        self.sales_doc_type.set("Invoice"); self.sales_category.set("Services")
+        self.sales_doc_type.set("Invoice"); self.sales_category.set("Services"); self.sales_currency.set(main_currency(self, 1))  # 2.9.71
         self.sales_category_box["values"]=["Goods","Products","Services"]
         self.sales_revenue_caption.config(text="Revenue Account")
         self.sales_supplier_side.set("D - Debit"); self.sales_vat_side.set("C - Credit"); self.sales_expense_side.set("C - Credit")

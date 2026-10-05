@@ -663,6 +663,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             try: result=self.db.save_branch(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(201,{"branch":result})
+        if path == "/api/invoices/set-account":  # 2.9.71: Uploaded Data - one account for all the selected rows
+            try: return self._json(200,self.db.set_invoices_account(body.get("invoice_ids") or [],body.get("field"),body.get("account"),user["id"]))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path in ("/api/accounts/delete","/api/accounts/move","/api/accounts/transfer-balance","/api/accounts/move-lines"):  # 2.9.66
             if user["role"]=="viewer": return self._json(403,{"error":"Viewer accounts cannot change the chart of accounts"})
             if path=="/api/accounts/delete" and not self.master_db.user_can(user,"delete"):
@@ -712,6 +715,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             try: self.db.save_exchange_rate(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(201,{"saved":True})
+        if path == "/api/exchange-rates/restore-all":
+            try: result=self.db.restore_all_rates()
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+            return self._json(200,result)
         if path == "/api/exchange-rates/restore-euro":
             try: result=self.db.restore_euro_rates()
             except Exception as exc: return self._json(400,{"error":str(exc)})

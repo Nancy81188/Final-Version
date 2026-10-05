@@ -193,6 +193,48 @@ class AccountsStore:
                 WHERE {' AND '.join(conditions)} ORDER BY {day},e.id,j.id""", parameters)]
         return rows
 
+    INVOICE_ACCOUNT_FIELDS = {"expense_account": "Purchases / Expense / Sales account", "vat_account": "VAT account",
+                              "expense_no_vat_account": "Non-deductible account", "supplier_account": "Customer / Supplier account"}
+
+    def set_invoices_account(self, invoice_ids, field, code, user_id):
+        """2.9.71 (Uploaded Data, one account for all the selected rows): the chosen account replaces, on every selected invoice,
+        the account of `field` - in the invoice and on its own journal lines (invoice, payment on the spot, VAT reclass).
+        The other lines (stock, branch, department, project, amounts) stay exactly as they were. Returns done / skipped."""
+        if field not in self.INVOICE_ACCOUNT_FIELDS: raise ValueError("Choose which account to change")
+        new_code = _code(code)
+        ids = sorted({int(i) for i in invoice_ids or [] if str(i).strip().isdigit()})
+        if not ids: raise ValueError("Select the invoice rows first")
+        with self.connect() as db:
+            new = self._account_row(db, new_code, "New")
+            if db.execute("SELECT 1 FROM accounts WHERE parent_id=? LIMIT 1", (new["id"],)).fetchone() and len(new["code"]) < 9:
+                raise ValueError(f"{new['code']} is a heading account (it has sub-accounts): choose a detail account")
+            invoices = {r["id"]: dict(r) for r in db.execute(f"SELECT * FROM invoices WHERE id IN ({','.join('?' * len(ids))})", ids)}
+        done, skipped = [], []
+        for invoice_id in ids:
+            invoice = invoices.get(invoice_id)
+            if not invoice: skipped.append(f"#{invoice_id}: not found"); continue
+            number = invoice.get("invoice_number") or f"#{invoice_id}"
+            if invoice.get("status") in ("cancelled", "deleted"): skipped.append(f"{number}: {invoice['status']}"); continue
+            old_code = str(invoice.get(field) or "").split(" - ", 1)[0].strip()
+            if old_code == new["code"]: skipped.append(f"{number}: already {new['code']}"); continue
+            if not old_code: skipped.append(f"{number}: has no {self.INVOICE_ACCOUNT_FIELDS[field].lower()}"); continue
+            others = [f for f in list(self.INVOICE_ACCOUNT_FIELDS) + ["payment_account"]
+                      if f != field and str(invoice.get(f) or "").split(" - ", 1)[0].strip() == old_code]
+            if others:
+                skipped.append(f"{number}: {old_code} is also its {others[0].replace('_', ' ')} - edit this invoice alone"); continue
+            with self.connect() as db:
+                lines = [r["id"] for r in db.execute("""SELECT j.id FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id
+                    JOIN accounts a ON a.id=j.account_id WHERE e.source_id=? AND e.source_type IN ('invoice','journal_voucher','invoice_payment','vat_reclass')
+                    AND a.code=?""", (invoice_id, old_code))]
+            try:
+                if lines: self.move_lines(old_code, new["code"], lines, user_id, change_party=False)
+                with self.connect() as db:
+                    db.execute(f"UPDATE invoices SET {field}=? WHERE id=?", (new["code"], invoice_id))
+                done.append(number)
+            except Exception as exc:
+                skipped.append(f"{number}: {exc}")
+        return {"field": field, "account": new["code"], "done": done, "skipped": skipped}
+
     def move_lines(self, source, target, line_ids, user_id, change_party=True):
         """The chosen lines of `source` are booked on `target` instead (a replacement, no new voucher). The document
         behind each line (invoice, payment, expense) gets the new account too, so editing it later keeps the change.

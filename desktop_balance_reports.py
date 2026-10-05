@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from desktop_brains_common import *  # noqa: F401,F403
+from desktop_common import main_currency  # 2.9.71
 from desktop_brains_common import _date_text, _fmt, _num
 import logging
 from multi_select import MultiSelect, chosen_values
@@ -15,7 +16,7 @@ class BalanceReportsMixin:
         year = getattr(self, "current_fiscal_year", datetime.now().year)
         v = {"account_from": tk.StringVar(), "account_to": tk.StringVar(), "date_from": tk.StringVar(value=f"01-01-{year}"), "date_to": tk.StringVar(value=f"31-12-{year}"),
              "print_date": tk.StringVar(value=datetime.now().strftime("%d-%m-%Y")), "branch": tk.StringVar(value="All Branches"), "summary_digits": tk.StringVar(value="4"),
-             "posting": tk.StringVar(value="Posted only"), "first_column": tk.StringVar(value="account"), "second_column": tk.StringVar(value="LBP"), "party": tk.StringVar()}
+             "posting": tk.StringVar(value="Posted only"), "first_column": tk.StringVar(value="account"), "second_column": tk.StringVar(value=main_currency(self, 2)), "party": tk.StringVar()}
         flags = {name: tk.BooleanVar(value=default) for name, default in (("summary", False), ("by_due_date", False), ("reference", statement), ("with_branch", False),
                  ("detailed", statement), ("include_zero", False), ("order_by_description", False), ("non_zero_only", False), ("chapters", False), ("sub_chapters", False),
                  ("balance_sheet_only", False), ("profit_loss_only", False), ("balance_format", False), ("carry_forward", True), ("monthly", False),

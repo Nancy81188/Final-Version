@@ -158,13 +158,20 @@ class CompanyManager:
     def create_company(self,item,master_db):
         name=str(item.get("name") or "").strip(); year=int(item.get("year") or datetime.now().year)
         if not name or year<2000 or year>2100: raise ValueError("Enter a valid company name and fiscal year")
+        # 2.9.71: the two main currencies of this company (default USD and LBP), chosen when it is created
+        main=[str(item.get(key) or default).strip().upper() for key,default in (("main_currency_1","USD"),("main_currency_2","LBP"))]
+        if main[0]==main[1]: raise ValueError("The two main currencies must be different")
+        for code in main:
+            if not re.fullmatch(r"[A-Z]{3}",code): raise ValueError(f"Currency {code or '(empty)'} must be a 3-letter code (for example EUR)")
         data=self._read(); company_id=re.sub(r"[^a-z0-9]+","-",name.lower()).strip("-") or uuid.uuid4().hex[:10]
         if any(c["id"]==company_id or c["name"].casefold()==name.casefold() for c in data["companies"]): raise ValueError("Company already exists")
         company_id=f"{company_id}-{uuid.uuid4().hex[:6]}"
         path=self.year_file({"id":company_id,"name":name},year,data); path.parent.mkdir(parents=True,exist_ok=True)
         target=Database(path); target.initialize(secrets.token_urlsafe(24))
         self._copy_master_data(master_db,target)
-        settings={"company_name":name,"company_address":item.get("address","").strip(),"company_phone":item.get("phone","").strip(),
+        with target.connect() as db:
+            for code in main: db.execute("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",(code,code))
+        settings={"base_currency":main[0],"second_currency":main[1],"company_name":name,"company_address":item.get("address","").strip(),"company_phone":item.get("phone","").strip(),
             "company_mof":item.get("mof_number","").strip(),"company_email":item.get("email","").strip(),"company_website":item.get("website","").strip()}
         with target.connect() as db:
             for key,value in settings.items(): db.execute("INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,value))
@@ -361,6 +368,8 @@ class CompanyManager:
                             dst.execute("UPDATE accounts SET parent_id=(SELECT id FROM accounts WHERE code=?) WHERE code=?",(code_by_id[row["parent_id"]],row["code"]))
                 else:
                     dst.executemany(f"INSERT INTO {table}({','.join(columns)}) VALUES({placeholders})",[tuple(row[col] for col in columns) for row in rows])
+            # 2.9.71: currencies added to the company (for example its main currencies GBP / CHF) reach the new year too
+            dst.executemany("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",[(row["code"],row["name"]) for row in src.execute("SELECT code,name FROM currencies")])
 
     def _opening_balances(self,source,target,year,user_id):
         import year_end

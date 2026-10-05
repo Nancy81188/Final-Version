@@ -131,6 +131,7 @@ class SettingsMixin:
         tk.Entry(rate_controls,textvariable=self.rate_value,width=14).pack(side="left",padx=4)
         self.action_button(rate_controls,"Add Daily Rate",self.save_exchange_rate).pack(side="left",padx=5)
         self.action_button(rate_controls,"Restore EUR Rates 2024-Today",self.restore_euro_rates).pack(side="left",padx=5)
+        self.action_button(rate_controls,"Restore ALL Currencies 2024-Today",self.restore_all_rates).pack(side="left",padx=5)
         currency_controls=tk.Frame(rates,bg=LIGHT); currency_controls.pack(fill="x",padx=12,pady=(0,6))
         self.new_currency_code=tk.StringVar(); self.new_currency_name=tk.StringVar()
         tk.Label(currency_controls,text="Create currency",bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,6))
@@ -146,10 +147,13 @@ class SettingsMixin:
         self.new_branch_name=tk.StringVar(); tk.Label(branch_controls,text="New Branch Name",bg=LIGHT).pack(side="left"); tk.Entry(branch_controls,textvariable=self.new_branch_name,width=32).pack(side="left",padx=6)
         self.action_button(branch_controls,"Save Branch",self.save_branch).pack(side="left",padx=4)
         self.branches_tree=self.table(branches,[("id","ID",80),("name","Branch Name",320),("active","Active",90)])
-        self.base_currency=tk.StringVar(value="USD"); self.backup_hours=tk.StringVar(value="24")
+        self.base_currency=tk.StringVar(value="USD"); self.second_currency=tk.StringVar(value="LBP"); self.backup_hours=tk.StringVar(value="24")
         self.company_fields={key:tk.StringVar() for key in ("company_name","company_address","company_phone","company_mof","company_nssf","company_email","company_website","company_logo")}
-        tk.Label(general,text="Base Currency",bg=LIGHT).grid(row=0,column=0,padx=14,pady=14,sticky="w")
-        self.base_currency_box=ttk.Combobox(general,textvariable=self.base_currency,values=self.currency_codes,state="readonly",width=15); self.base_currency_box.grid(row=0,column=1,padx=14,pady=14)
+        tk.Label(general,text="Main Currency 1 (base)",bg=LIGHT).grid(row=0,column=0,padx=14,pady=(14,4),sticky="w")
+        self.base_currency_box=ttk.Combobox(general,textvariable=self.base_currency,values=self.currency_codes,state="readonly",width=15); self.base_currency_box.grid(row=0,column=1,padx=14,pady=(14,4),sticky="w")
+        # 2.9.71: the second main currency (USD + LBP, EUR + USD, AED + USD ...): the default of new documents and of the report columns
+        tk.Label(general,text="Main Currency 2",bg=LIGHT).grid(row=1,column=0,padx=14,pady=4,sticky="w")
+        self.second_currency_box=ttk.Combobox(general,textvariable=self.second_currency,values=self.currency_codes,state="readonly",width=15); self.second_currency_box.grid(row=1,column=1,padx=14,pady=4,sticky="w")
 
         for row,(key,label) in enumerate((("company_name","Company Name"),("company_address","Address"),("company_phone","Phone"),("company_mof","MOF / VAT Number"),("company_nssf","NSSF Employer Number"),("company_email","Email"),("company_website","Website"),("company_logo","Logo File Path")),2):
             tk.Label(general,text=label,bg=LIGHT).grid(row=row,column=0,padx=14,pady=7,sticky="w")
@@ -172,7 +176,9 @@ class SettingsMixin:
         try:
             settings=self.client.settings(); rates=self.client.exchange_rates()
             self.refresh_books_lock()
-            self.base_currency.set(settings.get("base_currency","USD")); self.backup_hours.set(settings.get("backup_interval_hours","24"))
+            self.base_currency.set(settings.get("base_currency","USD")); self.second_currency.set(settings.get("second_currency","LBP")); self.backup_hours.set(settings.get("backup_interval_hours","24"))
+            for box in (getattr(self,"base_currency_box",None),getattr(self,"second_currency_box",None)):
+                if box is not None: box.configure(values=self.currency_codes)
             for key,var in self.company_fields.items(): var.set(settings.get(key,"Saber for Audit" if key=="company_name" else ""))
             self.company_vat_registered.set(settings.get("company_vat_registered","Yes") or "Yes"); self.company_vat_date.set(settings.get("company_vat_date","") or "")
         except Exception as exc: return messagebox.showerror("Settings",str(exc))
@@ -336,6 +342,19 @@ class SettingsMixin:
         except Exception as exc: return messagebox.showerror("Exchange Rates",str(exc))
         self.load_settings_pages(); messagebox.showinfo("Exchange Rates",f'Restored {result.get("days",0)} days from 01-01-2024 until today')
 
+    def restore_all_rates(self):
+        """2.9.71: the daily rates of every currency of Settings > Currencies, from 01-01-2024 until today."""
+        if not messagebox.askyesno("Exchange Rates","Restore the daily rates of ALL the currencies of Settings, from 01-01-2024 until today?\n\n"
+            "EUR, GBP, CHF, CAD ... come from the European Central Bank (internet needed); AED, SAR, QAR, BHD, OMR and JOD use their fixed "
+            "US dollar rate; LBP stays at 89,500. Rates you typed yourself are kept."): return
+        try: result=self.client.restore_all_rates()
+        except Exception as exc: return messagebox.showerror("Exchange Rates",str(exc))
+        self.load_settings_pages()
+        text=f'Restored from 01-01-2024 until today: {", ".join(result.get("restored") or [])}'
+        if result.get("skipped"): text+=f'\n\nNo automatic source (enter these by hand): {", ".join(result["skipped"])}'
+        if result.get("offline_years"): text+=f'\n\nNo internet for: {", ".join(str(y) for y in result["offline_years"])} - try again later.'
+        messagebox.showinfo("Exchange Rates",text)
+
     def refresh_books_lock(self):
         label=getattr(self,"books_lock_label",None)
         if label is None or not label.winfo_exists(): return
@@ -360,9 +379,11 @@ class SettingsMixin:
         self.books_lock_date.set(""); self.refresh_books_lock(); self.load_settings_pages()
 
     def save_general_settings(self):
-        payload={"base_currency":self.base_currency.get(),"backup_interval_hours":self.backup_hours.get()}
+        if self.base_currency.get()==self.second_currency.get(): return messagebox.showwarning("Settings","The two main currencies must be different")
+        payload={"base_currency":self.base_currency.get(),"second_currency":self.second_currency.get(),"backup_interval_hours":self.backup_hours.get()}
         payload.update({key:var.get().strip() for key,var in self.company_fields.items()})
         payload["company_vat_registered"]=self.company_vat_registered.get(); payload["company_vat_date"]=self.company_vat_date.get().strip()
         try: self.client.save_settings(payload)
         except Exception as exc: return messagebox.showerror("Settings",str(exc))
+        self._main_currency_cache=None  # 2.9.71: new documents use the new main currencies at once
         messagebox.showinfo("Settings","Settings saved successfully")

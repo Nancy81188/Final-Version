@@ -446,11 +446,21 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         fields={key:tk.StringVar(value=str(datetime.now().year) if key=="year" else "") for key in ("name","year","address","phone","mof_number","email","website")}
         for row,(key,label) in enumerate((("name","Company Name"),("year","Opening Fiscal Year"),("address","Address"),("phone","Phone"),("mof_number","MOF / VAT Number"),("email","Email"),("website","Website"))):
             tk.Label(window,text=label,bg=LIGHT).grid(row=row,column=0,sticky="w",padx=14,pady=7); tk.Entry(window,textvariable=fields[key],width=38).grid(row=row,column=1,padx=14,pady=7)
+        # 2.9.71: the two main currencies of the company (USD + LBP, EUR + USD, AED + USD ...), changeable later in Settings
+        choices=["USD","LBP","EUR","AED","SAR","QAR","KWD","GBP","CHF","CAD","JOD","EGP","TRY"]
+        main1=tk.StringVar(value="USD"); main2=tk.StringVar(value="LBP")
+        tk.Label(window,text="Main Currency 1 (base)",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=7,column=0,sticky="w",padx=14,pady=7)
+        ttk.Combobox(window,textvariable=main1,values=choices,width=12).grid(row=7,column=1,sticky="w",padx=14,pady=7)
+        tk.Label(window,text="Main Currency 2",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=8,column=0,sticky="w",padx=14,pady=7)
+        ttk.Combobox(window,textvariable=main2,values=choices,width=12).grid(row=8,column=1,sticky="w",padx=14,pady=7)
         def save():
-            try: self.client.create_company({key:var.get().strip() for key,var in fields.items()})
+            payload={key:var.get().strip() for key,var in fields.items()}
+            payload["main_currency_1"]=main1.get().strip().upper(); payload["main_currency_2"]=main2.get().strip().upper()
+            if payload["main_currency_1"]==payload["main_currency_2"]: return messagebox.showwarning("Create Company","Choose two different main currencies",parent=window)
+            try: self.client.create_company(payload)
             except Exception as exc: return messagebox.showerror("Create Company",str(exc),parent=window)
             window.destroy(); self.company_selection_screen()
-        self.action_button(window,"Create Company",save).grid(row=7,column=0,columnspan=2,pady=14)
+        self.action_button(window,"Create Company",save).grid(row=9,column=0,columnspan=2,pady=14)
 
     def manage_company_dialog(self,company):
         if not company: return
@@ -1082,12 +1092,25 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
             for row in accounts:
                 if row_matches_search((row["code"],row["name_en"],row.get("name_ar"),row.get("name_fr"),row["type"]),typed):
                     tree.insert("","end",values=(row["code"],row["name_en"],row.get("name_ar") or "",row["type"]))
+            rows=tree.get_children()
+            if rows: tree.selection_set(rows[0]); tree.focus(rows[0]); tree.see(rows[0])  # 2.9.71: Enter takes it at once
+        def move(step):
+            """2.9.71: Up / Down in the search box move the highlighted account; typing continues in the box."""
+            rows=list(tree.get_children())
+            if not rows: return "break"
+            current=tree.selection()
+            index=rows.index(current[0]) if current and current[0] in rows else -1
+            index=max(0,min(len(rows)-1,index+step))
+            tree.selection_set(rows[index]); tree.focus(rows[index]); tree.see(rows[index])
+            return "break"
         def select(_event=None):
             selected=tree.selection()
             if not selected: return
             values=tree.item(selected[0],"values"); variable.set(str(values[0])); close_lookup()
-        search_var.trace_add("write",populate); tree.bind("<Double-1>",select); tree.bind("<Return>",select); entry.bind("<Return>",lambda _event:(tree.selection_set(tree.get_children()[0]),select()) if tree.get_children() else None)
-        tk.Label(window,text="Double-click an account or press Enter to select. If it does not exist, create it below.",bg=LIGHT,fg="#5f6b76").pack(pady=(0,5))
+        search_var.trace_add("write",populate); tree.bind("<Double-1>",select); tree.bind("<Return>",select); entry.bind("<Return>",lambda _event:(None if tree.selection() else tree.selection_set(tree.get_children()[0]),select()) if tree.get_children() else None)
+        entry.bind("<Down>",lambda _event:move(1)); entry.bind("<Up>",lambda _event:move(-1))
+        entry.bind("<Next>",lambda _event:move(10)); entry.bind("<Prior>",lambda _event:move(-10))
+        tk.Label(window,text="Arrows \u2191 \u2193 choose, Enter selects (or double-click). If it does not exist, create it below.",bg=LIGHT,fg="#5f6b76").pack(pady=(0,5))
         create=tk.LabelFrame(window,text="Create account here (number assigned automatically)",bg=LIGHT,padx=10,pady=8)
         create.pack(fill="x",padx=10,pady=(0,10))
         parent_var=tk.StringVar(); name_var=tk.StringVar(); type_var=tk.StringVar()

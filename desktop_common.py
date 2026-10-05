@@ -334,6 +334,22 @@ def selection_totals(tree, columns, label, hint=None):
     return update
 
 
+def main_currency(app, which=1):
+    """2.9.71: the company's two main currencies (chosen when the company was created, changed in Settings > General):
+    1 = the first (base) currency, 2 = the second one. New vouchers, invoices, payments, imports and reports start with them."""
+    client = getattr(app, "client", None)
+    key = (getattr(client, "company_id", None), getattr(client, "fiscal_year", None))
+    cache = getattr(app, "_main_currency_cache", None)
+    if not cache or cache[0] != key:
+        try: values = client.settings() if client is not None else {}
+        except Exception: values = {}
+        values = values if isinstance(values, dict) else {}
+        cache = (key, (str(values.get("base_currency") or "USD").upper(), str(values.get("second_currency") or "LBP").upper()))
+        try: app._main_currency_cache = cache
+        except Exception: pass
+    return cache[1][0 if int(which) == 1 else 1]
+
+
 def bulk_action(title, labels, action, parent=None):
     """2.9.69: run `action(key)` for every selected record; one question before, one summary after.
     labels = [(key, text shown)]. Returns the keys that were done."""

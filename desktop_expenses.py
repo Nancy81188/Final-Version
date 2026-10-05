@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
 
 
@@ -10,7 +11,7 @@ class ExpensesMixin:
     def build_expenses_page(self, page):
         f = {"id": None, "pdf": None, "vars": {k: tk.StringVar() for k in ("date", "description", "category", "currency", "with_vat", "without_vat", "vat", "account", "no_vat_account",
                                                                           "vat_account", "payment_account", "reference")}}
-        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set("USD"); v["category"].set("General")
+        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["category"].set("General")
         v["account"].set("601100000"); v["no_vat_account"].set("601100001"); v["vat_account"].set("44216"); v["payment_account"].set("531")
         f["department"] = tk.StringVar(); f["project"] = tk.StringVar(); f["non_deductible"] = tk.BooleanVar(value=False); f["vat_typed"] = False; self.expense_form = f
         f["use"] = tk.StringVar(value="Mixed (partial deduction)")
