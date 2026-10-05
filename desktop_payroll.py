@@ -464,7 +464,7 @@ class PayrollMixin:
     def apply_lebanese_payroll_rules(self):
         if not messagebox.askyesno("Lebanese Payroll Rules","Replace ALL Tax & NSSF periods with the configured Lebanese payroll rules from 01-01-2024?\n\n"
             "- Budget Law 2024 brackets and family deductions\n- Transport exempt 450,000 LBP/day, schooling 6M/year\n- Tax rounded up to 10,000 LBP from 25-11-2024\n"
-            "- NSSF sickness & maternity ceiling: 45M -> 90M (04-2024) -> 140M (08-2025); family 12M -> 18M (07-2025) -> 28M (05-2026)\n"
+            "- NSSF sickness & maternity ceiling: 45M -> 90M (04-2024) -> 120M (08-2025); family 12M -> 18M (07-2025) -> 28M (05-2026)\n"
             "- Family benefits: 600k/330k from 01-2024, 1.2M/660k from 07-2025, 2.1M/1.155M from 05-2026 (spouse/child)\n\n"
             "Rates, employee eligibility, and any part-month minimum-wage treatment must be confirmed with CNSS / your accountant. "
             "These reports are preparation worksheets, not official filings. Posting accounts are kept. Already saved payroll is NOT recalculated."): return

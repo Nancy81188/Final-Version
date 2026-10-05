@@ -9,13 +9,6 @@ from desktop_asset_register import AssetRegisterMixin
 from desktop_expenses import ExpensesMixin
 
 class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
-    def ai_key_for_session(self):
-        key=getattr(self,"_ai_api_key",None) or os.environ.get("SABER_AI_API_KEY","")
-        if not key:
-            key=simpledialog.askstring("AI assistance", "Enter your OpenAI API key (kept only for this session):", show="*", parent=self)
-            if key: self._ai_api_key=key.strip()
-        return key.strip() if key else None
-
     def run_ai_task(self, work, success):
         """Run free local document/account assistance off the UI thread."""
         def run():

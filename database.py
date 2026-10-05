@@ -827,6 +827,10 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             source_connection=sqlite3.connect(str(source)); target_connection=sqlite3.connect(self.path)
             try: source_connection.backup(target_connection)
             finally: target_connection.close(); source_connection.close()
+        # 2.9.70: a backup made by an older version lacks the newer tables / columns ("no such column:
+        # i.payment_account" until the program was restarted). Upgrade it now; data is kept, an existing admin is untouched.
+        self.__dict__.pop("_rate_state", None); self.__dict__.pop("_known_user_ids", None)
+        self.initialize_if_needed(secrets.token_urlsafe(24))
         with self.connect() as db:
             db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
                 (user_id,"restore","database",json.dumps({"backup":source.name,"safety_backup":safety}),utcnow()))

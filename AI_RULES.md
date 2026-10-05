@@ -33,4 +33,4 @@ Every test must pass. Add a test for every new calculation (VAT, payroll, stock,
 - Closed periods: an administrator can lock the books up to a date (Backup & Restore > Close the books). Database triggers then refuse any journal entry dated on or before it; do not remove or bypass them.
 
 ## 6. Privacy
-- The optional OpenAI features send data outside the computer; they must stay optional and ask before sending.
+- PDF reading and account suggestions run on this computer only (no cloud AI, no API key). Any future feature that sends data outside the computer must be optional and ask before sending.

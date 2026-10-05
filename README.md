@@ -1,5 +1,11 @@
 # Saber Accounting MVP
 
+## Version 2.9.70 (restore of older backups, NSSF ceiling text)
+- Fixed: restoring a backup made by an older version brought back "no such column: i.payment_account" (and similar) until the program was restarted. The restored file is now upgraded at once (new tables / columns added; data and the admin password kept).
+- Fixed: the payroll help ("Load Lebanese Payroll Rules") and these notes said the NSSF sickness & maternity ceiling is LBP 140M from 08-2025. The calculation already used the correct LBP 120M (Decree 887 of 21-08-2025); only the texts were wrong.
+- Removed: an unused screen that asked for an OpenAI API key (PDF reading and account suggestions are local only). AI_RULES.md section 6 updated.
+- Changed files: database.py, desktop_payroll.py, lebanese_payroll.py, desktop_stage3.py, app_runtime.py, AI_RULES.md, installer.iss, README.md. New test: test_v2_9_70.py.
+
 ## Version 2.9.69 (multi-select delete, show / hide columns, audit report pack)
 - Delete works on the whole selection (Ctrl / Shift / drag, or the Delete key): Uploaded Data, Purchases & Expenses, Payments & Receipts, Journal Vouchers. One question before, one summary after.
 - Uploaded Data: "Show:" ticks next to Search hide / show the Branch, Type, D and C columns (kept on this computer).
@@ -790,7 +796,7 @@ Every PDF (reports, statements, invoices, VAT declaration, R5 / R6 / R10, NSSF s
 
 ## NSSF ceilings - automatic and monthly
 - A new or never-configured company loads the app's Lebanese payroll defaults for 2024-2026 (ceilings, configurable rates, family allowances, tax rounding). Settings you changed yourself are never overwritten; the "Load Lebanese Payroll Rules" action reloads them on request.
-- Payroll is monthly: each payroll uses the rules in force on the **last day of its month** (for example the 90M -> 140M sickness-and-maternity ceiling change of August 2025, or the LBP 10,000 rounding from 25-11-2024 for November). Retroactive pay uses the ceilings of each of its own months.
+- Payroll is monthly: each payroll uses the rules in force on the **last day of its month** (for example the 90M -> 120M sickness-and-maternity ceiling change of August 2025, or the LBP 10,000 rounding from 25-11-2024 for November). Retroactive pay uses the ceilings of each of its own months.
 - Payroll > Payroll Reports & Worksheets > "CEILINGS - NSSF ceilings by month" shows the ceilings and rates of every month of a year.
 
 ## NSSF payment format
@@ -801,7 +807,7 @@ Payroll > Payroll Reports & Worksheets > "NSSF - Contributions statement (paymen
 "Record NSSF Payment" books the payment voucher (Dr NSSF payable / Cr cash or bank).
 
 ## Payroll and NSSF compliance limits
-- The current CNSS notices support the sickness-and-maternity ceiling of LBP 140M and minimum wage of LBP 28M from 1 August 2025 (Memo 801), and the family-branch ceiling of LBP 28M plus revised allowances from 1 May 2026 (Memo 831). The family ceiling of LBP 18M begins 1 July 2025 (Memo 793).
+- The sickness-and-maternity ceiling is LBP 120M from 1 August 2025 (Decree 887 of 21-08-2025) and the minimum wage LBP 28M (Memo 801), and the family-branch ceiling of LBP 28M plus revised allowances from 1 May 2026 (Memo 831). The family ceiling of LBP 18M begins 1 July 2025 (Memo 793).
 - CNSS Contribution System 11, Article 1, defines covered earnings broadly. Accordingly, the NSSF base includes transport and schooling allowances even when part of those amounts is exempt from salary tax. Supporting expense reimbursements are different and require proof.
 - The consolidated Social Security Law (through 31 August 2026) delegates contribution percentages to implementing decrees. The app’s configurable 3% employee, 8% sickness-and-maternity employer, 6% family, and 8.5% end-of-service rates have not been fully verified here against the current primary decrees; verify the applicable rates before filing or paying. Existing user-saved settings are preserved, so inspect old company files for legacy rates before use.
 - Foreign-worker EOS eligibility is category- and agreement-dependent; nationality alone is not sufficient. The app’s nationality/age shortcut is warning-bearing and must not be relied on without checking the employee’s CNSS category. Spouse-working family-tax deduction allocation and minimum-wage treatment for a partial month also require confirmation.
