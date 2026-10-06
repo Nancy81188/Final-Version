@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.73 (GitHub build kept working)
+- Tests workflow pinned to Ubuntu 24.04: GitHub moves "ubuntu-latest" to Ubuntu 26 from 19-10-2026, which could break the Tk tests without any change in the program.
+- Installer workflow: actions/upload-artifact v4 -> v6 (v4 ran on the deprecated Node.js 20).
+- No change in the program itself. Changed files: .github/workflows/tests.yml, .github/workflows/build-windows-installer.yml, app_runtime.py, installer.iss, README.md.
+
 ## Version 2.9.72 (VAT rate and VAT return currencies per company)
 - Companies: Create Company asks for the company's VAT Rate % (11 by default; for example 5 in the Emirates, 15 in Saudi Arabia) and the two VAT Return Currencies (LBP with USD by default; for example AED with USD, EUR with USD). Settings > General shows them next to "Registered in VAT" and they can be changed there.
 - The company's VAT rate is used everywhere 11% was fixed: sales invoice lines, totals and printed invoice ("VAT 5%"), purchases, expenses, imported sales, invoice lines saved without a rate, items (standard rate or 0%). The sale type "Taxable 11%" is now "Taxable (standard rate)". Documents already saved keep their VAT.

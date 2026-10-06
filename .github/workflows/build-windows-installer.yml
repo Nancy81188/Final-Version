@@ -159,7 +159,7 @@ jobs:
           Remove-Item $env:SIGN_PFX -Force
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6  # 2.9.73: v4 ran on the deprecated Node.js 20
         with:
           name: SaberAccountingSetup-${{ steps.version.outputs.version }}
           path: installer-output/SaberAccountingSetup.exe
