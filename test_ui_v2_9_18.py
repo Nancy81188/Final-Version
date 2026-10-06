@@ -452,8 +452,11 @@ class ProgramWindowFixesTest(unittest.TestCase):
         page = self._toplevel("DOE")
         combos = [w for w in page.winfo_children()[0].winfo_children() if w.winfo_class() == "TCombobox"]
         combos[0].set("USD"); combos[0].event_generate("<<ComboboxSelected>>"); self.app.update()
-        self.assertIn("LBP", combos[1]["values"])
-        combos[1].set("LBP"); combos[1].event_generate("<<ComboboxSelected>>"); self.app.update()
+        # 2.9.78: "Currencies" is a multi-choice list now (one, several or All), not a single drop-down
+        from multi_select import MultiSelect
+        currencies = next(w for w in page.winfo_children()[0].winfo_children() if isinstance(w, MultiSelect))
+        self.assertIn("LBP", currencies["values"])
+        currencies.set_choices(["LBP"]); self.app.update()
         entries = [w for w in page.winfo_children()[1].winfo_children() if w.winfo_class() == "Entry"]
         self.assertEqual(len(entries), 1)
         entries[0].delete(0, "end"); entries[0].insert(0, "100000")
