@@ -1,13 +1,16 @@
 """2.9.77: sales are booked on the customer's own account, a class 7 revenue account and output VAT (4427), whatever
 the way they come in (Excel import, sales screen, sales import); older wrongly booked sales can be checked and corrected."""
+import os
 import tempfile
 import unittest
+from unittest import mock
 from decimal import Decimal
 from pathlib import Path
 
 from openpyxl import Workbook
 
 import importer
+from company_manager import CompanyManager
 from database import Database
 
 
@@ -77,6 +80,30 @@ class RepairOldSalesTest(_Book):
         self.db.import_invoice({"invoice_number": "S-OK", "invoice_date": "10-02-2026", "party_name": "Client Fine", "kind": "sale", "entry_type": "sales",
             "currency": "USD", "subtotal": 10, "vat": 1.1, "total": 11.1}, 1)
         self.assertEqual(self.db.sales_account_problems(), [])
+
+
+class OpeningWithNewCustomerTest(unittest.TestCase):
+    def test_customer_opened_last_year_after_the_new_year_reaches_the_opening(self):
+        environment = dict(os.environ); environment.pop("SABER_FIRST_COMPANY", None)
+        with mock.patch.dict(os.environ, environment, clear=True), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            root = Path(folder); master = Database(root / "saber_accounting.db"); master.initialize("secret")
+            manager = CompanyManager(root / "saber_accounting.db")
+            company = manager.create_company({"name": "Opening Test SAL", "year": 2025}, master)
+            manager.create_year(company["id"], 2026, 1)  # the new year exists before the sale below
+            old = manager.database(company["id"], 2025)
+            old.import_invoice({"invoice_number": "S-1", "invoice_date": "15-12-2025", "party_name": "Late Client", "kind": "sale", "entry_type": "sales",
+                                "currency": "USD", "subtotal": 100, "vat": 11, "total": 111}, 1)
+            with old.connect() as db: code = db.execute("SELECT account_number FROM parties WHERE name='Late Client'").fetchone()[0]
+            manager.refresh_opening(company["id"], 2025, 1)
+            new = manager.database(company["id"], 2026)
+            with new.connect() as db:
+                self.assertTrue(db.execute("SELECT 1 FROM accounts WHERE code=?", (code,)).fetchone())
+                self.assertTrue(db.execute("SELECT 1 FROM parties WHERE account_number=?", (code,)).fetchone())
+                debit = db.execute("""SELECT SUM(CAST(j.debit AS REAL)) FROM journal_lines j JOIN accounts a ON a.id=j.account_id JOIN journal_entries e ON e.id=j.entry_id
+                                      WHERE a.code=? AND e.source_type='opening'""", (code,)).fetchone()[0]
+            self.assertEqual(debit, 111)
+            for path in list(manager._cache): manager._cache.pop(path).release()
+            master.release()
 
 
 if __name__ == "__main__":

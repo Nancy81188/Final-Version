@@ -5,7 +5,9 @@
 - Fixed: sales entered without a party account (Excel / sales import, a new customer typed by hand) went to the general 4111 instead of the customer's own account, so the customer's statement and ageing missed them. An account chosen on purpose (41...) is kept. Items sold from stock without a revenue account go to sales of goods (701100001), not services.
 - New: Uploaded Data > "Check Sales Accounts..." lists the sales that earlier versions booked on wrong accounts (customer on 40... or 4111, revenue not class 7, VAT on deductible VAT) with what will be corrected; Correct Selected / Correct All moves only those accounts on the invoice and its journal lines (amounts, dates and VAT unchanged; closed periods are refused). Make a backup first.
 - Purchases are unchanged.
-- Changed files: db_invoices.py, db_accounts.py, importer.py, server.py, client.py, desktop_invoices.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_77.py.
+- Fixed: Refresh opening (next year's opening balances) stopped with "Account ... was not found in the chart of accounts" when a customer or supplier account was opened in the previous year after the new year had been created. The account and its customer / supplier are now copied into the new year first.
+- Test changed on purpose: test_saber_accounting.py expected an imported sale on the general 4111; it now expects the customer's own account (4111xxxxx), like the supplier's (4011xxxxx) for a purchase.
+- Changed files: db_invoices.py, db_accounts.py, importer.py, year_end.py, server.py, client.py, desktop_invoices.py, app_runtime.py, installer.iss, README.md, test_saber_accounting.py. New test: test_v2_9_77.py.
 
 ## Version 2.9.76 (test documents made anonymous)
 - The real supplier documents kept for the PDF-reader tests no longer show real people or companies: supplier names, workers' names, project, bank accounts / IBAN / SWIFT, registration and VAT numbers, phone numbers and e-mail replaced by samples. Amounts, dates and layout are unchanged, so the reader is checked exactly as before.

@@ -133,10 +133,33 @@ def opening_lines(source, source_year):
     return {c: [(code, *v) for code, v in sorted(a.items()) if abs(v[0]) >= CENT or abs(v[1]) >= 1] for c, a in per_currency.items()}
 
 
+def _bring_accounts(source, db, codes):
+    """2.9.77: accounts (and their customer / supplier) opened in the previous year AFTER this year was created - a customer's
+    own account made with a sale, a new supplier - are copied into this year before the opening uses them."""
+    missing = [code for code in codes if not db.execute("SELECT 1 FROM accounts WHERE code=?", (code,)).fetchone()]
+    if not missing: return
+    target_columns = {row["name"] for row in db.execute("PRAGMA table_info(accounts)")}
+    party_columns = {row["name"] for row in db.execute("PRAGMA table_info(parties)")}
+    with source.connect() as src:
+        for code in missing:
+            row = src.execute("SELECT a.*,p.code parent_code FROM accounts a LEFT JOIN accounts p ON p.id=a.parent_id WHERE a.code=?", (code,)).fetchone()
+            if not row: continue
+            values = {k: row[k] for k in row.keys() if k in target_columns and k not in ("id", "parent_id")}
+            if row["parent_code"]:
+                parent = db.execute("SELECT id FROM accounts WHERE code=?", (row["parent_code"],)).fetchone()
+                if parent and "parent_id" in target_columns: values["parent_id"] = parent["id"]
+            db.execute(f"INSERT OR IGNORE INTO accounts({','.join(values)}) VALUES({','.join('?' * len(values))})", tuple(values.values()))
+            party = src.execute("SELECT * FROM parties WHERE account_number=?", (code,)).fetchone()
+            if party and not db.execute("SELECT 1 FROM parties WHERE account_number=? OR (kind=? AND name=?)", (code, party["kind"], party["name"])).fetchone():
+                pvalues = {k: party[k] for k in party.keys() if k in party_columns and k != "id"}
+                db.execute(f"INSERT OR IGNORE INTO parties({','.join(pvalues)}) VALUES({','.join('?' * len(pvalues))})", tuple(pvalues.values()))
+
+
 def post_opening(source, target, year, user_id):
     """Replace the opening vouchers of `year` in the target database with the balances of year-1."""
     year = int(year); lines = opening_lines(source, year - 1); vouchers = []
     with target.connect() as db:
+        _bring_accounts(source, db, sorted({code for items in lines.values() for code, *_rest in items}))
         for row in db.execute("SELECT id FROM journal_entries WHERE source_type='opening' AND entry_number LIKE ?", (f"OPEN-{year}-%",)).fetchall():
             db.execute("DELETE FROM journal_entries WHERE id=?", (row["id"],))
         for currency, items in lines.items():

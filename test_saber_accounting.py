@@ -403,8 +403,10 @@ class SaberAccountingTest(unittest.TestCase):
                   "kind":"sale","currency":"USD","subtotal":200,"vat":22,"total":222}
             db.import_invoice(purchase,user["id"]); db.import_invoice(sale,user["id"])
             trial_codes={row["code"] for row in db.trial_balance()}
-            self.assertTrue({"4111","44210","4427","601100000","713"}.issubset(trial_codes))
+            self.assertTrue({"44210","4427","601100000","713"}.issubset(trial_codes))
             self.assertTrue(any(code.startswith("4011") and len(code)==9 for code in trial_codes))
+            # 2.9.77: a sale is owed by the customer's own account (4111xxxxx), like a purchase by the supplier's (4011xxxxx)
+            self.assertTrue(any(code.startswith("4111") and len(code)==9 for code in trial_codes))
 
     def test_suppliers_receive_unique_nine_digit_accounts(self):
         with tempfile.TemporaryDirectory() as folder:
