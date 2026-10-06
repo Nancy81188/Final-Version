@@ -168,7 +168,7 @@ class RatesStore:
         Rates typed by hand are kept; only the automatic ones are replaced. LBP stays at 89,500 per USD."""
         result=self.restore_euro_rates()
         start=datetime(2024,1,1).date(); end=datetime.now().date()
-        others=[code for code in self.currency_codes() if code not in ("USD","LBP","EUR")]
+        others=sorted(code for code in self.currency_codes() if code not in ("USD","LBP","EUR"))  # 2.9.78: same order on every PC
         pegged=[code for code in others if code in self.PEGGED_TO_USD]
         downloadable=[code for code in others if code in self.ECB_CURRENCIES]
         skipped=[code for code in others if code not in pegged and code not in downloadable]
