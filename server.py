@@ -152,6 +152,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/me":
             info={k:user[k] for k in ("id","username","role","language","expires_at")}; info["permissions"]={m:self.master_db.user_can(user,m) for m in ("payroll","vat","delete")}
             return self._json(200,info)
+        if path == "/api/invoices/account-check":  # 2.9.77: sales booked on wrong accounts by earlier versions
+            try: return self._json(200,{"items":self.db.sales_account_problems()})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/asset-categories": return self._json(200,{"items":fixed_assets.list_categories(self.db)})
         if path == "/api/asset-depreciation":
             try: return self._json(200,ledger_reports.json_ready(fixed_assets.monthly_table(self.db,self._query(parsed,"month"),self._query(parsed,"account") or None)))
@@ -665,6 +668,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             try: result=self.db.save_branch(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(201,{"branch":result})
+        if path == "/api/invoices/account-fix":  # 2.9.77
+            try: return self._json(200,self.db.fix_sales_accounts(body.get("invoice_ids") or [],user["id"]))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/invoices/set-account":  # 2.9.71: Uploaded Data - one account for all the selected rows
             try: return self._json(200,self.db.set_invoices_account(body.get("invoice_ids") or [],body.get("field"),body.get("account"),user["id"]))
             except Exception as exc: return self._json(400,{"error":str(exc)})

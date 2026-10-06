@@ -171,6 +171,8 @@ class ApiClient:
     def delete_accounts(self,codes): return self.request("POST","/api/accounts/delete",{"codes":list(codes)})
     def move_account(self,source,target,merge_party=False): return self.request("POST","/api/accounts/move",{"from":source,"to":target,"merge_party":merge_party})
     def account_lines(self,code,date_from=None,date_to=None): return self.request("GET","/api/accounts/lines?"+urlencode({k:v for k,v in {"code":code,"from":date_from,"to":date_to}.items() if v}))["items"]
+    def sales_account_problems(self): return self.request("GET","/api/invoices/account-check")["items"]
+    def fix_sales_accounts(self,invoice_ids): return self.request("POST","/api/invoices/account-fix",{"invoice_ids":list(invoice_ids)})
     def set_invoices_account(self,invoice_ids,field,account): return self.request("POST","/api/invoices/set-account",{"invoice_ids":list(invoice_ids),"field":field,"account":account})
     def move_account_lines(self,source,target,line_ids,change_party=True): return self.request("POST","/api/accounts/move-lines",{"from":source,"to":target,"line_ids":list(line_ids),"change_party":change_party})
     def transfer_account_balance(self,source,target,date,description=""): return self.request("POST","/api/accounts/transfer-balance",{"from":source,"to":target,"date":date,"description":description})

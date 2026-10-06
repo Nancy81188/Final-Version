@@ -235,6 +235,46 @@ class AccountsStore:
                 skipped.append(f"{number}: {exc}")
         return {"field": field, "account": new["code"], "done": done, "skipped": skipped}
 
+    def sales_account_problems(self):
+        """2.9.77: sales booked on the wrong accounts by earlier versions (Excel import): the customer on a SUPPLIERS account
+        (40...) or on the general 4111 instead of his own account, the revenue on a non-class-7 account, the VAT on deductible
+        (input) VAT. One row per invoice with the corrections it needs."""
+        import chart_extra
+        problems = []
+        with self.connect() as db:
+            rows = [dict(r) for r in db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,i.party_id,p.name party_name,i.currency,i.total,
+                i.supplier_account,i.expense_account,i.vat_account FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
+                WHERE i.kind='sale' AND i.status NOT IN ('cancelled','deleted') ORDER BY i.id""")]
+            for row in rows:
+                fixes = {}; reasons = []
+                party = db.execute("SELECT * FROM parties WHERE id=?", (row["party_id"],)).fetchone() if row["party_id"] else None
+                own = self._ensure_party_account(db, party) if party else None
+                customer = _code(row["supplier_account"])
+                if own and own != customer and (customer.startswith("40") or customer == DEFAULT_LEBANESE_ACCOUNTS["accounts_receivable"]):
+                    fixes["supplier_account"] = own
+                    reasons.append(f"customer on {customer}{' (suppliers!)' if customer.startswith('40') else ' (general customers)'} -> {own}")
+                revenue = _code(row["expense_account"])
+                if not revenue.startswith("7"):
+                    fixes["expense_account"] = DEFAULT_LEBANESE_ACCOUNTS["sales"]; reasons.append(f"revenue on {revenue} -> {DEFAULT_LEBANESE_ACCOUNTS['sales']}")
+                vat = _code(row["vat_account"])
+                if vat.startswith(("4426", "4421")) or vat in (chart_extra.PURCHASE_VAT, chart_extra.EXPORT_VAT, chart_extra.EXPENSE_VAT):
+                    fixes["vat_account"] = chart_extra.SALES_VAT; reasons.append(f"VAT on {vat} (deductible VAT) -> {chart_extra.SALES_VAT}")
+                if fixes: problems.append({**row, "fixes": fixes, "reasons": reasons})
+        return problems
+
+    def fix_sales_accounts(self, invoice_ids, user_id):
+        """2.9.77: apply the corrections of sales_account_problems to the chosen invoices (journal lines moved, nothing else)."""
+        chosen = {int(i) for i in invoice_ids or [] if str(i).strip().isdigit()}
+        done, skipped = [], []
+        for problem in self.sales_account_problems():
+            if problem["id"] not in chosen: continue
+            failed = []
+            for field, code in problem["fixes"].items():
+                result = self.set_invoices_account([problem["id"]], field, code, user_id)
+                failed += [text.split(": ", 1)[-1] for text in result["skipped"] if "already" not in text]
+            (skipped.append(f"{problem['invoice_number']}: {'; '.join(failed)}") if failed else done.append(problem["invoice_number"]))
+        return {"done": done, "skipped": skipped}
+
     def move_lines(self, source, target, line_ids, user_id, change_party=True):
         """The chosen lines of `source` are booked on `target` instead (a replacement, no new voucher). The document
         behind each line (invoice, payment, expense) gets the new account too, so editing it later keeps the change.

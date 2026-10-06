@@ -243,9 +243,10 @@ def read_invoices(path: str | Path, sheet_name: str | None = None, default_curre
                 "currency": currency,
                 "currency_issue": currency_issue,
                 "kind": "sale" if kind in {"sale", "sales", "customer"} else "purchase",
-                "supplier_account": str(get("supplier_account") or "4011").strip(),
-                "vat_account": str(get("vat_account") or "442660000").strip(),
-                "expense_account": str(get("expense_account") or "601100000").strip(),
+                # 2.9.77: defaults that match the kind of the row (a sale had 4011 suppliers / 601 expenses / input VAT)
+                "supplier_account": str(get("supplier_account") or ("" if kind in {"sale", "sales", "customer"} else "4011")).strip(),
+                "vat_account": str(get("vat_account") or ("4427" if kind in {"sale", "sales", "customer"} else "442660000")).strip(),
+                "expense_account": str(get("expense_account") or ("713" if kind in {"sale", "sales", "customer"} else "601100000")).strip(),
                 "source_file": Path(path).name,
                 "source_row": row_number,
                 "number_from_row": number_from_row,

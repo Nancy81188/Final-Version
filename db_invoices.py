@@ -69,13 +69,19 @@ class InvoicesStore:
             party_account=self._ensure_party_account(db,party)
             if kind=="purchase" and (not item.get("supplier_account") or supplier_account==DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"]):
                 supplier_account=party_account
-            elif kind=="sale" and not item.get("supplier_account") and item.get("source_file")=="Sales Invoice":
+            elif kind=="sale" and (not item.get("supplier_account") or supplier_account.split(" - ",1)[0].strip().startswith("40")):
+                # 2.9.77: a sale is owed by the customer's own account (was: the general 4111, or the SUPPLIERS account 4011
+                # that the Excel import put on every row); an account chosen on purpose (41...) is kept
                 supplier_account=party_account
             import chart_extra
             default_vat = chart_extra.SALES_VAT if kind=="sale" else chart_extra.EXPORT_VAT if item.get("vat_use")=="export" else \
                 chart_extra.EXPENSE_VAT if self._entry_type(item)=="expenses" else chart_extra.PURCHASE_VAT
             vat_account = str(item.get("vat_account") or default_vat).strip()
             expense_account = str(item.get("expense_account") or (DEFAULT_LEBANESE_ACCOUNTS["sales"] if kind=="sale" else EXPENSE_ACCOUNT_9)).strip()
+            if kind=="sale":  # 2.9.77: a sale never posts to an expense account or to deductible (input) VAT
+                if not expense_account.split(" - ",1)[0].strip().startswith("7"): expense_account=DEFAULT_LEBANESE_ACCOUNTS["sales"]
+                vat_code=vat_account.split(" - ",1)[0].strip()
+                if vat_code.startswith(("4426","4421")) or vat_code in (chart_extra.PURCHASE_VAT,chart_extra.EXPORT_VAT,chart_extra.EXPENSE_VAT): vat_account=chart_extra.SALES_VAT
             expense_no_vat_account=str(item.get("expense_no_vat_account") or EXPENSE_NO_VAT_ACCOUNT_9).strip()
             supplier_side=self._side(item.get("supplier_side"),"D" if kind=="sale" else "C")
             vat_side=self._side(item.get("vat_side"),"C" if kind=="sale" else "D")
@@ -244,6 +250,8 @@ class InvoicesStore:
             if line_expense_account and deductible:
                 expense_splits[line_expense_account]=expense_splits.get(line_expense_account,Decimal("0"))+deductible
         invoice = dict(item)
+        if self._entry_type(invoice)=="sales" and not str(invoice.get("expense_account") or "").strip() and any(line[9] for line in normalized):
+            invoice["expense_account"]="701100001"  # 2.9.77: items from stock without a revenue account -> sales of goods (was 713 services)
         if not str(invoice.get("invoice_number") or "").strip():
             invoice["invoice_number"] = self.next_invoice_number(invoice.get("kind", "sale"), invoice.get("invoice_date"))
         invoice["deductible_subtotal"]=float(deductible_total); invoice["non_deductible_subtotal"]=float(non_deductible_total)

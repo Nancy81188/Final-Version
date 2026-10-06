@@ -45,6 +45,7 @@ class InvoicesMixin:
         tk.Button(lifecycle,text="Cancel Invoice",command=self.cancel_selected_invoice,bg="#8B1E1E",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
         tk.Button(lifecycle,text="Delete Selected",command=self.delete_selected_invoice,bg="#6B1010",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
         self.action_button(lifecycle,"One Account for Selected...",self.set_account_for_selected_invoices).pack(side="left",padx=4)
+        self.action_button(lifecycle,"Check Sales Accounts...",self.check_sales_accounts).pack(side="left",padx=4)
         self.action_button(lifecycle,"Attach PDF / Image",self.attach_to_selected_invoice).pack(side="left",padx=4)
         self.action_button(lifecycle,"Attachments",self.show_selected_attachments).pack(side="left",padx=4)
         self.action_button(lifecycle,"History",self.show_invoice_history).pack(side="left",padx=4)
@@ -305,6 +306,38 @@ class InvoicesMixin:
         buttons=tk.Frame(window,bg=LIGHT); buttons.grid(row=4,column=0,columnspan=2,sticky="e",padx=14,pady=(0,14))
         tk.Button(buttons,text="Apply to Selected",command=apply,bg=GOLD,fg=NAVY,border=0,padx=16,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
         tk.Button(buttons,text="Cancel",command=window.destroy,bg="white",fg=NAVY,border=0,padx=14,pady=7).pack(side="left",padx=4)
+
+    def check_sales_accounts(self):
+        """2.9.77: sales that earlier versions booked on wrong accounts (Excel import: customer on 4011 suppliers, revenue on
+        601 expenses, VAT on deductible VAT) - listed, then corrected only when the user confirms."""
+        try: problems=self.client.sales_account_problems()
+        except Exception as exc: return messagebox.showerror("Check Sales Accounts",str(exc))
+        if not problems: return messagebox.showinfo("Check Sales Accounts","Every sale is on the right accounts: its customer, a class 7 revenue account and output VAT (4427).")
+        window=tk.Toplevel(self); window.title("Check Sales Accounts"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        if hasattr(self,"fit_dialog"): self.fit_dialog(window,980,520,600,320)
+        tk.Label(window,text=f"{len(problems)} sale(s) are on wrong accounts. Fix moves only those accounts on the invoice and its journal lines; amounts, dates and VAT stay the same.",
+                 bg=LIGHT,fg=NAVY,wraplength=900,justify="left",font=("Segoe UI",9,"bold")).pack(fill="x",padx=12,pady=(12,6))
+        frame=tk.Frame(window,bg=LIGHT); frame.pack(fill="both",expand=True,padx=12)
+        tree=ttk.Treeview(frame,columns=("no","date","party","total","what"),show="headings",selectmode="extended")
+        for key,label,width in (("no","Invoice",110),("date","Date",90),("party","Customer",180),("total","Total",100),("what","What is corrected",460)):
+            tree.heading(key,text=label); tree.column(key,width=width,anchor="e" if key=="total" else "w")
+        scroll=ttk.Scrollbar(frame,orient="vertical",command=tree.yview); tree.configure(yscrollcommand=scroll.set); tree.pack(side="left",fill="both",expand=True); scroll.pack(side="right",fill="y")
+        for problem in problems:
+            tree.insert("","end",iid=str(problem["id"]),values=(problem["invoice_number"],problem["invoice_date"],problem.get("party_name") or "",
+                        f'{float(problem.get("total") or 0):,.2f} {problem.get("currency") or ""}',"; ".join(problem["reasons"])))
+        def fix(ids):
+            if not ids: return messagebox.showwarning("Check Sales Accounts","Select the sales to correct",parent=window)
+            if not messagebox.askyesno("Check Sales Accounts",f"Correct the accounts of {len(ids)} sale(s)? A backup is recommended first (Settings > Backup & Restore).",parent=window): return
+            try: result=self.client.fix_sales_accounts([int(i) for i in ids])
+            except Exception as exc: return messagebox.showerror("Check Sales Accounts",str(exc),parent=window)
+            window.destroy(); self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial()
+            skipped=result.get("skipped") or []
+            text=f'{len(result.get("done") or [])} sale(s) corrected.'+(f"\n\nNot corrected ({len(skipped)}):\n"+"\n".join(skipped[:15]) if skipped else "")
+            (messagebox.showwarning if skipped else messagebox.showinfo)("Check Sales Accounts",text)
+        buttons=tk.Frame(window,bg=LIGHT); buttons.pack(fill="x",padx=12,pady=10)
+        tk.Button(buttons,text="Correct Selected",command=lambda:fix(tree.selection()),bg=GOLD,fg=NAVY,border=0,padx=14,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=4)
+        tk.Button(buttons,text="Correct All",command=lambda:fix(tree.get_children()),bg=NAVY,fg="white",border=0,padx=14,pady=7).pack(side="left",padx=4)
+        tk.Button(buttons,text="Close",command=window.destroy,bg="white",fg=NAVY,border=0,padx=14,pady=7).pack(side="right",padx=4)
 
     def duplicate_selected_invoice(self):
         invoice_id=self.selected_invoice_id()
