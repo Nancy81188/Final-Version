@@ -1,3 +1,4 @@
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import tempfile
 import unittest
 from pathlib import Path

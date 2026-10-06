@@ -1,4 +1,5 @@
 """Regression checks for data safety and self-service backups."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import socket
 import tempfile
 import threading

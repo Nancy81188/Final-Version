@@ -1,4 +1,5 @@
 """Durability, size and idempotency checks for fixed-asset PDF attachments."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import base64
 import socket
 import tempfile

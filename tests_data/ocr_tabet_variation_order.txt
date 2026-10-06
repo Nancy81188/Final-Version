@@ -1,8 +1,8 @@
 vaser> TABET ENTREPRISES S.A.L
 Ref Nb: ECO-30-24
 Bill To:
-Messrs. Ecolog Lebanon SARL
-VAT NB:3885171-601
+Messrs. Sample Client SARL
+VAT NB:1234567-601
 Project:
 Engineering, Procurement, Construction, Start - up and Testing of food grade
 Warehouse in Tyre - Lebanon.

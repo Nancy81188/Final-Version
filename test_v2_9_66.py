@@ -1,5 +1,6 @@
 """2.9.66: Financial Reports opened first, switching company, account tools, trial balance without opening / closing,
 several rows selected with their totals."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import socket
 import tempfile
 import threading

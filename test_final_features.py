@@ -1,5 +1,6 @@
 """Tests for version 1.12: payroll official reports, quarterly VAT, user expiry/permissions,
 legal-document alerts, and a full standalone run including backup and restore."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import socket
 import os
 import sqlite3

@@ -1,4 +1,5 @@
 """2.9.41: private data service (free port + secret key), one copy open, error log, main file rename, screen split."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import json
 import logging
 import sqlite3

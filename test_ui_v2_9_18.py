@@ -1,6 +1,7 @@
 """Version 2.9.18 fixes, checked on the real program window (skipped when no display is available):
 Stock Card from Items, the Inventory Analysis (3D) options, mouse-wheel page scrolling and
 right-click search in fields."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import socket
 import tempfile
 import threading

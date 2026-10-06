@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 
 import payroll_excel_forms as forms
 
-COMPANY = {"company_name": "ECOLOGE LEBANON SARL", "company_mof": "3885171", "company_nssf": "601123",
+COMPANY = {"company_name": "SAMPLE TRADING SARL", "company_mof": "1234567", "company_nssf": "601123",
            "company_address": "Baabda", "company_phone": "01-123456", "company_email": "info@example.com"}
 EMPLOYEE = {"employee_number": "100", "full_name": "رامي الخوري", "father_name": "جورج", "mother_name": "ماري",
             "birth_date": "1990-05-04", "birth_place": "بيروت", "nationality": "Lebanese", "national_id": "12345",
@@ -27,7 +27,7 @@ class PayrollExcelFormsTest(unittest.TestCase):
                     path = Path(folder) / f"{key}.xlsx"
                     forms.build_form(key, path, COMPANY, EMPLOYEE if needs_employee else None)
                     workbook = load_workbook(path); text = values(workbook)
-                    self.assertIn("ECOLOGE LEBANON SARL", text)
+                    self.assertIn("SAMPLE TRADING SARL", text)
                     for sheet in workbook.worksheets:
                         self.assertTrue(sheet.sheet_view.rightToLeft)
                         self.assertEqual((sheet.page_setup.fitToWidth, sheet.page_setup.fitToHeight), (1, 1))
@@ -41,7 +41,7 @@ class PayrollExcelFormsTest(unittest.TestCase):
             sheet = load_workbook(path).active; text = values(load_workbook(path))
             row7 = [sheet.cell(7, c).value for c in range(6, 16)]
             # company MOF number: one digit per box, read left to right (highest column is on the visual left)
-            self.assertEqual("".join(str(v) for v in reversed(row7) if v), "3885171")
+            self.assertEqual("".join(str(v) for v in reversed(row7) if v), "1234567")
             self.assertTrue({"04", "05", "1990"} <= set(text))      # birth date day / month / year
             self.assertIn("X", text)                                  # married / spouse not working / monthly pay
             self.assertIn("الخوري", text); self.assertIn("رامي", text)

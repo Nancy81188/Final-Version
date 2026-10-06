@@ -1,5 +1,6 @@
 """2.9.45: negative stock alert (confirm and continue), returns vs credit / debit notes, brand, project / branch
 filters, what the inventory screens show, tidier reports."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import tempfile
 import threading
 import unittest

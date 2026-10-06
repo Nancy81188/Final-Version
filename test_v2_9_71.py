@@ -1,5 +1,6 @@
 """2.9.71: two main currencies per company, rates of all currencies, journal voucher account typing,
 one account for the selected Uploaded Data rows, audit report notes without account numbers."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import os
 import tempfile
 import unittest

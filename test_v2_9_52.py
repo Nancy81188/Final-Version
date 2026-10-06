@@ -1,5 +1,6 @@
 """2.9.52: warehouse multi-select, earlier fiscal years in reports and projections, a second backup copy,
 the 'delete / cancel' permission, optional code signing of the installer."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import os
 import tempfile
 import threading

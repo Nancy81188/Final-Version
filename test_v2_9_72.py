@@ -1,5 +1,6 @@
 """2.9.72: the VAT of each company (rate and the two currencies of its VAT return), and several purchases /
 expenses / payments deleted at once."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import os
 import tempfile
 import unittest

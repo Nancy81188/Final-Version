@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import os
 
 import json
 import re
@@ -22,18 +23,34 @@ class CompanyManager:
         self.root=self.master_path.parent/"companies"; self.root.mkdir(parents=True,exist_ok=True)
         self.registry_path=self.root/"companies.json"; self._cache={}
         if not self.registry_path.exists():
-            self._write({"companies":[{"id":"ecologe-lebanon-sarl","name":"ECOLOGE LEBANON SARL","active":True,
-                "years":[{"year":2024,"database":str(self.master_path),"status":"open"}]}]})
-        else:
-            data=self._read(); companies=data.get("companies",[])
-            if len(companies)==1 and companies[0].get("id")=="saber-for-audit" and companies[0].get("name")=="Saber for Audit":
-                companies[0]["id"]="ecologe-lebanon-sarl"; companies[0]["name"]="ECOLOGE LEBANON SARL"
-                for fiscal in companies[0].get("years",[]): fiscal["year"]=2024
-                self._write(data)
-                try:
-                    with Database(self.master_path).connect() as db:
-                        db.execute("INSERT INTO app_settings(key,value) VALUES('company_name','ECOLOGE LEBANON SARL') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-                except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
+            # 2.9.74: a new installation starts with NO company: the administrator creates his own (Create Company).
+            # Installations that already have companies keep them exactly as they are, and a main file from a version
+            # before the company list (books kept in the main file) still opens as a company under its own name.
+            first=self._first_company()
+            self._write({"companies":[first] if first else []})
+
+    def _first_company(self):
+        """None for a new installation. The tests ask for a sample company with SABER_FIRST_COMPANY="Name|year"
+        (kept in the main file, as the versions before the company list did)."""
+        seed=os.environ.get("SABER_FIRST_COMPANY","").strip()
+        if seed:
+            name,_,year=seed.partition("|")
+            return {"id":re.sub(r"[^a-z0-9]+","-",name.lower()).strip("-") or "company","name":name.strip(),"active":True,
+                    "years":[{"year":int(year or datetime.now().year),"database":str(self.master_path),"status":"open"}]}
+        if not self.master_path.exists(): return None
+        try:
+            with closing(sqlite3.connect(f"file:{self.master_path}?mode=ro",uri=True)) as db:
+                tables={row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if "journal_entries" not in tables or not db.execute("SELECT 1 FROM journal_entries LIMIT 1").fetchone(): return None
+                days=[str(row[0]) for row in db.execute("SELECT entry_date FROM journal_entries")]
+                name=db.execute("SELECT value FROM app_settings WHERE key='company_name'").fetchone() if "app_settings" in tables else None
+        except sqlite3.Error:
+            return None
+        found=[(day[:4] if day[4:5]=="-" else day[6:10]) for day in days if len(day)>=10]  # YYYY-MM-DD or DD-MM-YYYY
+        years=sorted({int(y) for y in found if y.isdigit()})
+        name=(name[0] if name and str(name[0] or "").strip() else "My Company")
+        return {"id":re.sub(r"[^a-z0-9]+","-",name.lower()).strip("-") or "my-company","name":name,"active":True,
+                "years":[{"year":y,"database":str(self.master_path),"status":"open"} for y in (years[:1] or [datetime.now().year])]}
 
     # ------------------------------------------------------------ files named after the company
     @staticmethod

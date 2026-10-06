@@ -1,5 +1,11 @@
 # Saber Accounting MVP
 
+## Version 2.9.74 (a new installation starts with no company)
+- A new installation no longer shows a company: the list is empty and the administrator creates the first one with Create Company (the screen says so). Installations that already have companies keep them exactly as they are. A main file from a version before the company list (books kept in the main file) still opens, as a company under the name saved in its settings.
+- Real company names and numbers removed from the tests, the test documents and this README (made-up samples instead).
+- Tests: the tests written for the old start-up (one company in the main file, 2024) now ask for a made-up "Sample Company SARL" through tests_setup.py (imported by those test files only; not part of the program). New test: test_v2_9_74.py.
+- Changed files: company_manager.py, server.py, desktop.py, app_runtime.py, installer.iss, README.md, tests_setup.py (new), test_v2_9_74.py (new), tests_data/*.txt, and the tests that import tests_setup.
+
 ## Version 2.9.73 (GitHub build kept working)
 - Tests workflow pinned to Ubuntu 24.04: GitHub moves "ubuntu-latest" to Ubuntu 26 from 19-10-2026, which could break the Tk tests without any change in the program.
 - Installer workflow: actions/upload-artifact v4 -> v6 (v4 ran on the deprecated Node.js 20).
@@ -65,7 +71,7 @@
 - Tests: test_v2_9_64.py.
 
 ## Version 2.9.63 (stability, speed, tidier code)
-- Stability check on real data (ECOLOGE, purchases and sales), as admin, accountant and viewer: every screen, every data request, and every entry opened for editing and saved again without changes (the books stay identical).
+- Stability check on real company data (purchases and sales), as admin, accountant and viewer: every screen, every data request, and every entry opened for editing and saved again without changes (the books stay identical).
 - Fixed: a user without the VAT right got an error on Financial Reports and saw no ledger / balance sheet / cash flow. Now only the VAT part is hidden.
 - Fixed: reports given a DD-MM-YYYY date (journal, trial balance, ledger, balance sheet, P&L, cash flow, VAT) now filter the right days.
 - Faster: exchange rates are read once and kept in memory (a trial balance of 20,000 invoices: 28 s -> under 1 s).
@@ -457,7 +463,7 @@ Built on the layout of the MOF salary declaration workbooks (employees register,
 ## Version 2.9.20 (Company data files named after the company, like the backups)
 
 - Each company's data is now kept in a folder with the company's name, one file per fiscal year, named like its backups:
-  - Data: `SaberAccounting\companies\<Company Name>\<Company Name>_<year>.db` (for example `companies\ECOLOGE LEBANON SARL\ECOLOGE LEBANON SARL_2025.db`).
+  - Data: `SaberAccounting\companies\<Company Name>\<Company Name>_<year>.db` (for example `companies\My Company SAL\My Company SAL_2025.db`).
   - Backups (unchanged): `SaberAccounting\backups\<Company Name>\<year>\<Company Name>_<year>_<date>.db`.
   - Deleted fiscal years: `companies\<Company Name>\deleted_years\`.
 - Existing files are moved automatically the first time 2.9.20 starts. Each file is copied with SQLite's backup, checked (integrity check and the number of rows of every table), the company list is updated, and only then the old file is removed. A file that is in use by another program is left where it is, keeps working, and is moved on a later start. A company year that was stored inside the main file `saber_accounting_v0_7.db` is copied out to its company folder; the main file stays (it holds the users and passwords).

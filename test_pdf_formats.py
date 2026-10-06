@@ -19,10 +19,10 @@ def _make_pdfs(folder):
         c = canvas.Canvas(str(folder / name)); y = 800
         for line in lines: c.setFont("Helvetica", 10); c.drawString(50, y, line); y -= 18
         c.save()
-    simple("en.pdf", ["ALPHA TRADING SARL", "Beirut - Lebanon  VAT No 123456", "TAX INVOICE", "Invoice No: INV-2026-0457", "Date: 15/03/2026", "Bill to: ECOLOGE LEBANON SARL",
+    simple("en.pdf", ["ALPHA TRADING SARL", "Beirut - Lebanon  VAT No 123456", "TAX INVOICE", "Invoice No: INV-2026-0457", "Date: 15/03/2026", "Bill to: SAMPLE CLIENT SARL",
                       "Item  Description          Qty  Unit Price   Amount", "HPL-8  HPL Panel 8mm         10   120.00   1,200.00", "ALU-1  Aluminium profile     20    15.00     300.00",
                       "Subtotal: 1,500.00 USD", "VAT 11%: 165.00", "Grand Total: 1,665.00 USD"])
-    simple("fr.pdf", ["SOCIETE BETA SAL", "FACTURE N° F-2026/118", "Date : 02/04/2026", "Client : ECOLOGE LEBANON SARL", "Designation            Qte   P.U.     Montant",
+    simple("fr.pdf", ["SOCIETE BETA SAL", "FACTURE N° F-2026/118", "Date : 02/04/2026", "Client : SAMPLE CLIENT SARL", "Designation            Qte   P.U.     Montant",
                       "Colle speciale          5    40,00    200,00", "Total HT : 200,00 EUR", "TVA 11% : 22,00 EUR", "Total TTC : 222,00 EUR"])
     simple("lbp.pdf", ["GAMMA STATIONERY", "Invoice # 7781", "Date: 20-05-2026", "Office supplies", "Total before VAT: 4,500,000 L.L.", "VAT 11%: 495,000 L.L.", "Total: 4,995,000 L.L."])
     c = canvas.Canvas(str(folder / "ar.pdf")); y = 800

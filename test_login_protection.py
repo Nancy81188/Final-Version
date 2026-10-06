@@ -1,4 +1,5 @@
 """Persistent login lockout and security audit regression tests."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import sqlite3
 import tempfile
 import threading

@@ -1,5 +1,6 @@
 """2.9.69: multi-select delete, show / hide columns, VAT number in top clients / suppliers,
 financial statements as an audit report pack (2 years or a period)."""
+import tests_setup  # noqa: F401  2.9.74: the sample company of the tests (a new installation has none)
 import socket
 import tempfile
 import threading

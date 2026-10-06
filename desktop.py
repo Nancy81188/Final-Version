@@ -437,6 +437,9 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
                 log.exception("Could not open company / year")
                 messagebox.showerror("Switch Company / Year",f"Could not open {company['name']} · {year_var.get()}: {exc}")
         tk.Button(card,text="Open Company",command=open_company,bg=GOLD,fg=NAVY,font=("Segoe UI",10,"bold"),border=0,padx=25,pady=8).grid(row=3,column=0,columnspan=2,pady=(18,6))
+        if not companies:  # 2.9.74: a new installation has no company yet
+            tk.Label(card,text="No company yet. The administrator creates the first one with Create Company." if self.current_user.get("role")=="admin"
+                     else "No company yet. Ask the administrator to create it.",bg="white",fg="#8B1E1E",wraplength=360,justify="center").grid(row=5,column=0,columnspan=2,pady=(10,0))
         if self.current_user.get("role")=="admin":
             self.action_button(card,"Create Company",self.create_company_dialog).grid(row=4,column=0,padx=4,pady=5)
             self.action_button(card,"Manage Selected",lambda:self.manage_company_dialog(labels.get(company_var.get()))).grid(row=4,column=1,padx=4,pady=5)

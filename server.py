@@ -121,6 +121,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         return other or self.db
 
     def _select_database(self):
+        if not self.headers.get("X-Company-ID") and not self.company_manager.list_companies(True):
+            self.db = self.master_db; return True  # 2.9.74: new installation, no company created yet
         try:
             self.db=self.company_manager.database(self.headers.get("X-Company-ID"),self.headers.get("X-Fiscal-Year"))
             # 2.9.52: users are kept in the main file; the company-year file needs the same user row so that what a

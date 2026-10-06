@@ -17,7 +17,7 @@ class UpgradeMarkerTest(unittest.TestCase):
 
     def test_old_file_missing_a_column_is_upgraded(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
-            path = Path(folder) / "ecologe_2024.db"
+            path = Path(folder) / "company_2024.db"
             db = Database(path); db.initialize_if_needed("secret")
             # make it look like a file from 2.9.53: no payment_account column, marked with the old hand-made number "4"
             with closing(sqlite3.connect(path)) as conn, conn:  # closed at once: Windows cannot delete an open file
