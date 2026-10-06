@@ -77,14 +77,28 @@ class CompanyManager:
 
     def _database_path(self,value):
         path=Path(value).resolve()
-        company_directory=self.root.resolve()
-        if path==self.master_path:
-            return path
-        if path.suffix.lower()==".db" and (
-            company_directory in path.parents or path.parent==self.master_path.parent
-        ):
-            return path
+        if self._inside(path): return path
+        moved=self._relocated(value)  # 2.9.75: the data folder was copied to another computer / Windows user
+        if moved is not None: return moved
         raise ValueError("Company database path must be inside the application data directory")
+
+    def _inside(self,path):
+        company_directory=self.root.resolve()
+        return path==self.master_path or (path.suffix.lower()==".db" and (company_directory in path.parents or path.parent==self.master_path.parent))
+
+    def _relocated(self,value):
+        """The same file in THIS data folder, when the company list was written in another place (the SaberAccounting folder
+        copied to a new computer or another Windows user: C:/Users/<old name>/... -> C:/Users/<new name>/...)."""
+        parts=[part for part in str(value).replace("\\","/").split("/") if part]
+        if not parts or not parts[-1].lower().endswith(".db"): return None
+        lowered=[part.lower() for part in parts]
+        if "companies" in lowered:
+            index=len(lowered)-1-lowered[::-1].index("companies")
+            candidate=self.root.joinpath(*parts[index+1:])
+        else:
+            candidate=self.master_path.parent/parts[-1]
+        candidate=candidate.resolve()
+        return candidate if self._inside(candidate) and candidate.is_file() else None
 
     def organize_files(self, only_company_id=None):
         """Move every company-year file to companies/<Company Name>/<Company Name>_<year>.db.
@@ -157,6 +171,14 @@ class CompanyManager:
         selected=next((y for y in years if int(y["year"])==int(year)),None) if year else (max(years,key=lambda y:int(y["year"])) if years else None)
         if not selected: raise KeyError("Fiscal year not found")
         path=str(self._database_path(selected["database"]))
+        if path!=str(Path(selected["database"]).resolve()):  # 2.9.75: remember the new place of a moved data folder
+            try:
+                data=self._read()
+                for entry in data["companies"]:
+                    for fiscal in entry.get("years",[]):
+                        if entry["id"]==company["id"] and int(fiscal["year"])==int(selected["year"]): fiscal["database"]=path
+                self._write(data)
+            except Exception: logging.getLogger("saber.company").warning("Moved company file not saved in the list", exc_info=True)
         if path not in self._cache:
             database=Database(path,pooled=self.pooled)
             safe=self.safe_name(company["name"],company["id"])

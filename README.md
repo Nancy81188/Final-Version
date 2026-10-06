@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.75 (data folder copied to a new computer)
+- Fixed: after copying the SaberAccounting folder to another computer or another Windows user (C:\Users\<name>\SaberAccounting), the companies were listed but would not open ("Company database path must be inside the application data directory"), because the company list kept the old full path. The program now finds each file in the new folder and saves the new place. A path outside the data folder is still refused.
+- Checked: moving with only the backups works too - create the company with the same name and fiscal year, its backups appear in Backup & Restore, restore.
+- Changed files: company_manager.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_75.py.
+
 ## Version 2.9.74 (a new installation starts with no company)
 - A new installation no longer shows a company: the list is empty and the administrator creates the first one with Create Company (the screen says so). Installations that already have companies keep them exactly as they are. A main file from a version before the company list (books kept in the main file) still opens, as a company under the name saved in its settings.
 - Real company names and numbers removed from the tests, the test documents and this README (made-up samples instead).
