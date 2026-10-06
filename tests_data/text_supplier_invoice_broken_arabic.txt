@@ -8,23 +8,23 @@ SAMPLE CLIENT  S.A.R.L
 ت
 خيعلش     
 Currency Code
-Sour - Hanaway
--  07343559
+Beirut - Hamra
+-  07000000
 Name & Address
 خياقرا
 ي ت - افج خي-عقيص
 رف  - خيقا ختص
-فتاهلا :03671460
-خيفاف خيعقيص601-3187272
+فتاهلا :03000000
+خيفاف خيعقيص601-0000000
 خيعفتا
 Reference16
-41100006
+41100000
 تاف خي مقر
 Account No.
-للعاإvatwajihsaad@hotmail.com
-01/7355536
+للعاإsupplier@example.com
+01/0000000
 خيفاف خيعقيص1234567
-Mohamad M. Saad
+Sample K. Supplier
 
 Amount
 

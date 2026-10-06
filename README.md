@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.76 (test documents made anonymous)
+- The real supplier documents kept for the PDF-reader tests no longer show real people or companies: supplier names, workers' names, project, bank accounts / IBAN / SWIFT, registration and VAT numbers, phone numbers and e-mail replaced by samples. Amounts, dates and layout are unchanged, so the reader is checked exactly as before.
+- Files renamed: tests_data/ocr_contractor_variation_order.txt, tests_data/ocr_supplier_invoice.txt, tests_data/text_supplier_invoice_broken_arabic.txt (test_pdf_real_scans.py follows). These files are not part of the installer.
+- No change in the program. Changed files: tests_data/*.txt, test_pdf_real_scans.py, app_runtime.py, installer.iss, README.md.
+
 ## Version 2.9.75 (data folder copied to a new computer)
 - Fixed: after copying the SaberAccounting folder to another computer or another Windows user (C:\Users\<name>\SaberAccounting), the companies were listed but would not open ("Company database path must be inside the application data directory"), because the company list kept the old full path. The program now finds each file in the new folder and saves the new place. A path outside the data folder is still refused.
 - Checked: moving with only the backups works too - create the company with the same name and fiscal year, its backups appear in Backup & Restore, restore.
@@ -290,19 +295,19 @@ Built on the layout of the MOF salary declaration workbooks (employees register,
 - When the amounts have no readable label (a summary box with numbers only), the reader recognises **before VAT + VAT = total with VAT exactly 11% of before VAT**; dates, percentages and long reference numbers are ignored. The Check note says "recognised without labels by the 11% VAT check - verify".
 - A line such as "VAT 11% LBP 374,110,000" on a foreign-currency invoice is the VAT in LBP: it is no longer taken as the VAT amount, and the invoice currency is set to USD (EUR when the invoice mentions EUR / €), with the implied rate shown in the Check note.
 - A date is never taken as the invoice number.
-- Checked on invoice 5000290336 (Mohamad M. Saad): number 16, date 01-11-2024, supplier, USD, 38,000 / 4,180 / 42,180 - 7 / 7 fields. Tests added with the real text and OCR kept in `tests_data/`. 361 tests pass.
+- Checked on a real supplier invoice: number 16, date 01-11-2024, supplier, USD, 38,000 / 4,180 / 42,180 - 7 / 7 fields. Tests added with the real text and OCR kept in `tests_data/`. 361 tests pass.
 - Changed files: pdf_import.py, test_pdf_real_scans.py, tests_data/ (2 new files), installer.iss, desktop.py, README.md.
 
 ## Version 2.9.37 (scanned PDF import fixed on Windows)
 
 - **Cause of empty rows for scanned PDFs in the installed program:** the bundled OCR language files were passed to Tesseract as `--tessdata-dir "C:\Program Files\...\tessdata"`. pytesseract splits that text in a way that breaks Windows paths (backslashes, spaces, quotes), so Tesseract found no language and every scanned PDF showed "scanned image (no text inside)". The folder is now given through `TESSDATA_PREFIX`, which needs no splitting.
-- Better reading of real scans (checked on a Tabet Entreprises variation order: 7 / 7 fields right):
+- Better reading of real scans (checked on a real contractor variation order: 7 / 7 fields right):
   - **Date:** a date on a line labelled "Date" wins over dates in the item table; when the full-page OCR misses an underlined or right-aligned date / reference, the top of the page is read again (left and right halves separately).
   - **Before VAT:** when there are several section totals, the total line whose amount + VAT = Grand Total is used (e.g. "TOTAL A+B+C").
   - **Supplier:** junk read from a logo before the company name is removed.
 - **Import preview:** selecting a row shows its full **Check** note under the buttons (the column is too narrow for long notes).
 - Tests: `test_pdf_real_scans.py` with the real OCR text kept in `tests_data/`. 360 tests pass.
-- Changed files: pdf_import.py, desktop_stage3.py, installer.iss, desktop.py, README.md, test_pdf_real_scans.py (new), tests_data/ocr_tabet_variation_order.txt (new).
+- Changed files: pdf_import.py, desktop_stage3.py, installer.iss, desktop.py, README.md, test_pdf_real_scans.py (new), tests_data/ocr_contractor_variation_order.txt (new).
 
 ## Version 2.9.36 (automatic backups and closing the books)
 

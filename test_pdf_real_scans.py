@@ -11,28 +11,28 @@ DATA = Path(__file__).resolve().parent / "tests_data"
 
 
 class RealScanTests(unittest.TestCase):
-    def test_tabet_variation_order_all_fields(self):
+    def test_contractor_variation_order_all_fields(self):
         # Full-page OCR of a real scan: three section totals, then TOTAL A+B+C, VAT 11% and Grand Total;
         # the underlined date was read by the header pass.
-        text = (DATA / "ocr_tabet_variation_order.txt").read_text(encoding="utf-8") + "\nRef Nb: ECO-30-24\nDate: 26-Jun-24\n"
+        text = (DATA / "ocr_contractor_variation_order.txt").read_text(encoding="utf-8") + "\nRef Nb: SMP-30-24\nDate: 26-Jun-24\n"
         parsed = _parse_invoice_text("reference 4.pdf", text)
-        self.assertEqual(parsed["invoice_number"], "ECO-30-24")
+        self.assertEqual(parsed["invoice_number"], "SMP-30-24")
         self.assertEqual(parsed["invoice_date"], "26-06-2024")  # not a delivery date from the table
-        self.assertEqual(parsed["party_name"], "TABET ENTREPRISES S.A.L")  # logo junk removed
+        self.assertEqual(parsed["party_name"], "SAMPLE CONTRACTORS S.A.L")  # logo junk removed
         self.assertEqual(parsed["currency"], "USD")
         self.assertEqual((parsed["subtotal"], parsed["vat"], parsed["total"]), (18878.5, 2076.64, 20955.14))
 
     def test_unlabelled_amounts_and_lbp_vat_line_of_a_usd_invoice(self):
         # Text layer with broken Arabic labels: the summary box shows 38000 / 4180 / 0 / 42,180.00
         # without readable words, and "VAT 11% LBP 374,110,000" is the VAT in LBP of a USD invoice.
-        text = (DATA / "text_saad_invoice_broken_arabic.txt").read_text(encoding="utf-8")
+        text = (DATA / "text_supplier_invoice_broken_arabic.txt").read_text(encoding="utf-8")
         parsed = _parse_invoice_text("5000290336.pdf", text)
         self.assertEqual((parsed["invoice_number"], parsed["invoice_date"]), ("16", "01-11-2024"))
         # The scrambled text layer is sent to OCR; the OCR reading gives the supplier.
         from pdf_import import _invoice_text_needs_ocr
         self.assertTrue(_invoice_text_needs_ocr("5000290336.pdf", text))
-        ocr = _parse_invoice_text("5000290336.pdf", (DATA / "ocr_saad_invoice.txt").read_text(encoding="utf-8"))
-        self.assertEqual((ocr["invoice_number"], ocr["invoice_date"], ocr["party_name"], ocr["currency"]), ("16", "01-11-2024", "Mohamad M. Saad", "USD"))
+        ocr = _parse_invoice_text("5000290336.pdf", (DATA / "ocr_supplier_invoice.txt").read_text(encoding="utf-8"))
+        self.assertEqual((ocr["invoice_number"], ocr["invoice_date"], ocr["party_name"], ocr["currency"]), ("16", "01-11-2024", "Sample K. Supplier", "USD"))
         self.assertEqual((ocr["subtotal"], ocr["vat"], ocr["total"]), (38000.0, 4180.0, 42180.0))
         self.assertEqual(parsed["currency"], "USD")
         self.assertEqual((parsed["subtotal"], parsed["vat"], parsed["total"]), (38000.0, 4180.0, 42180.0))
