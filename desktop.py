@@ -1,4 +1,5 @@
 from __future__ import annotations
+from desktop_common import search_arrows  # 2.9.78
 
 from desktop_common import *  # noqa: F401,F403
 from desktop_common import _enable_windows_dpi_awareness
@@ -330,7 +331,7 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
             if not tree.selection(): return
             party = next(p for p in parties if str(p["id"]) == tree.selection()[0]); window.destroy(); target.set(party["name"])
         search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose)
-        entry.bind("<Return>", lambda _event: (tree.selection_set(tree.get_children()[0]), choose()) if tree.get_children() else None); fill()
+        fill(); search_arrows(entry, tree, choose, search)  # 2.9.78
 
     def clear(self):
         for child in self.winfo_children(): child.destroy()

@@ -1,5 +1,6 @@
 """Assets & Depreciation: 1. asset accounts with depreciation %, 2. data entry (existing form + category), 3. monthly depreciation table."""
 from __future__ import annotations
+from desktop_common import add_search_bar  # 2.9.78
 
 import tkinter as tk
 from datetime import datetime
@@ -107,7 +108,7 @@ class AssetsMixin:
             self.dt_tree.heading(key, text=label); self.dt_tree.column(key, width=width, minwidth=60, stretch=False, anchor="w" if key in ("code", "name", "date", "posted") else "e")
         self.dt_tree.tag_configure("group", background="#dfe6ee", font=("Segoe UI", 9, "bold")); self.dt_tree.tag_configure("total", background="#c9d6e3", font=("Segoe UI", 9, "bold"))
         scroll = ttk.Scrollbar(page, orient="horizontal", command=self.dt_tree.xview); self.dt_tree.configure(xscrollcommand=scroll.set)
-        scroll.pack(side="bottom", fill="x", padx=8); self.dt_tree.pack(fill="both", expand=True, padx=8, pady=(4, 2))
+        scroll.pack(side="bottom", fill="x", padx=8); self.dt_tree.pack(fill="both", expand=True, padx=8, pady=(4, 2)); add_search_bar(self.dt_tree)  # 2.9.78
         self.load_asset_accounts()
 
     def _dt_account(self):

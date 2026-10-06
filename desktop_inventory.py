@@ -1,5 +1,7 @@
 """Inventory screens (version 1.20)."""
 from __future__ import annotations
+from desktop_common import add_search_bar  # 2.9.78
+from desktop_common import search_arrows  # 2.9.78
 
 import tkinter as tk
 from datetime import datetime
@@ -208,7 +210,7 @@ class InventoryMixin:
                 if i["active"] and (not text or text in f'{i["sku"]} {i["name"]}'.casefold()): tree.insert("", "end", values=(i["sku"], i["name"], f'{i["quantity"]:,.3f}'))
         def choose(_e=None):
             if tree.selection(): self.stock_cell_changed(iid, "sku", tree.item(tree.selection()[0], "values")[0]); self.stock_sheet.refresh(iid); window.destroy()
-        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill()
+        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill(); search_arrows(entry, tree, choose, search)  # 2.9.78
 
     def stock_type_changed(self):
         transfer = self.sd_vars["type"].get() == "Transfer"
@@ -505,7 +507,7 @@ class InventoryMixin:
         tk.Button(form, text="Save Warehouse", command=self.save_warehouse, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.warehouses_tree = ttk.Treeview(wh, columns=("code", "name", "active"), show="headings", height=6)
         for key, label, width in (("code", "Code", 90), ("name", "Warehouse", 300), ("active", "Active", 80)): self.warehouses_tree.heading(key, text=label); self.warehouses_tree.column(key, width=width)
-        self.warehouses_tree.pack(fill="both", expand=True, pady=6); self.warehouses_tree.bind("<Double-1>", lambda _e: self.edit_warehouse())
+        self.warehouses_tree.pack(fill="both", expand=True, pady=6); self.warehouses_tree.bind("<Double-1>", lambda _e: self.edit_warehouse()); add_search_bar(self.warehouses_tree)  # 2.9.78
 
     def edit_warehouse(self):
         selected = self.warehouses_tree.selection()
@@ -681,7 +683,7 @@ class InventoryMixin:
                 if i["active"] and (not text or text in f'{i["sku"]} {i["name"]} {i.get("category") or ""} {i.get("barcode") or ""}'.casefold()): tree.insert("", "end", values=(i["sku"], i["name"], i.get("category") or "", f'{i["quantity"]:,.3f}'))
         def choose(_e=None):
             if tree.selection(): value = tree.item(tree.selection()[0], "values")[0]; window.destroy(); callback(value)
-        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); entry.bind("<Return>", lambda _e: (tree.selection_set(tree.get_children()[0]), choose()) if tree.get_children() else None); fill()
+        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill(); search_arrows(entry, tree, choose, search)  # 2.9.78
 
     # ------------------------------------------------------------ physical inventory
     def build_physical_page(self, page):

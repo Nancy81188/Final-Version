@@ -329,7 +329,8 @@ class ProgramWindowFixesTest(unittest.TestCase):
         for box in account_boxes:
             self.assertTrue(any(isinstance(child,tk.Button) and child.cget("text")=="Find" for child in box.master.winfo_children()))
             self.assertLessEqual(box.master.winfo_rootx()+box.master.winfo_width(),window.winfo_rootx()+window.winfo_width())
-        supplier_box=account_boxes[0]
+        # 2.9.78: the window lists VAT, purchases with / without VAT, supplier, then payment - find each box by its account
+        supplier_box=next(box for box in account_boxes if box._account_var.get()=="4011")
         supplier_box.focus_set(); app.update()
         self.assertTrue(supplier_box.selection_present())
         find=next(child for child in supplier_box.master.winfo_children() if isinstance(child,tk.Button) and child.cget("text")=="Find")
@@ -341,7 +342,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
         search.event_generate("<Return>"); app.update()
         self.assertEqual(supplier_box._account_var.get(),"4111")
         self.assertEqual(app.grab_current(),window)
-        vat_box=account_boxes[1]
+        vat_box=next(box for box in account_boxes if box._account_var.get()=="44210")
         vat_box.focus_set(); app.update()
         vat_box._account_var.set("VAT on Expenses - Deductible")
         vat_box.event_generate("<Tab>"); app.update()

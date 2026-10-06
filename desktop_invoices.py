@@ -171,46 +171,84 @@ class InvoicesMixin:
             "description":tk.StringVar(value=row.get("description") or ""),
             "branch":tk.StringVar(value=row.get("branch_name") or "Head Office"),
         }
-        fields=[
-            ("Invoice Number","invoice_number"),("Date (DD-MM-YYYY)","invoice_date"),("Description","description"),("Branch","branch"),
-            ("Customer / Supplier","party_name"),("Type","kind"),("Currency","currency"),
-            ("Before VAT Deductible","deductible_subtotal"),("Before VAT Non-Deductible","non_deductible_subtotal"),("VAT","vat"),("Total","total"),
-            ("Supplier Account","supplier_account"),("VAT Account","vat_account"),
-            ("Expense Account","expense_account"),("Expense Account without VAT","expense_no_vat_account"),("Status","status"),
-            ("Payment Method","payment_method"),("Amount Paid","amount_paid"),("Cash / Bank Account (paid)","cash_account"),("Due Date (DD-MM-YYYY)","due_date"),
-        ]
+        # 2.9.78: details on top; below, one line per posting - account, D/C and amount - and the payment (method, account,
+        # amount). Amounts follow each other: VAT = rate x amount with VAT (until typed), Total = sum, and a paid method
+        # (Cash / Bank ...) fills its account (531 / 512) and the amount paid with the Total.
+        details=tk.Frame(window,bg=LIGHT); details.grid(row=0,column=0,sticky="ew",padx=6,pady=(6,0))
+        fields=[("Invoice Number","invoice_number"),("Date (DD-MM-YYYY)","invoice_date"),("Description","description"),("Branch","branch"),
+                ("Customer / Supplier","party_name"),("Type","kind"),("Currency","currency"),("Status","status"),("Due Date (DD-MM-YYYY)","due_date")]
         for index,(label,key) in enumerate(fields):
             grid_row=index//2; grid_column=(index%2)*2
-            tk.Label(window,text=label,bg=LIGHT,anchor="w").grid(row=grid_row,column=grid_column,sticky="w",padx=(14,5),pady=8)
-            if key=="kind":
-                widget=ttk.Combobox(window,textvariable=variables[key],values=["assets","expenses","purchases","sales"],state="readonly",width=24)
-            elif key=="currency":
-                widget=ttk.Combobox(window,textvariable=variables[key],values=self.currency_codes,state="readonly",width=24)
-            elif key=="status":
-                widget=ttk.Combobox(window,textvariable=variables[key],values=["posted","review"],state="readonly",width=24)
-            elif key=="payment_method":
-                widget=ttk.Combobox(window,textvariable=variables[key],values=["On Account (Not Cash)","Cash","Bank Transfer","Cheque","Card","Other"],state="readonly",width=24)
-            elif key=="cash_account":
-                frame=tk.Frame(window,bg=LIGHT)
-                self.account_search_box(frame,variables[key],16,replace_on_focus=True).pack(side="left")
-                tk.Button(frame,text="Find",command=lambda v=variables[key]:self.open_account_lookup(v,include_groups=True),
-                          bg=NAVY,fg="white",border=0,padx=6,pady=2).pack(side="left",padx=(3,0))
-                tk.Label(frame,text="empty: 531 cash / 512 bank",bg=LIGHT,fg="#5f6b76").pack(side="left",padx=(5,0))
-                widget=frame
-            elif key=="branch":
-                widget=self.branch_selector(window,variables[key],24,False)
-            elif key in ("supplier_account","vat_account","expense_account","expense_no_vat_account"):
-                frame=tk.Frame(window,bg=LIGHT); side_key={"supplier_account":"supplier_side","vat_account":"vat_side","expense_account":"expense_side","expense_no_vat_account":"expense_no_vat_side"}[key]
-                self.account_search_box(frame,variables[key],16,replace_on_focus=True).pack(side="left")
-                tk.Button(frame,text="Find",command=lambda v=variables[key]:self.open_account_lookup(v,include_groups=True),
-                          bg=NAVY,fg="white",border=0,padx=6,pady=2).pack(side="left",padx=(3,0))
-                ttk.Combobox(frame,textvariable=variables[side_key],values=["D - Debit","C - Credit"],state="readonly",width=10).pack(side="left",padx=(5,0))
-                widget=frame
-            elif key in ("invoice_date","due_date"):
-                widget=self.date_entry(window,variables[key],27)
-            else:
-                widget=tk.Entry(window,textvariable=variables[key],width=27)
-            widget.grid(row=grid_row,column=grid_column+1,padx=(5,14),pady=8)
+            tk.Label(details,text=label,bg=LIGHT,anchor="w").grid(row=grid_row,column=grid_column,sticky="w",padx=(8,5),pady=6)
+            if key=="kind": widget=ttk.Combobox(details,textvariable=variables[key],values=["assets","expenses","purchases","sales"],state="readonly",width=24)
+            elif key=="currency": widget=ttk.Combobox(details,textvariable=variables[key],values=self.currency_codes,state="readonly",width=24)
+            elif key=="status": widget=ttk.Combobox(details,textvariable=variables[key],values=["posted","review"],state="readonly",width=24)
+            elif key=="branch": widget=self.branch_selector(details,variables[key],24,False)
+            elif key in ("invoice_date","due_date"): widget=self.date_entry(details,variables[key],27)
+            else: widget=tk.Entry(details,textvariable=variables[key],width=27)
+            widget.grid(row=grid_row,column=grid_column+1,padx=(5,14),pady=6,sticky="w")
+
+        postings=tk.LabelFrame(window,text="Accounts and amounts",bg=LIGHT,padx=8,pady=6); postings.grid(row=1,column=0,sticky="ew",padx=12,pady=(8,0))
+        for column,title in enumerate(("Line","Account","D / C","Amount")):
+            tk.Label(postings,text=title,bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")).grid(row=0,column=column,sticky="w",padx=6,pady=(0,4))
+        sale=variables["kind"].get()=="sales"
+        lines=[("VAT","vat_account","vat_side","vat"),
+               ("Sales (with VAT)" if sale else "Purchases / Expenses with VAT","expense_account","expense_side","deductible_subtotal"),
+               ("Without VAT (non-deductible)","expense_no_vat_account","expense_no_vat_side","non_deductible_subtotal"),
+               ("Customer" if sale else "Supplier","supplier_account","supplier_side","total")]
+        amount_entries={}
+        def account_cell(parent,variable):
+            frame=tk.Frame(parent,bg=LIGHT)
+            self.account_search_box(frame,variable,16,replace_on_focus=True).pack(side="left")
+            tk.Button(frame,text="Find",command=lambda v=variable:self.open_account_lookup(v,include_groups=True),bg=NAVY,fg="white",border=0,padx=6,pady=2).pack(side="left",padx=(3,0))
+            return frame
+        for index,(label,account_key,side_key,amount_key) in enumerate(lines,1):
+            tk.Label(postings,text=label,bg=LIGHT,anchor="w").grid(row=index,column=0,sticky="w",padx=6,pady=4)
+            account_cell(postings,variables[account_key]).grid(row=index,column=1,sticky="w",padx=6,pady=4)
+            ttk.Combobox(postings,textvariable=variables[side_key],values=["D - Debit","C - Credit"],state="readonly",width=10).grid(row=index,column=2,sticky="w",padx=6,pady=4)
+            entry=tk.Entry(postings,textvariable=variables[amount_key],width=16,justify="right",state="readonly" if amount_key=="total" else "normal")
+            entry.grid(row=index,column=3,sticky="w",padx=6,pady=4); amount_entries[amount_key]=entry
+        payment_row=len(lines)+1
+        ttk.Separator(postings,orient="horizontal").grid(row=payment_row,column=0,columnspan=4,sticky="ew",pady=(6,6))
+        tk.Label(postings,text="Payment",bg=LIGHT,anchor="w",font=("Segoe UI",9,"bold")).grid(row=payment_row+1,column=0,sticky="w",padx=6,pady=4)
+        account_cell(postings,variables["cash_account"]).grid(row=payment_row+1,column=1,sticky="w",padx=6,pady=4)
+        method_box=ttk.Combobox(postings,textvariable=variables["payment_method"],values=["On Account (Not Cash)","Cash","Bank Transfer","Cheque","Card","Other"],state="readonly",width=20)
+        method_box.grid(row=payment_row+1,column=2,sticky="w",padx=6,pady=4)
+        paid_entry=tk.Entry(postings,textvariable=variables["amount_paid"],width=16,justify="right"); paid_entry.grid(row=payment_row+1,column=3,sticky="w",padx=6,pady=4)
+        tk.Label(postings,text="Cash -> 531, Bank Transfer / Cheque / Card -> 512 (change the account if needed); the amount paid follows the Total.",
+                 bg=LIGHT,fg="#5f6b76").grid(row=payment_row+2,column=0,columnspan=4,sticky="w",padx=6)
+
+        exchange_label=tk.Label(window,text="",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold"))
+        import decimal as _decimal
+        def number(key):
+            try: return _decimal.Decimal(str(variables[key].get() or "0").replace(",",""))
+            except _decimal.InvalidOperation: return None
+        auto={"vat":abs((number("deductible_subtotal") or 0)*_decimal.Decimal(str(vat_rate(self)))/100-(number("vat") or 0))<_decimal.Decimal("0.02"),
+              "paid":(number("amount_paid") or 0)==(number("total") or 0) and (number("total") or 0)>0,"busy":False}
+        def recompute(*_a):
+            if auto["busy"]: return
+            auto["busy"]=True
+            try:
+                deductible=number("deductible_subtotal"); non_deductible=number("non_deductible_subtotal")
+                if deductible is None or non_deductible is None: return
+                if auto["vat"]: variables["vat"].set(f'{(deductible*_decimal.Decimal(str(vat_rate(self)))/100).quantize(_decimal.Decimal("0.01"))}')
+                vat=number("vat")
+                if vat is None: return
+                total=deductible+non_deductible+vat; variables["total"].set(f"{total.quantize(_decimal.Decimal('0.01'))}")
+                if auto["paid"] and not variables["payment_method"].get().lower().startswith("on account"): variables["amount_paid"].set(f"{total.quantize(_decimal.Decimal('0.01'))}")
+                exchange_label.config(text=self.exchange_equivalent_text(float(total),variables["currency"].get()))
+            finally: auto["busy"]=False
+        def method_changed(_event=None):
+            method=variables["payment_method"].get().lower()
+            if method.startswith("on account"):
+                variables["amount_paid"].set("0"); variables["cash_account"].set(""); auto["paid"]=False; return
+            current=variables["cash_account"].get().split(" - ",1)[0].strip()
+            if not current or current in ("531","512"): variables["cash_account"].set("531" if method=="cash" else "512")
+            variables["amount_paid"].set(variables["total"].get()); auto["paid"]=True
+        amount_entries["vat"].bind("<Key>",lambda _e:auto.__setitem__("vat",False))
+        paid_entry.bind("<Key>",lambda _e:auto.__setitem__("paid",False))
+        for key in ("deductible_subtotal","non_deductible_subtotal","vat"): variables[key].trace_add("write",recompute)
+        method_box.bind("<<ComboboxSelected>>",method_changed)
 
         def save_update():
             values={key:variable.get().strip() for key,variable in variables.items()}
@@ -251,11 +289,11 @@ class InvoicesMixin:
             paid=float(values.get("amount_paid") or 0)
             messagebox.showinfo("Invoices","Invoice updated successfully"+(f". Payment of {paid:,.2f} posted to {values.get('cash_account') or ('531' if (values.get('payment_method') or '').lower()=='cash' else '512')} (see its account statement)." if paid else ""))
 
-        exchange_label=tk.Label(window,text=self.exchange_equivalent_text(float(row["total"] or 0),row["currency"]),bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold"))
-        exchange_label.grid(row=(len(fields)+1)//2,column=0,columnspan=4,pady=(6,0))
+        exchange_label.config(text=self.exchange_equivalent_text(float(row["total"] or 0),row["currency"]))
+        exchange_label.grid(row=2,column=0,pady=(6,0))
         tk.Label(window,text="Accounts: click the number and type a replacement, or use Find. Tab moves to the next field.",
-                 bg=LIGHT,fg="#5f6b76").grid(row=(len(fields)+1)//2+1,column=0,columnspan=4,pady=(5,0))
-        buttons=tk.Frame(window,bg=LIGHT); buttons.grid(row=(len(fields)+1)//2+2,column=0,columnspan=4,pady=16)
+                 bg=LIGHT,fg="#5f6b76").grid(row=3,column=0,pady=(5,0))
+        buttons=tk.Frame(window,bg=LIGHT); buttons.grid(row=4,column=0,pady=16)
         tk.Button(buttons,text="Save Update",command=save_update,bg=GOLD,fg=NAVY,font=("Segoe UI",10,"bold"),
                   border=0,padx=24,pady=8).pack(side="left",padx=5)
         tk.Button(buttons,text="Cancel",command=window.destroy,bg=NAVY,fg="white",border=0,padx=20,pady=8).pack(side="left",padx=5)
@@ -277,7 +315,8 @@ class InvoicesMixin:
         self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial()
 
     INVOICE_ACCOUNT_FIELDS = (("expense_account","Purchases / Expense / Sales account"),("vat_account","VAT account"),
-                              ("expense_no_vat_account","Non-deductible account"),("supplier_account","Customer / Supplier account"))
+                              ("expense_no_vat_account","Non-deductible account"),("supplier_account","Customer / Supplier account"),
+                              ("payment_account","Cash / Bank account (paid invoices)"))  # 2.9.78
 
     def set_account_for_selected_invoices(self):
         """2.9.71: choose ONE account and it replaces that account on every selected row (Ctrl / Shift / drag)."""

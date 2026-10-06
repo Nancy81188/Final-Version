@@ -1,5 +1,6 @@
 """Fixed assets page of Purchases & Expenses (moved out of desktop_stage3.py in 2.9.42, unchanged)."""
 from __future__ import annotations
+from desktop_common import add_search_bar  # 2.9.78
 
 from desktop_stage3_common import *  # noqa: F401,F403
 from desktop_stage3_common import _dd, _num
@@ -54,7 +55,7 @@ class AssetRegisterMixin:
         for key,title,width in (("code","Asset",90),("name","Description",190),("purchase","Purchase date",100),("cost","Purchase value",110),("currency","Currency",70),
                                 ("previous","Old deprec.",100),("yearly","This year",100),("cumulative","Total deprec.",110),("net","Net value",110)):
             self.asset_list.heading(key,text=title); self.asset_list.column(key,width=width,stretch=key=="name",anchor="w" if key in ("code","name","purchase","currency") else "e")
-        self.asset_list.pack(fill="both",expand=True); self.asset_list.bind("<<TreeviewSelect>>",lambda _e:self.select_asset())
+        self.asset_list.pack(fill="both",expand=True); self.asset_list.bind("<<TreeviewSelect>>",lambda _e:self.select_asset()); add_search_bar(self.asset_list)  # 2.9.78
         self.asset_schedule_tree=None
         self.load_assets()
 

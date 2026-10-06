@@ -94,7 +94,7 @@ class AllRatesTest(_Book):
             return {"rates": {"2024-01-02": {"USD": "1.10"}}}
         with mock.patch.object(Database, "_download_json", fake), mock.patch("urllib.request.urlopen", side_effect=OSError("offline")):
             result = self.db.restore_all_rates()
-        self.assertEqual(result["restored"], ["USD", "LBP", "EUR", "AED", "GBP"])
+        self.assertEqual(result["restored"], ["USD", "LBP", "EUR", "AED", "SAR", "GBP"])  # 2.9.78: SAR is a standard currency
         self.assertEqual(result["skipped"], ["XAF"])  # no automatic source: typed by hand
         self.assertEqual(self.db._converted_amount(100, "AED", "USD", "15-03-2025").quantize(Decimal("0.01")), Decimal("27.23"))
         self.assertEqual(self.db._converted_amount(100, "GBP", "USD", "15-03-2025").quantize(Decimal("0.01")), Decimal("125.00"))

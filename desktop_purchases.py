@@ -1,5 +1,6 @@
 """Purchases & Expenses tab and the purchases page (moved out of desktop_stage3.py in 2.9.42, unchanged)."""
 from __future__ import annotations
+from desktop_common import search_arrows  # 2.9.78
 import logging
 
 from desktop_stage3_common import *  # noqa: F401,F403
@@ -202,7 +203,7 @@ class PurchasesMixin:
                 if i["active"] and (not text or text in f'{i["sku"]} {i["name"]} {i.get("category") or ""}'.casefold()): tree.insert("", "end", values=(i["sku"], i["name"], i["unit"], f'{i["average_cost"]:,.4f}'))
         def choose(_e=None):
             if tree.selection(): self.purchase_item_changed(iid, "item_code", tree.item(tree.selection()[0], "values")[0]); self.purchase_form["items_sheet"].refresh(iid); window.destroy()
-        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill()
+        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill(); search_arrows(entry, tree, choose, search)  # 2.9.78
 
     def filter_found_purchases(self):
         from desktop import row_matches_search

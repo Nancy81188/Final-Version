@@ -373,6 +373,78 @@ def vat_currency(app, which=1):
     return str(values.get("vat_currency" if int(which) == 1 else "vat_second_currency") or ("LBP" if int(which) == 1 else "USD")).upper()
 
 
+def search_arrows(entry, tree, choose, variable=None):
+    """2.9.78: in a search box over a list, Up / Down (and Page Up / Down) move the highlighted row while you keep typing,
+    Enter takes the highlighted row (the first one when none is), and the first match is highlighted after every key."""
+    def first():
+        try:
+            rows = tree.get_children()
+            if rows and not tree.selection(): tree.selection_set(rows[0]); tree.focus(rows[0]); tree.see(rows[0])
+        except Exception: pass
+    def move(step):
+        rows = list(tree.get_children())
+        if not rows: return "break"
+        current = tree.selection()
+        index = rows.index(current[0]) if current and current[0] in rows else -1
+        index = max(0, min(len(rows) - 1, index + step))
+        tree.selection_set(rows[index]); tree.focus(rows[index]); tree.see(rows[index])
+        return "break"
+    def enter(_event=None):
+        rows = tree.get_children()
+        if not rows: return "break"
+        if not tree.selection(): tree.selection_set(rows[0]); tree.focus(rows[0])
+        choose(); return "break"
+    entry.bind("<Down>", lambda _e: move(1)); entry.bind("<Up>", lambda _e: move(-1))
+    entry.bind("<Next>", lambda _e: move(10)); entry.bind("<Prior>", lambda _e: move(-10)); entry.bind("<Return>", enter)
+    if variable is not None: variable.trace_add("write", lambda *_a: entry.after_idle(first))
+    entry.after_idle(first)
+
+
+def add_search_bar(tree, keep_tags=("section", "header", "group", "total")):
+    """2.9.78: the same Search box as Uploaded Data, for a table built on its own (asset register, depreciation, DOE,
+    warehouses, recipes, bank reconciliation, reports): every column is searched as you type, Clear shows everything
+    again, and rows tagged as titles / totals of a report stay visible. Call it once the table is placed."""
+    if getattr(tree, "_search_bar", None) is not None: return tree._search_bar
+    holder = tree if tree.winfo_manager() == "pack" else tree.master
+    if holder.winfo_manager() != "pack": return None
+    bar = tk.Frame(holder.master, bg=LIGHT); bar.pack(fill="x", padx=4, pady=(4, 0), before=holder)
+    variable = tk.StringVar()
+    tk.Label(bar, text="Search:", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")
+    entry = tk.Entry(bar, textvariable=variable, width=30); entry._is_search_entry = True; entry.pack(side="left", padx=6)
+    tk.Button(bar, text="Clear", command=lambda: variable.set(""), bg=NAVY, fg="white", border=0, padx=10, pady=2).pack(side="left")
+    real_insert, real_delete = tree.insert, tree.delete
+    tree._search_rows = []; counter = {"n": 0}
+    def kept(kwargs):
+        tags = kwargs.get("tags") or ()
+        tags = (tags,) if isinstance(tags, str) else tags
+        return any(tag in keep_tags for tag in tags) or row_matches_search(kwargs.get("values", ()), variable.get())
+    def tracked_insert(parent_id, index, *args, **kwargs):
+        counter["n"] += 1; kwargs.setdefault("iid", f"find-{id(tree)}-{counter['n']}")
+        tree._search_rows.append((parent_id, index, args, kwargs))
+        if parent_id == "" and not kept(kwargs): return kwargs["iid"]
+        return real_insert(parent_id, index, *args, **kwargs)
+    def tracked_delete(*item_ids):
+        requested = {str(i) for i in item_ids}
+        if requested >= {str(i) for i in tree.get_children("")}: tree._search_rows.clear()
+        else: tree._search_rows = [r for r in tree._search_rows if str(r[3].get("iid")) not in requested]
+        present = [i for i in item_ids if tree.exists(i)]
+        if present: real_delete(*present)
+    def apply(*_a):
+        visible = tree.get_children("")
+        if visible: real_delete(*visible)
+        for parent_id, index, args, kwargs in tree._search_rows:
+            if parent_id == "" and kept(kwargs): real_insert(parent_id, "end", *args, **kwargs)
+    pending = {"id": None}
+    def schedule(*_a):
+        if pending["id"] is not None:
+            try: tree.after_cancel(pending["id"])
+            except Exception: pass
+        pending["id"] = tree.after(180, apply)
+    variable.trace_add("write", schedule)
+    tree.insert = tracked_insert; tree.delete = tracked_delete; tree.search_var = variable; tree._search_bar = bar
+    return bar
+
+
 def bulk_action(title, labels, action, parent=None):
     """2.9.69: run `action(key)` for every selected record; one question before, one summary after.
     labels = [(key, text shown)]. Returns the keys that were done."""

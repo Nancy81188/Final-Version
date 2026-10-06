@@ -1,5 +1,7 @@
 """Version 2.2 screens: sales documents (debit / credit notes, duplicate, preview, import), and helpers."""
 from __future__ import annotations
+from desktop_common import add_search_bar  # 2.9.78
+from desktop_common import search_arrows  # 2.9.78
 import logging
 
 import os
@@ -207,7 +209,7 @@ class V22Mixin:
             party = next(p for p in parties if str(p["id"]) == tree.selection()[0]); window.destroy()
             label = next((v for v in box["values"] if str(v).split(" | ")[0] == party["name"]), party["name"])
             box.set(label); box.event_generate("<<ComboboxSelected>>")
-        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill()
+        search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill(); search_arrows(entry, tree, choose, search)  # 2.9.78
 
     # ------------------------------------------------------------ business reports (ageing, item sales, 3D, top)
     BUSINESS_REPORTS = {"Receivables Ageing (customers)": "receivables", "Payables Ageing (suppliers)": "payables", "Client Items: Qty & Value": "item_sales_client",
@@ -458,7 +460,7 @@ class V22Mixin:
             tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", selectmode="browse")
             for col, label, width in columns: tree.heading(col, text=label); tree.column(col, width=width, anchor="e" if col == "amount" else "w")
             scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview); tree.configure(yscrollcommand=scroll.set)
-            tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y")
+            tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y"); add_search_bar(tree)  # 2.9.78
             tree.tag_configure("matched", foreground="#2E7D5B"); tree.tag_configure("open", foreground="#8B1E1E"); self.bk_trees[key] = tree
         for col in range(2): panes.grid_columnconfigure(col, weight=1)
         panes.grid_rowconfigure(0, weight=1)

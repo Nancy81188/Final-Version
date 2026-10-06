@@ -1252,7 +1252,7 @@ class BusinessReportsTest(unittest.TestCase):
 class NewCurrencyTest(unittest.TestCase):
     def test_payroll_and_vat_adjustment_in_a_new_currency(self):
         folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); db, user = new_db(folder.name)
-        db.save_currency("SAR", "Saudi Riyal", user)
+        if "SAR" not in db.currency_codes(): db.save_currency("SAR", "Saudi Riyal", user)  # 2.9.78: SAR is a standard currency now
         db.save_exchange_rate({"date_from": "01-01-2026", "date_to": "31-12-2026", "from_currency": "SAR", "to_currency": "USD", "rate": "0.2667"}, user)
         employee = db.save_employee({"employee_number": "1000", "full_name": "E", "currency": "SAR", "base_salary": "5000", "nssf_number": "1", "mof_number": "2"}, user)
         result = db.calculate_payroll({"employee_id": employee["id"], "period_date": "28-02-2026"})  # LBP -> USD -> SAR

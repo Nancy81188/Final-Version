@@ -61,7 +61,7 @@ def _load_lines(db, options):
     with db.connect() as connection:
         rows = [dict(row) for row in connection.execute(f"""SELECT j.id,a.code,a.name_en,a.type account_type,e.id entry_id,e.entry_number,e.entry_date,
             e.description entry_description,COALESCE(j.description,'') line_description,e.currency,e.source_type,COALESCE(b.name,'Head Office') branch_name,
-            CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit,j.line_currency,j.amount,j.amount_lbp,j.amount_usd,j.due_date,j.reference,
+            CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit,j.line_currency,j.amount,j.amount_lbp,j.amount_usd,j.due_date,j.reference,j.revalue_currency,j.revalue_amount,
             COALESCE(p.name,'') party_name,i.invoice_number,i.due_date invoice_due_date,
             COALESCE(d.code,'') department_code,COALESCE(d.name,'') department_name,COALESCE(pr.code,'') project_code,COALESCE(pr.name,'') project_name
             FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
@@ -119,6 +119,8 @@ def _load_lines(db, options):
                 if key not in rate_cache:
                     rate_cache[key]=db._converted_amount(Decimal("1"),row["account_currency"],target,row["iso_date"])
                 row["signed"][target]=row["signed"]["account"]*rate_cache[key]
+            if row.get("revalue_currency")==target and row.get("revalue_amount") not in (None,""):  # 2.9.78: DOE in these books
+                row["signed"][target]=row["signed"][target]+Decimal(str(row["revalue_amount"]))*(1 if signed>=0 else -1)
         for target in requested & {"LBP", "USD"}:
             if row["signed"][target] is None:
                 raise ValueError(

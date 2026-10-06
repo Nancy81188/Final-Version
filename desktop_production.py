@@ -1,5 +1,6 @@
 """Inventory > Production (2.9.65): recipes (bills of materials), production orders and the production report."""
 from __future__ import annotations
+from desktop_common import add_search_bar  # 2.9.78
 
 import tkinter as tk
 from datetime import datetime
@@ -53,7 +54,7 @@ class ProductionMixin:
         self.rc_list = ttk.Treeview(side, columns=("sku", "name", "makes", "materials"), show="headings", height=14)
         for key, label, width in (("sku", "Product", 90), ("name", "Name", 170), ("makes", "Makes", 60), ("materials", "Materials", 70)):
             self.rc_list.heading(key, text=label); self.rc_list.column(key, width=width, anchor="e" if key in ("makes", "materials") else "w")
-        self.rc_list.pack(fill="y", expand=True); self.rc_list.bind("<Double-1>", lambda _e: self.open_selected_recipe())
+        self.rc_list.pack(fill="y", expand=True); self.rc_list.bind("<Double-1>", lambda _e: self.open_selected_recipe()); add_search_bar(self.rc_list)  # 2.9.78
         main = tk.Frame(page, bg=LIGHT); main.pack(side="left", fill="both", expand=True)
         bar = tk.Frame(main, bg=LIGHT); bar.pack(fill="x", padx=8, pady=(6, 2))
         tk.Label(bar, text="Product made", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")

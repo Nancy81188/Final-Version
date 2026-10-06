@@ -198,7 +198,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         with self.connect() as db:
             db.executescript(SCHEMA)
             db.executemany("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",
-                           (("USD","US Dollar"),("LBP","Lebanese Pound"),("EUR","Euro"),("AED","UAE Dirham")))
+                           (("USD","US Dollar"),("LBP","Lebanese Pound"),("EUR","Euro"),("AED","UAE Dirham"),("SAR","Saudi Riyal")))  # 2.9.78: SAR
             invoice_columns = {row["name"] for row in db.execute("PRAGMA table_info(invoices)")}
             if "currency_issue" not in invoice_columns:
                 db.execute("ALTER TABLE invoices ADD COLUMN currency_issue TEXT NOT NULL DEFAULT ''")
@@ -294,7 +294,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             if "active" not in document_columns:  # "applies to this party" tick; existing documents stay active
                 db.execute("ALTER TABLE party_documents ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
             line_columns={row["name"] for row in db.execute("PRAGMA table_info(journal_lines)")}
-            for column in ("line_currency","amount","amount_lbp","amount_usd","rate_lbp","rate_usd","due_date","reference"):
+            for column in ("line_currency","amount","amount_lbp","amount_usd","rate_lbp","rate_usd","due_date","reference",
+                           "revalue_currency","revalue_amount"):  # 2.9.78: DOE in EUR (or another currency than LBP / USD)
                 if column not in line_columns: db.execute(f"ALTER TABLE journal_lines ADD COLUMN {column} TEXT")
             for column in ("department_id","project_id"):
                 if column not in line_columns: db.execute(f"ALTER TABLE journal_lines ADD COLUMN {column} INTEGER")

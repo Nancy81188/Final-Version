@@ -89,9 +89,10 @@ class JournalStore:
                 account=db.execute("SELECT id FROM accounts WHERE code=?",(code,)).fetchone()
                 if not account: raise ValueError(f"Account {code} was not found")
                 party=db.execute("SELECT id FROM parties WHERE account_number=?",(code,)).fetchone()
-                db.execute("""INSERT INTO journal_lines(entry_id,account_id,party_id,description,debit,credit,line_currency,amount,amount_lbp,amount_usd,rate_lbp,rate_usd,due_date,reference)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(saved_id,account["id"],party["id"] if party else None,line_description,str(debit),str(credit),
-                    *( (extra["line_currency"],str(extra["amount"]),str(extra["amount_lbp"]),str(extra["amount_usd"]),str(extra["rate_lbp"]),str(extra["rate_usd"]),extra["due_date"],extra["reference"]) if extra else (None,)*8 )))
+                db.execute("""INSERT INTO journal_lines(entry_id,account_id,party_id,description,debit,credit,line_currency,amount,amount_lbp,amount_usd,rate_lbp,rate_usd,due_date,reference,revalue_currency,revalue_amount)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(saved_id,account["id"],party["id"] if party else None,line_description,str(debit),str(credit),
+                    *( (extra["line_currency"],str(extra["amount"]),str(extra["amount_lbp"]),str(extra["amount_usd"]),str(extra["rate_lbp"]),str(extra["rate_usd"]),extra["due_date"],extra["reference"],
+                        extra.get("revalue_currency"),extra.get("revalue_amount")) if extra else (None,)*10 )))
                 if department_id or project_id:
                     db.execute("UPDATE journal_lines SET department_id=?,project_id=? WHERE id=last_insert_rowid()",(department_id,project_id))
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",(user_id,action,"journal_voucher",saved_id,json.dumps({"entry_number":voucher_number,"debit":str(total_debit),"credit":str(total_credit)}),utcnow()))
@@ -142,8 +143,49 @@ class JournalStore:
                             "suggested_rate":str(rates[currency])})
         return {"items":results,"skipped_accounts":skipped,"basis":"USD"}
 
+    def doe_candidates_other(self, posting_date, basis):
+        """2.9.78: DOE in EUR (or another currency than LBP / USD): class 4/5 balances kept in other currencies, their
+        carrying value in `basis` (each movement at its own date's rate, as the reports show it, plus earlier DOEs in
+        `basis`) and the rate of the DOE date."""
+        day=iso_date(posting_date); basis=str(basis).upper()
+        normal="CASE WHEN e.entry_date GLOB '??-??-????' THEN substr(e.entry_date,7,4)||'-'||substr(e.entry_date,4,2)||'-'||substr(e.entry_date,1,2) ELSE e.entry_date END"
+        with self.connect() as db:
+            lines=[dict(row) for row in db.execute(f"""SELECT a.code,a.name_en,e.currency voucher_currency,e.voucher_type,e.source_type,
+                {normal} day,COALESCE(j.line_currency,e.currency) line_currency,j.line_currency raw_line_currency,j.amount,j.debit,j.credit,j.revalue_currency,j.revalue_amount
+                FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
+                LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
+                WHERE (a.code LIKE '4%' OR a.code LIKE '5%') AND {normal}<=?
+                AND (e.source_type!='invoice' OR i.status='posted') ORDER BY a.code,e.id,j.id""",(day,))]
+        accounts={}; rates={}
+        def rate(code,date):
+            key=(code,date)
+            if key not in rates: rates[key]=self._converted_amount(Decimal("1"),code,basis,date)
+            return rates[key]
+        for line in lines:
+            item=accounts.setdefault(line["code"],{"name":line["name_en"],"currencies":set(),"balance":Decimal("0"),"carrying":Decimal("0")})
+            signed=Decimal(str(line["debit"] or 0))-Decimal(str(line["credit"] or 0)); sign=Decimal("1") if signed>=0 else Decimal("-1")
+            if line["revalue_currency"]==basis and line["revalue_amount"] not in (None,""):
+                item["carrying"]+=sign*Decimal(str(line["revalue_amount"])); continue
+            if line["source_type"]=="journal_voucher" and line["voucher_type"]=="07": continue  # DOE of other books: no balance change
+            native=(sign*Decimal(str(line["amount"]))) if line["raw_line_currency"] and line["amount"] not in (None,"") else signed
+            if not native: continue
+            currency=line["line_currency"]; item["currencies"].add(currency); item["balance"]+=native
+            item["carrying"]+=native*(Decimal("1") if currency==basis else rate(currency,line["day"]))
+        results=[]; skipped=[]
+        for code,item in sorted(accounts.items()):
+            if len(item["currencies"])!=1:
+                if len(item["currencies"])>1: skipped.append(code)
+                continue
+            currency=next(iter(item["currencies"]))
+            if currency==basis or not item["balance"]: continue
+            results.append({"account":code,"name":item["name"],"currency":currency,"balance":str(item["balance"]),
+                            f"carrying_{basis.lower()}":str(item["carrying"].quantize(Decimal("0.01"))),"carrying":str(item["carrying"].quantize(Decimal("0.01"))),
+                            "suggested_rate":str(rate(currency,day))})
+        return {"items":results,"skipped_accounts":skipped,"basis":basis}
+
     def doe_candidates(self, posting_date, basis="LBP"):
         if str(basis or "LBP").upper()=="USD": return self.doe_candidates_usd(posting_date)
+        if str(basis or "LBP").upper()!="LBP": return self.doe_candidates_other(posting_date, basis)
         """Foreign class 4/5 balances and their original LBP carrying amounts as of a date.
 
         Local-currency activity is ignored except prior DOE corrections. Accounts with
@@ -195,18 +237,20 @@ class JournalStore:
           not change) and only its USD equivalent moves.
         - The gain 7751 / loss 6751 line is in the revaluation currency only."""
         from chart_extra import EXCHANGE_GAIN_ACCOUNT, EXCHANGE_LOSS_ACCOUNT
-        if basis not in ("LBP","USD"): raise ValueError("DOE can be revalued in LBP or USD")
+        if basis not in self.currency_codes(): raise ValueError(f"DOE cannot be revalued in {basis}: add the currency first")
         if voucher_currency!=basis: raise ValueError(f"A {basis} DOE voucher must be in {basis}")
         try: debit=Decimal(str(line.get("debit") or 0)); credit=Decimal(str(line.get("credit") or 0))
         except Exception as exc: raise ValueError(f"Line {index}: Debit and Credit must be numbers") from exc
         value=(debit or credit).quantize(Decimal("0.01"))
         zero=Decimal("0"); offset=code in (EXCHANGE_GAIN_ACCOUNT,EXCHANGE_LOSS_ACCOUNT)
         native=str(line.get("native_currency") or basis).upper()
+        other=basis not in ("LBP","USD")  # 2.9.78: EUR (or any) books - only that currency's value moves
         if offset or basis=="LBP": line_currency=basis if offset else "LBP"; amount=value
         else: line_currency=native; amount=zero
         return {"debit":value if debit else zero,"credit":value if credit else zero,"line_currency":line_currency,"amount":amount,
                 "amount_lbp":value if basis=="LBP" else zero,"amount_usd":value if basis=="USD" else zero,"rate_lbp":zero,"rate_usd":zero,
-                "due_date":None,"reference":str(line.get("reference") or "").strip() or None}
+                "due_date":None,"reference":str(line.get("reference") or "").strip() or None,
+                "revalue_currency":basis if other and not offset else None,"revalue_amount":str(value) if other and not offset else None}
 
     def _voucher_line_amounts(self,line,voucher_currency,date,index):
         """Lines entered like BRAINS: currency, D/C, amount in the account currency and LBP / USD rates."""

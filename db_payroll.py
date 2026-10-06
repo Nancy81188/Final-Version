@@ -337,7 +337,25 @@ class PayrollStore:
                 month_child_allowance=D(str(month_settings.get("child_allowance") or 0))*month_children
                 month_allowance+=month_child_allowance/2 if spouse_works else month_child_allowance
                 monthly=lambda annual: self._progressive_tax(max(D("0"),annual-month_allowance),month_brackets)/12
-                retro_tax+=monthly((regular_lbp+to_lbp(share,month))*12)-monthly(regular_lbp*12)
+                # 2.9.78: the retro is added to what was REALLY paid that month: tax on (pay of the month + retro) less the tax
+                # already withheld that month. Without a saved payroll for that month, this month's pay stands in for it.
+                with self.connect() as db:
+                    paid=db.execute("""SELECT * FROM payroll_records WHERE employee_id=? AND period_date>=? AND period_date<=?
+                        ORDER BY period_date DESC LIMIT 1""",(employee_id,month[:8]+"01",month)).fetchone()
+                if paid:
+                    gross=sum((D(str(paid[key] or 0)) for key in ("salary","transport","overtime","commission","schooling")),D("0"))+self._record_taxable_allowances(paid)
+                    exempt=D(str(paid["exempt_transport"] or 0))+D(str(paid["exempt_schooling"] or 0))
+                    paid_base=self._converted_amount(max(D("0"),gross-exempt),paid["currency"],"LBP",paid["period_date"])
+                    earlier_retro=D(str(paid["retro_tax_lbp"] or 0)) if "retro_tax_lbp" in paid.keys() else \
+                        self._converted_amount(D(str(paid["retro_tax"] or 0)),paid["currency"],"LBP",paid["period_date"]) if "retro_tax" in paid.keys() else D("0")
+                    withheld=D(str(paid["income_tax_lbp"] or 0))-earlier_retro
+                    one_off=self._converted_amount(D(str(paid["bonus"] or 0))+D(str(paid["thirteenth_month"] or 0)),paid["currency"],"LBP",paid["period_date"])
+                    with_retro=monthly((paid_base+to_lbp(share,month))*12)+(monthly((paid_base+to_lbp(share,month))*12+one_off)-monthly((paid_base+to_lbp(share,month))*12))*12
+                    retro_tax+=max(D("0"),with_retro-withheld)
+                    notes.append(f"Retro {month[:7]}: tax on the pay of that month + retro, less {withheld:,.0f} LBP already withheld")
+                else:
+                    retro_tax+=monthly((regular_lbp+to_lbp(share,month))*12)-monthly(regular_lbp*12)
+                    notes.append(f"Retro {month[:7]}: no payroll saved for that month - this month's pay used as its pay")
         # Salary tax withholding is cumulative across payrolls saved this year.
         # Retros use the separate prior-period treatment above.
         if not money["retro_salary"]:

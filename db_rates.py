@@ -77,10 +77,23 @@ class RatesStore:
         type(self)._RATE_DOWNLOADS[key] = now
         return True
 
+    DAILY_PEGGED = ("AED", "SAR")  # 2.9.78: filled every day like EUR (fixed to the US dollar, no internet needed)
+
+    def _pegged_rows(self, display):
+        """AED / SAR -> USD and -> LBP for one day (DD-MM-YYYY), for the currencies the company has."""
+        codes=self.currency_codes(); rows=[]
+        for code in self.DAILY_PEGGED:
+            if code not in codes: continue
+            per_usd=Decimal(self.PEGGED_TO_USD[code]); to_usd=(Decimal("1")/per_usd).quantize(Decimal("0.0000000001"))
+            rows.append((display,code,"USD",str(to_usd),utcnow())); rows.append((display,code,"LBP",str((Decimal("89500")/per_usd).quantize(Decimal("0.01"))),utcnow()))
+        return rows
+
     def _ensure_automatic_rates(self):
         self.__dict__.pop("_rate_state", None)  # 2.9.58: rates change - forget the cached ones
         today=datetime.now().strftime("%d-%m-%Y")
         with self.connect() as db:
+            db.executemany("""INSERT INTO exchange_rates(rate_date,from_currency,to_currency,rate,created_at)
+                VALUES(?,?,?,?,?) ON CONFLICT(rate_date,from_currency,to_currency) DO NOTHING""",self._pegged_rows(today))
             db.execute("""INSERT INTO exchange_rates(rate_date,from_currency,to_currency,rate,created_at)
                 VALUES(?,?,?,?,?) ON CONFLICT(rate_date,from_currency,to_currency) DO NOTHING""",
                 (today,"USD","LBP","89500",utcnow()))
@@ -123,6 +136,7 @@ class RatesStore:
             if current.isoformat() in collected: previous=collected[current.isoformat()]
             display=current.strftime("%d-%m-%Y"); eur_lbp=(previous*Decimal("89500")).quantize(Decimal("0.01"))
             rows.extend(((display,"USD","LBP","89500",utcnow()),(display,"EUR","USD",str(previous),utcnow()),(display,"EUR","LBP",str(eur_lbp),utcnow())))
+            rows.extend(self._pegged_rows(display))  # 2.9.78: AED and SAR every day too
             current+=timedelta(days=1)
         with self.connect() as db:
             db.executemany("""INSERT INTO exchange_rates(rate_date,from_currency,to_currency,rate,created_at)

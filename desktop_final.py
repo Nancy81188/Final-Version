@@ -1,6 +1,7 @@
 """Desktop screens added in version 1.12: payroll official reports, quarterly VAT return,
 user expiry and permissions, legal-document alerts, and friendly error handling."""
 from __future__ import annotations
+from desktop_common import add_search_bar  # 2.9.78
 
 import tkinter as tk
 import traceback
@@ -202,6 +203,7 @@ class FinalFeaturesMixin:
         tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
         tree.grid(row=0, column=0, sticky="nsew"); yscroll.grid(row=0, column=1, sticky="ns"); xscroll.grid(row=1, column=0, sticky="ew")
         frame.grid_rowconfigure(0, weight=1); frame.grid_columnconfigure(0, weight=1)
+        add_search_bar(tree)  # 2.9.78: Search in every report too (section titles and totals stay)
         return tree
 
     def show_sections(self, tree, sections):

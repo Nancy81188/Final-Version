@@ -1,6 +1,8 @@
 """BRAINS-style screens (version 1.13): Journal Voucher with multi-currency lines and the
 Balance des Comptes panel used by both the Trial Balance and the Statement of Account."""
 from __future__ import annotations
+from desktop_common import add_search_bar  # 2.9.78
+from desktop_common import search_arrows  # 2.9.78
 import logging
 
 from desktop_brains_common import *  # noqa: F401,F403
@@ -478,8 +480,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
             if not selected: return
             window.destroy(); self.open_voucher(int(selected[0]))
         search.trace_add("write", fill); fill()
-        tree.bind("<Double-1>", open_selected); tree.bind("<Return>", open_selected); entry.bind("<Return>", open_selected)
-        entry.bind("<Down>", lambda _e: (tree.focus_set(), "break")[1]); window.bind("<Escape>", lambda _e: window.destroy())
+        tree.bind("<Double-1>", open_selected); tree.bind("<Return>", open_selected)
+        search_arrows(entry, tree, open_selected, search); window.bind("<Escape>", lambda _e: window.destroy())  # 2.9.78: arrows from the search box
         buttons = tk.Frame(window, bg=LIGHT); buttons.pack(pady=8)
         tk.Button(buttons, text="Open to edit", command=open_selected, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
         tk.Button(buttons, text="Close", command=window.destroy, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=4)
@@ -593,9 +595,13 @@ class BrainsScreensMixin(BalanceReportsMixin):
         tk.Label(bar,text="DOE posting date",bg=LIGHT).pack(side="left")
         self.date_entry(bar,date,12).pack(side="left",padx=(4,12))
         tk.Label(bar,text="Revalue in",bg=LIGHT).pack(side="left")
-        basis_box=ttk.Combobox(bar,textvariable=basis,values=["LBP","USD"],state="readonly",width=6); basis_box.pack(side="left",padx=(4,12))
-        tk.Label(bar,text="Currency",bg=LIGHT).pack(side="left")
-        only_box=ttk.Combobox(bar,textvariable=only,values=["All currencies"],state="readonly",width=15); only_box.pack(side="left",padx=(4,12))
+        # 2.9.78: the books to revalue - LBP, USD, EUR or another currency of the company
+        books=["LBP","USD","EUR"]+[c for c in getattr(self,"currency_codes",[]) if c not in ("LBP","USD","EUR")]
+        basis_box=ttk.Combobox(bar,textvariable=basis,values=books,state="readonly",width=6); basis_box.pack(side="left",padx=(4,12))
+        tk.Label(bar,text="Currencies",bg=LIGHT).pack(side="left")
+        from multi_select import MultiSelect, chosen_values
+        only.set("All")  # 2.9.78: tick one, several (USD + EUR + SAR ...) or All
+        only_box=MultiSelect(bar,only,[],width=18,title="Currencies to revalue",on_change=lambda:load()); only_box.pack(side="left",padx=(4,12))
         rates_bar=tk.Frame(page,bg=LIGHT); rates_bar.pack(fill="x",padx=10,pady=(0,4))
         info=tk.Label(page,text="",bg=LIGHT,fg=NAVY,anchor="w"); info.pack(fill="x",padx=10)
         columns=("currency","account","name","foreign","carrying","target","difference","offset")
@@ -603,12 +609,15 @@ class BrainsScreensMixin(BalanceReportsMixin):
         for key,label,width in (("currency","Currency",70),("account","Class 4/5 account",130),("name","Account name",220),("foreign","Balance",140),
                                 ("carrying","Carrying",140),("target","At DOE rate",140),("difference","Difference",140),("offset","Gain / Loss A/C",120)):
             tree.heading(key,text=label); tree.column(key,width=width,stretch=key=="name")
-        tree.pack(fill="both",expand=True,padx=10,pady=6)
+        tree.pack(fill="both",expand=True,padx=10,pady=6); add_search_bar(tree)  # 2.9.78
         state={"candidates":[],"preview":{},"date":None,"basis":None,"rates":{},"rate_vars":{}}
 
         def factor(code,rate):
-            # USD books: an LBP balance is divided by "LBP per 1 USD"; every other rate is "1 unit = x".
-            return (Decimal("1")/rate) if state["basis"]=="USD" and code=="LBP" else rate
+            # USD / EUR ... books: an LBP balance is divided by "LBP per 1 USD (EUR ...)"; every other rate is "1 unit = x".
+            return (Decimal("1")/rate) if state["basis"]!="LBP" and code=="LBP" else rate
+
+        def carrying_key_of(books):
+            return "carrying_usd" if books=="USD" else "carrying_lbp" if books=="LBP" else "carrying"
 
         def read_rates():
             rates={}
@@ -625,17 +634,20 @@ class BrainsScreensMixin(BalanceReportsMixin):
             except Exception as exc: return messagebox.showerror("DOE",str(exc),parent=page)
             chosen_basis=basis.get(); items=[r for r in result["items"] if r["currency"]!=chosen_basis]
             available=sorted({r["currency"] for r in items},key=lambda c:(c not in ("USD","LBP"),c))
-            only_box["values"]=["All currencies"]+available
-            if only.get() not in only_box["values"]: only.set("All currencies")
-            if only.get()!="All currencies": items=[r for r in items if r["currency"]==only.get()]
+            only_box["values"]=available
+            wanted=[c for c in chosen_values(only.get()) if c in available]
+            if chosen_values(only.get()) and not wanted: only.set("All")
+            if wanted: items=[r for r in items if r["currency"] in wanted]
+            if chosen_basis not in ("LBP","USD"):  # LBP shown as "1 EUR = x LBP" like the USD books
+                items=[{**r,"suggested_rate":str((Decimal("1")/Decimal(r["suggested_rate"])).quantize(Decimal("0.01"))) if r["currency"]=="LBP" and Decimal(r["suggested_rate"] or 0) else r["suggested_rate"]} for r in items]
             state.update(candidates=items,preview={},date=day,basis=chosen_basis,rates={},rate_vars={})
             for child in rates_bar.winfo_children(): child.destroy()
             tk.Label(rates_bar,text="DOE date rates:",bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,8))
             for code in sorted({r["currency"] for r in items},key=lambda c:(c not in ("USD","LBP"),c)):
                 suggested=next((r["suggested_rate"] for r in items if r["currency"]==code),"")
                 variable=tk.StringVar(value=str(suggested or "")); state["rate_vars"][code]=variable
-                label="1 USD =" if chosen_basis=="USD" and code=="LBP" else f"1 {code} ="
-                unit="LBP" if chosen_basis=="LBP" or code=="LBP" else "USD"
+                label=f"1 {chosen_basis} =" if chosen_basis!="LBP" and code=="LBP" else f"1 {code} ="
+                unit="LBP" if chosen_basis=="LBP" or code=="LBP" else chosen_basis
                 tk.Label(rates_bar,text=label,bg=LIGHT).pack(side="left"); tk.Entry(rates_bar,textvariable=variable,width=12).pack(side="left",padx=(4,2))
                 tk.Label(rates_bar,text=unit,bg=LIGHT).pack(side="left",padx=(0,12))
             tree.heading("carrying",text=f"Carrying {chosen_basis}"); tree.heading("target",text=f"{chosen_basis} at DOE rate"); tree.heading("difference",text=f"Difference {chosen_basis}")
@@ -643,14 +655,14 @@ class BrainsScreensMixin(BalanceReportsMixin):
             skipped=result.get("skipped_accounts") or []
             info.config(text=f'{chosen_basis} books: {len(items)} class 4/5 account(s) to review ({", ".join(state["rate_vars"]) or "none"}). ' +
                 (f"Mixed-currency accounts omitted for manual review: {', '.join(skipped)}. " if skipped else "") + "Check the rates, then Preview.")
-        basis_box.bind("<<ComboboxSelected>>",lambda _event:load()); only_box.bind("<<ComboboxSelected>>",lambda _event:load())
+        basis_box.bind("<<ComboboxSelected>>",lambda _event:load())
 
         def preview():
             if state["date"]!=date.get().strip() or state["basis"]!=basis.get(): return messagebox.showwarning("DOE","Load balances after changing the date or the books",parent=page)
             try: rates=read_rates()
             except (InvalidOperation,ValueError) as exc: return messagebox.showwarning("DOE",str(exc) if isinstance(exc,ValueError) and str(exc) else "Enter the DOE date rates as numbers",parent=page)
             tree.delete(*tree.get_children()); state["preview"]={}; state["rates"]=rates
-            carrying_key="carrying_usd" if state["basis"]=="USD" else "carrying_lbp"
+            carrying_key=carrying_key_of(state["basis"])
             for row in state["candidates"]:
                 code_currency=row["currency"]; balance=Decimal(row["balance"]); carrying=Decimal(row[carrying_key])
                 target=(balance*factor(code_currency,rates[code_currency])).quantize(Decimal("0.01")); difference=target-carrying
@@ -670,7 +682,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
             try:
                 if not state["preview"] or read_rates()!=state["rates"]: return messagebox.showwarning("DOE","Preview again after changing a rate",parent=page)
             except (InvalidOperation,ValueError): return messagebox.showwarning("DOE","Preview the vouchers first",parent=page)
-            books=state["basis"]; carrying_key="carrying_usd" if books=="USD" else "carrying_lbp"
+            books=state["basis"]; carrying_key=carrying_key_of(books)
             by_currency={}
             for key in selected: by_currency.setdefault(key.split("|")[0],[]).append(key)
             if not messagebox.askyesno("Post DOE",f"Post {len(by_currency)} {books} DOE voucher(s) ({', '.join(sorted(by_currency))}) dated {state['date']}?",parent=page): return
