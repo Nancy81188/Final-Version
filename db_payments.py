@@ -84,7 +84,8 @@ class PaymentsStore:
         except Exception as exc: raise ValueError("Invalid payment amount") from exc
         if amount<=0: raise ValueError("Payment amount must be above zero")
         currency=str(item.get("currency") or "USD").upper()
-        cash_account=str(item.get("cash_account") or "531").strip()
+        defaults=self.default_accounts()  # 2.9.81: Settings > Accounting Settings
+        cash_account=str(item.get("cash_account") or defaults["cash"]).strip()
         try: commission=Decimal(str(item.get("bank_commission") or 0))
         except Exception as exc: raise ValueError("Invalid bank commission amount") from exc
         if commission<0: raise ValueError("Bank commission cannot be negative")
@@ -95,9 +96,9 @@ class PaymentsStore:
         # (673900000 / 775100000 / 675100000 when none is chosen).
         def chosen(key, default):
             return str(item.get(key) or default).split(" - ",1)[0].strip() or default
-        commission_account=chosen("commission_account",chart_extra.BANK_COMMISSION_ACCOUNT)
-        gain_account=chosen("exchange_gain_account",chart_extra.EXCHANGE_GAIN_ACCOUNT)
-        loss_account=chosen("exchange_loss_account",chart_extra.EXCHANGE_LOSS_ACCOUNT)
+        commission_account=chosen("commission_account",defaults["bank_commission"])
+        gain_account=chosen("exchange_gain_account",defaults["exchange_gain"])
+        loss_account=chosen("exchange_loss_account",defaults["exchange_loss"])
         if not commission_account.isdigit() or not commission_account.startswith("6"):
             raise ValueError("Bank commission account must be an expense account (class 6), for example 673900000")
         if not gain_account.isdigit() or not gain_account.startswith("7"):
@@ -119,11 +120,11 @@ class PaymentsStore:
             department_id,project_id=self._dimension_ids(db,item)
             db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(cash_account,"Cash / Bank Account","asset"))
             db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(party_account,"Party Control Account","asset" if kind=="customer_receipt" else "liability"))
-            defaults={chart_extra.BANK_COMMISSION_ACCOUNT:("Bank Commissions","expense"),chart_extra.EXCHANGE_GAIN_ACCOUNT:("Gain on Exchange Difference","income"),
+            program_accounts={chart_extra.BANK_COMMISSION_ACCOUNT:("Bank Commissions","expense"),chart_extra.EXCHANGE_GAIN_ACCOUNT:("Gain on Exchange Difference","income"),
                       chart_extra.EXCHANGE_LOSS_ACCOUNT:("Loss on Exchange Difference","expense")}
             for code,used in ((commission_account,commission),(gain_account,exchange_diff),(loss_account,exchange_diff)):
                 if not used: continue
-                if code in defaults: db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(code,)+defaults[code])
+                if code in program_accounts: db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(code,)+program_accounts[code])
                 elif not db.execute("SELECT 1 FROM accounts WHERE code=?",(code,)).fetchone():
                     raise ValueError(f"Account {code} was not found in the chart of accounts")
             result=db.execute("""INSERT INTO payments(kind,party_id,payment_date,currency,amount,cash_account,party_account,reference,description,bank_commission,commission_account,exchange_difference,created_by,created_at)
@@ -166,10 +167,11 @@ class PaymentsStore:
         legacy=Decimal(str(item.get("subtotal") or 0)); with_vat=Decimal(str(item.get("with_vat_subtotal") if item.get("with_vat_subtotal") not in (None,"") else legacy)); without_vat=Decimal(str(item.get("without_vat_subtotal") or 0)); subtotal=with_vat+without_vat
         vat=Decimal(str(item.get("vat") or 0)); total=subtotal+vat
         if min(with_vat,without_vat,vat)<0 or total<=0: raise ValueError("Expense amounts must be valid")
-        currency=str(item.get("currency") or "USD").upper(); expense_account=str(item.get("expense_account") or EXPENSE_ACCOUNT_9).strip()
-        expense_without_vat_account=str(item.get("expense_without_vat_account") or EXPENSE_NO_VAT_ACCOUNT_9).strip()
+        defaults=self.default_accounts()  # 2.9.81
+        currency=str(item.get("currency") or "USD").upper(); expense_account=str(item.get("expense_account") or defaults["expenses_import"]).strip()
+        expense_without_vat_account=str(item.get("expense_without_vat_account") or defaults["purchases_no_vat"]).strip()
         import chart_extra
-        vat_account=str(item.get("vat_account") or chart_extra.EXPENSE_VAT).strip(); payment_account=str(item.get("payment_account") or "531").strip()
+        vat_account=str(item.get("vat_account") or defaults["expense_vat"]).strip(); payment_account=str(item.get("payment_account") or defaults["cash"]).strip()
         expense_side=self._side(item.get("expense_side"),"D"); expense_without_vat_side=self._side(item.get("expense_without_vat_side"),"D")
         vat_side=self._side(item.get("vat_side"),"D"); payment_side=self._side(item.get("payment_side"),"C")
         with self.connect() as db:

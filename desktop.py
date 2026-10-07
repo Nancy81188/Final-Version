@@ -8,6 +8,7 @@ import app_runtime
 
 log = logging.getLogger("saber.desktop")
 from desktop_final import FinalFeaturesMixin
+from desktop_accounting_setup import AccountingSetupMixin  # 2.9.81
 from desktop_assets import AssetsMixin
 from cnss_forms_ui import CNSSFormsMixin
 from desktop_brains import BrainsScreensMixin
@@ -25,7 +26,7 @@ from desktop_settings import SettingsMixin
 from desktop_payroll_sheet import PayrollSheetMixin
 from desktop_projection import ProjectionMixin
 
-class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, ProductionMixin, AccountToolsMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
+class SaberApp(AccountingSetupMixin, ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, ProductionMixin, AccountToolsMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
@@ -596,7 +597,17 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         pages+=[("journal_tab",tr(lang,"general_journal")),("account_reports_tab","Accounts & Statements"),("pnl_tab",tr(lang,"profit_loss")),("reports_tab",tr(lang,"financial_reports")),
             ("settings_tab",tr(lang,"security_backup_rates"))]
         self.main_tab_pages=[]
+        # 2.9.81: screens hidden in Settings > Accounting Settings (by the company or by this user) are made but not shown
+        import accounting_setup as setup_rules
+        from desktop_common import hidden_view
+        hidden=hidden_view(self)
+        hidden_pages={spec[2] for key,spec in setup_rules.MODULES.items() if spec[1]=="page" and key in hidden}-set(setup_rules.ALWAYS_SHOWN)
+        self._hidden_pages_holder=tk.Frame(host,bg=LIGHT)  # never packed
+        shown=[]
         for attribute,name in pages:
+            if attribute in hidden_pages:
+                setattr(self,attribute,tk.Frame(self._hidden_pages_holder,bg=LIGHT)); continue
+            shown.append((attribute,name))
             container=tk.Frame(notebook,bg=LIGHT)
             container.grid_rowconfigure(0,weight=1)
             container.grid_columnconfigure(0,weight=1)
@@ -626,7 +637,7 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         self.tab_names=[notebook.tab(tab,"text") for tab in notebook.tabs()]
         self.tab_choice=tk.StringVar(value=self.tab_names[0])
         self.tab_buttons=nav_buttons
-        self._page_attributes=[attribute for attribute,_name in pages]
+        self._page_attributes=[attribute for attribute,_name in shown]
         if side_menu:
             nav_buttons.extend(desktop_layout.build_side_menu(self,menu_holder,self._page_attributes,self.main_tab_pages,self.tab_names))
         else:
@@ -672,9 +683,31 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
             build()
             # Bind newly created controls while missing widgets cannot trigger eager loading.
             self.setup_context_f2()
+            self.apply_hidden_tabs()  # 2.9.81
         except Exception as exc:
             log.exception("Page %s could not be loaded", build.__name__); messagebox.showerror("Saber Accounting",f"A page could not be loaded ({build.__name__.replace('build_','').replace('_',' ')}): {exc}\n\nThe other pages are still available.")
         finally: self.__dict__["_building_depth"]-=1
+
+    def apply_hidden_tabs(self):
+        """2.9.81: hide the tabs (Fixed Assets, Production, Bank Reconciliation, the Financial Reports) chosen in Accounting Settings."""
+        import accounting_setup as setup_rules
+        from desktop_common import hidden_view
+        try: hidden=hidden_view(self)
+        except Exception: return
+        tab_names={spec[2] for key,spec in setup_rules.MODULES.items() if spec[1]=="tab" and key in hidden}
+        report_names={key.split(":",1)[1] for key in hidden if key.startswith("report:")}
+        def walk(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,ttk.Notebook):
+                    names=tab_names|(report_names if child is self.__dict__.get("financial_notebook") else set())
+                    for tab in child.tabs():
+                        try:
+                            if child.tab(tab,"text").strip() in names: child.hide(tab)
+                        except tk.TclError: pass
+                walk(child)
+        for page in getattr(self,"main_tab_pages",[]):
+            try: walk(page)
+            except tk.TclError: pass
 
     def _build_next_page(self,generation):
         if generation!=getattr(self,"_page_generation",None): return  # the company / year was switched meanwhile
@@ -792,6 +825,8 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
 
     def select_main_tab(self,page):
         page=self.main_tab_container(page)
+        if page not in getattr(self,"main_tab_pages",[]):  # 2.9.81: a screen hidden in Accounting Settings
+            messagebox.showinfo("Saber Accounting","This screen is hidden for this company or for you (Settings > Accounting Settings)."); return
         self._ensure_main_tab(page)
         self.main_notebook.select(page); self.highlight_main_tab()
 

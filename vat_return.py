@@ -511,9 +511,11 @@ def settlement_lines(db, result, payable_account=None, credit_account=None, non_
     the VAT that the partial deduction makes non-deductible goes to an expense, the credit brought forward is used,
     and the rest is VAT payable (Cr 4425) or VAT to recover (Dr 4429)."""
     vc = result.get("vat_currency") or "LBP"; rnd = _lbp if vc == "LBP" else _money
-    payable_account = str(payable_account or SETTLEMENT_DEFAULTS["payable_account"]).split(" - ", 1)[0].strip()
-    credit_account = str(credit_account or SETTLEMENT_DEFAULTS["credit_account"]).split(" - ", 1)[0].strip()
-    non_deductible_account = str(non_deductible_account or SETTLEMENT_DEFAULTS["non_deductible_account"]).split(" - ", 1)[0].strip()
+    try: chosen = db.default_accounts()  # 2.9.81: Settings > Accounting Settings
+    except Exception: chosen = {}
+    payable_account = str(payable_account or chosen.get("vat_payable") or SETTLEMENT_DEFAULTS["payable_account"]).split(" - ", 1)[0].strip()
+    credit_account = str(credit_account or chosen.get("vat_credit") or SETTLEMENT_DEFAULTS["credit_account"]).split(" - ", 1)[0].strip()
+    non_deductible_account = str(non_deductible_account or chosen.get("vat_non_deductible") or SETTLEMENT_DEFAULTS["non_deductible_account"]).split(" - ", 1)[0].strip()
     if not payable_account.startswith("44") or not credit_account.startswith("44"): raise ValueError("VAT payable and VAT to recover must be class 44 accounts (4425 / 4429)")
     if not non_deductible_account.startswith("6"): raise ValueError("Non-deductible VAT goes to an expense account (class 6)")
     balances = {}

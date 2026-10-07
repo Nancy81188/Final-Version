@@ -189,7 +189,8 @@ class ReportsMixin:
         tk.Button(closing,text=f"Refresh Opening of {year+1}",command=self.refresh_next_year_opening,bg=NAVY,fg="white",border=0,padx=12,pady=7).pack(side="left",padx=4)
         if (self.current_user or {}).get("role")=="admin":
             tk.Button(closing,text=f"Delete Year {year}",command=self.delete_fiscal_year,bg="#5a0f0f",fg="white",border=0,padx=10,pady=7).pack(side="left",padx=4)
-        tk.Label(closing,text="1 Journal Voucher per currency; result to 121 / 125",bg=LIGHT,fg="#5f6b76",wraplength=190,justify="left").pack(side="left",padx=6)
+        self.action_button(closing,"Year-End Check",self.show_year_end_check).pack(side="left",padx=4)  # 2.9.81
+        tk.Label(closing,text="1 Journal Voucher per currency; result to 138 profit / 139 loss",bg=LIGHT,fg="#5f6b76",wraplength=190,justify="left").pack(side="left",padx=6)
         actions=tk.Frame(self.pnl_tab,bg=LIGHT); actions.pack(side="bottom",pady=(0,8))
         self.pnl_tree=self.table(self.pnl_tab,[("currency","Currency",85),("type","Type",90),("account","Account",100),
             ("name","Account Name",300),("debit","Debit",130),("credit","Credit",130),("amount","P&L Amount",140)])
@@ -280,7 +281,8 @@ class ReportsMixin:
 
     def close_fiscal_year(self):
         year=int(getattr(self,"current_fiscal_year",self.close_year.get()))
-        warning=(f"Close fiscal year {year}?\n\n- Any earlier closing of {year} is deleted first.\n- A 'CLOSING 6&7' Journal Voucher is made for each currency (result to 121 / 125).\n"
+        if not self.show_year_end_check(before_closing=True): return  # 2.9.81: the Year-End Check comes first
+        warning=(f"Close fiscal year {year}?\n\n- Any earlier closing of {year} is deleted first.\n- A 'CLOSING 6&7' Journal Voucher is made for each currency (result to 138 profit / 139 loss).\n"
                  f"- {year} becomes read-only and {year+1} is opened with the balance-sheet balances.\n\nYou can undo this with 'Delete Closing & Reopen Year'.")
         if not messagebox.askyesno("Close Fiscal Year",warning): return
         try: result=self.client.close_fiscal_year(year)

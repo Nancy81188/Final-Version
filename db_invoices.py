@@ -52,6 +52,7 @@ class InvoicesStore:
     def import_invoice(self, item, user_id):
         # No uniqueness constraint is applied to invoice numbers: duplicates are intentionally retained.
         self._assert_period_open(item.get("invoice_date"))
+        defaults=self.default_accounts()  # 2.9.81: Settings > Accounting Settings
         with self.connect() as db:
             entry_type=self._entry_type(item); kind="sale" if entry_type=="sales" else "purchase"
             party_kind = "customer" if kind == "sale" else "supplier"
@@ -74,15 +75,16 @@ class InvoicesStore:
                 # that the Excel import put on every row); an account chosen on purpose (41...) is kept
                 supplier_account=party_account
             import chart_extra
-            default_vat = chart_extra.SALES_VAT if kind=="sale" else chart_extra.EXPORT_VAT if item.get("vat_use")=="export" else \
-                chart_extra.EXPENSE_VAT if self._entry_type(item)=="expenses" else chart_extra.PURCHASE_VAT
+            default_vat = defaults["output_vat"] if kind=="sale" else chart_extra.EXPORT_VAT if item.get("vat_use")=="export" else \
+                defaults["expense_vat"] if self._entry_type(item)=="expenses" else defaults["purchase_vat"]
             vat_account = str(item.get("vat_account") or default_vat).strip()
-            expense_account = str(item.get("expense_account") or (DEFAULT_LEBANESE_ACCOUNTS["sales"] if kind=="sale" else EXPENSE_ACCOUNT_9)).strip()
+            expense_account = str(item.get("expense_account") or (defaults["sales"] if kind=="sale" else defaults["purchases"])).strip()
             if kind=="sale":  # 2.9.77: a sale never posts to an expense account or to deductible (input) VAT
-                if not expense_account.split(" - ",1)[0].strip().startswith("7"): expense_account=DEFAULT_LEBANESE_ACCOUNTS["sales"]
+                if not expense_account.split(" - ",1)[0].strip().startswith("7"): expense_account=defaults["sales"]
                 vat_code=vat_account.split(" - ",1)[0].strip()
-                if vat_code.startswith(("4426","4421")) or vat_code in (chart_extra.PURCHASE_VAT,chart_extra.EXPORT_VAT,chart_extra.EXPENSE_VAT): vat_account=chart_extra.SALES_VAT
-            expense_no_vat_account=str(item.get("expense_no_vat_account") or EXPENSE_NO_VAT_ACCOUNT_9).strip()
+                if vat_code.startswith(("4426","4421")) or vat_code in (chart_extra.PURCHASE_VAT,chart_extra.EXPORT_VAT,chart_extra.EXPENSE_VAT,defaults["purchase_vat"],defaults["expense_vat"]):
+                    vat_account=defaults["output_vat"]
+            expense_no_vat_account=str(item.get("expense_no_vat_account") or defaults["purchases_no_vat"]).strip()
             supplier_side=self._side(item.get("supplier_side"),"D" if kind=="sale" else "C")
             vat_side=self._side(item.get("vat_side"),"C" if kind=="sale" else "D")
             expense_side=self._side(item.get("expense_side"),"C" if kind=="sale" else "D")
@@ -259,25 +261,26 @@ class InvoicesStore:
                 expense_splits[line_expense_account]=expense_splits.get(line_expense_account,Decimal("0"))+deductible
         invoice = dict(item)
         if self._entry_type(invoice)=="sales" and not str(invoice.get("expense_account") or "").strip() and any(line[9] for line in normalized):
-            invoice["expense_account"]="701100001"  # 2.9.77: items from stock without a revenue account -> sales of goods (was 713 services)
+            invoice["expense_account"]=self.default_account("sales_goods")  # 2.9.77: items from stock -> sales of goods (2.9.81: Accounting Settings)
         if not str(invoice.get("invoice_number") or "").strip():
             invoice["invoice_number"] = self.next_invoice_number(invoice.get("kind", "sale"), invoice.get("invoice_date"))
         invoice["deductible_subtotal"]=float(deductible_total); invoice["non_deductible_subtotal"]=float(non_deductible_total)
         invoice["subtotal"] = float(deductible_total+non_deductible_total)
         invoice["vat"] = float(vat_total)
         invoice["total"] = float(deductible_total+non_deductible_total+vat_total)
+        defaults=self.default_accounts()  # 2.9.81
         # per-item cost-account routing: split the expense side by each line's own account, remainder on the invoice default
         if expense_splits and self._entry_type(invoice)!="sales":
-            default_account=str(invoice.get("expense_account") or EXPENSE_ACCOUNT_9).strip()
+            default_account=str(invoice.get("expense_account") or defaults["purchases"]).strip()
             routed=sum(expense_splits.values()); remainder=deductible_total-routed
             splits=[(acct,amount) for acct,amount in expense_splits.items()]
             if remainder>Decimal("0.005") or remainder<Decimal("-0.005"):
                 splits.append((default_account,remainder))
             invoice["expense_splits"]=[(acct,str(amount)) for acct,amount in splits if amount]
         if self._entry_type(invoice)!="sales":
-            raw_lines=[self._line_for_side(invoice.get("expense_account") or EXPENSE_ACCOUNT_9,deductible_total,self._side(invoice.get("expense_side"),"D")),
-                self._line_for_side(invoice.get("expense_no_vat_account") or EXPENSE_NO_VAT_ACCOUNT_9,non_deductible_total,self._side(invoice.get("expense_no_vat_side"),"D")),
-                self._line_for_side(invoice.get("vat_account") or VAT_ACCOUNT_9,vat_total,self._side(invoice.get("vat_side"),"D")),
+            raw_lines=[self._line_for_side(invoice.get("expense_account") or defaults["purchases"],deductible_total,self._side(invoice.get("expense_side"),"D")),
+                self._line_for_side(invoice.get("expense_no_vat_account") or defaults["purchases_no_vat"],non_deductible_total,self._side(invoice.get("expense_no_vat_side"),"D")),
+                self._line_for_side(invoice.get("vat_account") or defaults["purchase_vat"],vat_total,self._side(invoice.get("vat_side"),"D")),
                 self._line_for_side(invoice.get("supplier_account") or DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"],deductible_total+non_deductible_total+vat_total,self._side(invoice.get("supplier_side"),"C"))]
             debit=sum(Decimal(str(line[1])) for line in raw_lines); credit=sum(Decimal(str(line[2])) for line in raw_lines)
             if abs(debit-credit)>=Decimal("0.005"):
@@ -399,9 +402,10 @@ class InvoicesStore:
             raise ValueError("Total must equal Before VAT plus VAT")
         supplier_account = str(item.get("supplier_account") or DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"]).strip()
         import chart_extra
-        vat_account = str(item.get("vat_account") or (chart_extra.SALES_VAT if str(item.get("kind","")).lower() in ("sale","sales") else chart_extra.EXPENSE_VAT if self._entry_type(item)=="expenses" else chart_extra.PURCHASE_VAT)).strip()
-        expense_account = str(item.get("expense_account") or EXPENSE_ACCOUNT_9).strip()
-        expense_no_vat_account=str(item.get("expense_no_vat_account") or EXPENSE_NO_VAT_ACCOUNT_9).strip()
+        defaults=self.default_accounts()  # 2.9.81
+        vat_account = str(item.get("vat_account") or (defaults["output_vat"] if str(item.get("kind","")).lower() in ("sale","sales") else defaults["expense_vat"] if self._entry_type(item)=="expenses" else defaults["purchase_vat"])).strip()
+        expense_account = str(item.get("expense_account") or defaults["purchases"]).strip()
+        expense_no_vat_account=str(item.get("expense_no_vat_account") or defaults["purchases_no_vat"]).strip()
         supplier_side=self._side(item.get("supplier_side"),"C"); vat_side=self._side(item.get("vat_side"),"D"); expense_side=self._side(item.get("expense_side"),"D"); expense_no_vat_side=self._side(item.get("expense_no_vat_side"),"D")
         debit_override=Decimal(str(item.get("debit") or 0)); credit_override=Decimal(str(item.get("credit") or 0))
         if debit_override<0 or credit_override<0: raise ValueError("D and C cannot be negative")

@@ -380,6 +380,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             user_columns={row["name"] for row in db.execute("PRAGMA table_info(users)")}
             if "expires_at" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN expires_at TEXT")
             if "permissions" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'")
+            if "view_hidden" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN view_hidden TEXT NOT NULL DEFAULT '[]'")  # 2.9.81: what this user hides
             if "created_at" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN created_at TEXT")
             invoice_columns={row["name"] for row in db.execute("PRAGMA table_info(invoices)")}
             if "vat_recoverable" not in invoice_columns: db.execute("ALTER TABLE invoices ADD COLUMN vat_recoverable INTEGER NOT NULL DEFAULT 1")
@@ -867,6 +868,15 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
 
     def settings(self):
         with self.connect() as db: return {row["key"]:row["value"] for row in db.execute("SELECT key,value FROM app_settings")}
+
+    def default_accounts(self):
+        """2.9.81: the default posting accounts of this company (Settings > Accounting Settings)."""
+        import accounting_setup
+        try: return accounting_setup.default_accounts(self)
+        except Exception: return {key: spec[1] for key, spec in accounting_setup.DEFAULT_ACCOUNTS.items()}
+
+    def default_account(self, key):
+        return self.default_accounts()[key]
 
     def currencies(self):
         with self.connect() as db:

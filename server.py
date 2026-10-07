@@ -35,6 +35,7 @@ import ledger_reports
 import inventory
 import fixed_assets
 import vat_return
+import accounting_setup
 
 MAX_REQUEST_BODY_BYTES = 22 * 1024 * 1024
 log = logging.getLogger("saber.server")
@@ -163,6 +164,15 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/me":
             info={k:user[k] for k in ("id","username","role","language","expires_at")}; info["permissions"]={m:self.master_db.user_can(user,m) for m in ("payroll","vat","delete")}
             return self._json(200,info)
+        if path == "/api/accounting-setup":  # 2.9.81: what the company / this user hides, the default posting accounts
+            try: return self._json(200,accounting_setup.setup(self.db,self.master_db,user["id"]))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/year-end-check":  # 2.9.81: the checks before closing a year
+            try:
+                year=int(self._query(parsed,"year")); check=accounting_setup.year_end_check(self.db,year,self._previous_year_db(year))
+                check["sections"]=accounting_setup.year_end_sections(check)
+                return self._json(200,check)
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/invoices/account-check":  # 2.9.77: sales booked on wrong accounts by earlier versions
             try: return self._json(200,{"items":self.db.sales_account_problems()})
             except Exception as exc: return self._json(400,{"error":str(exc)})
@@ -674,6 +684,13 @@ class ApiHandler(BaseHTTPRequestHandler):
                 year=body.get("year"); result=vat_return.save_return(self.db,year,body.get("quarter"),user["id"],self._previous_year_db(year),body.get("credit_brought_forward"),user["username"],body.get("refund_requested"))
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,vat_return.json_ready(result))
+        if path == "/api/accounting-setup":  # 2.9.81: company settings (administrator)
+            if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
+            try: return self._json(200,accounting_setup.save_setup(self.db,body,user["id"]))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/accounting-setup/user":  # 2.9.81: what this user hides for himself
+            try: return self._json(200,{"user_hidden":accounting_setup.save_user_hidden(self.master_db,user["id"],body.get("hidden"))})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/vat-return/settle":  # 2.9.79: post the settlement voucher of a saved return
             try:
                 year=body.get("year"); result=vat_return.post_settlement(self.db,year,body.get("quarter"),user["id"],self._previous_year_db(year),

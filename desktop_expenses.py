@@ -15,7 +15,8 @@ class ExpensesMixin:
         v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["category"].set("General")
         # 2.9.80: no automatic expense account (it was 601100000 Purchase of Goods, which put rent, fuel ... in purchases):
         # the account is chosen (F2), then kept for the next expense
-        v["vat_account"].set("44216"); v["payment_account"].set("531")
+        from desktop_common import default_account_code  # 2.9.81
+        v["vat_account"].set(default_account_code(self, "expense_vat")); v["payment_account"].set(default_account_code(self, "cash"))
         f["department"] = tk.StringVar(); f["project"] = tk.StringVar(); f["non_deductible"] = tk.BooleanVar(value=False); f["vat_typed"] = False; self.expense_form = f
         f["use"] = tk.StringVar(value="Mixed (partial deduction)")
         box = tk.LabelFrame(page, text="Expense", bg=LIGHT, padx=8, pady=5); box.pack(fill="x", padx=8, pady=6)

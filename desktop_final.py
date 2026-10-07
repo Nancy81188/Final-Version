@@ -592,7 +592,9 @@ class FinalFeaturesMixin:
         tk.Label(window, text="At the end of the quarter the VAT accounts are closed: Dr output VAT (4427) / Cr deductible VAT (442...), the VAT the partial deduction "
                  "does not allow goes to an expense, the credit brought forward is used, and the rest is VAT payable (Cr 4425) or VAT to recover (Dr 4429). "
                  "The return must be saved first. Posting again replaces the voucher.", bg=LIGHT, fg=MUTED, wraplength=860, justify="left").pack(fill="x", padx=12, pady=8)
-        accounts = {key: tk.StringVar(value=account_label(self, code)) for key, code in SETTLEMENT_DEFAULTS.items()}
+        from desktop_common import default_account_code  # 2.9.81
+        chosen = {"payable_account": "vat_payable", "credit_account": "vat_credit", "non_deductible_account": "vat_non_deductible"}
+        accounts = {key: tk.StringVar(value=account_label(self, default_account_code(self, chosen[key]) or code)) for key, code in SETTLEMENT_DEFAULTS.items()}
         grid = tk.Frame(window, bg=LIGHT); grid.pack(fill="x", padx=12)
         for row, (key, label) in enumerate((("payable_account", "VAT payable account"), ("credit_account", "VAT credit / to recover account"),
                                             ("non_deductible_account", "Non-deductible VAT expense account"))):

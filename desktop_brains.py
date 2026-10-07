@@ -8,6 +8,7 @@ import logging
 from desktop_brains_common import *  # noqa: F401,F403
 from desktop_common import main_currency  # 2.9.71
 from desktop_common import account_label  # 2.9.79
+from desktop_common import default_account_code  # 2.9.81
 from desktop_brains_common import _date_text, _fmt, _num
 from desktop_balance_reports import BalanceReportsMixin
 
@@ -678,7 +679,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
                 code_currency=row["currency"]; balance=Decimal(row["balance"]); carrying=Decimal(row[carrying_key])
                 target=(balance*factor(code_currency,rates[code_currency])).quantize(Decimal("0.01")); difference=target-carrying
                 if not difference: continue
-                offset="775100000" if difference>0 else "675100000"; key=f'{code_currency}|{row["account"]}'
+                offset=default_account_code(self,"exchange_gain") if difference>0 else default_account_code(self,"exchange_loss"); key=f'{code_currency}|{row["account"]}'
                 state["preview"][key]=(row,difference)
                 tree.insert("","end",iid=key,values=(code_currency,row["account"],row["name"],f'{balance:,.2f} {code_currency}',f'{carrying:,.2f}',
                     f'{target:,.2f}',f'{difference:,.2f}',account_label(self,offset)))
@@ -711,8 +712,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
                         if difference>0: gains+=difference
                         else: losses+=-difference
                         accounts.append(row["account"])
-                    if gains: lines.append({"account_code":"775100000","credit":str(gains),"description":f"DOE gain {code_currency} ({books} books)"})
-                    if losses: lines.append({"account_code":"675100000","debit":str(losses),"description":f"DOE loss {code_currency} ({books} books)"})
+                    if gains: lines.append({"account_code":default_account_code(self,"exchange_gain"),"credit":str(gains),"description":f"DOE gain {code_currency} ({books} books)"})
+                    if losses: lines.append({"account_code":default_account_code(self,"exchange_loss"),"debit":str(losses),"description":f"DOE loss {code_currency} ({books} books)"})
                     details=f"DOE {books} books {state['date']} {code_currency} at {state['rates'][code_currency]}; accounts {', '.join(accounts)}"
                     self.client.save_journal_voucher({"entry_date":state["date"],"description":details,"currency":books,"voucher_type":"07","doe_basis":books},lines)
                     posted.append(code_currency)

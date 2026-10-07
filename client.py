@@ -335,6 +335,10 @@ class ApiClient:
             "credit_brought_forward":credit_brought_forward,"refund_requested":refund_requested}.items() if v not in (None,"")})
         return self.request("GET",f"/api/vat-return?{query}")
     def vat_returns(self): return self.request("GET","/api/vat-returns")["items"]
+    def accounting_setup(self): return self.request("GET","/api/accounting-setup")
+    def save_accounting_setup(self,item): return self.request("POST","/api/accounting-setup",item)
+    def save_my_hidden(self,hidden): return self.request("POST","/api/accounting-setup/user",{"hidden":list(hidden)})["user_hidden"]
+    def year_end_check(self,year): return self.request("GET",f"/api/year-end-check?{urlencode({'year':year})}")
     def vat_check(self,year,quarter,credit_brought_forward=None,refund_requested=None,payable_account=None,credit_account=None,non_deductible_account=None):
         query=urlencode({k:v for k,v in {"year":year,"quarter":quarter,"credit_brought_forward":credit_brought_forward,"refund_requested":refund_requested,
             "payable_account":payable_account,"credit_account":credit_account,"non_deductible_account":non_deductible_account}.items() if v not in (None,"")})

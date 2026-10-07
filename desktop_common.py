@@ -387,6 +387,34 @@ def account_label(app, value):
     return f"{text} - {name}" if name else text
 
 
+def accounting_setup(app, refresh=False):
+    """2.9.81: the Accounting Settings of the open company for this user (hidden modules / reports, default accounts)."""
+    client = getattr(app, "client", None)
+    key = (getattr(client, "company_id", None), getattr(client, "fiscal_year", None))
+    cache = getattr(app, "_accounting_setup_cache", None)
+    if refresh or not cache or cache[0] != key:
+        try: values = client.accounting_setup() if client is not None else {}
+        except Exception: values = {}
+        cache = (key, values if isinstance(values, dict) else {})
+        try: app._accounting_setup_cache = cache
+        except Exception: pass
+    return cache[1]
+
+
+def default_account_code(app, key):
+    """2.9.81: a default posting account of Accounting Settings (the program default when it cannot be read)."""
+    import accounting_setup as rules
+    for row in accounting_setup(app).get("defaults") or []:
+        if row.get("key") == key and row.get("account"): return str(row["account"])
+    return rules.DEFAULT_ACCOUNTS[key][1]
+
+
+def hidden_view(app):
+    """2.9.81: what is hidden for this user in this company: the company's choice plus his own."""
+    values = accounting_setup(app)
+    return set(values.get("hidden") or []) | set(values.get("user_hidden") or [])
+
+
 def account_code(value):
     """The account number of 'number - name' (or of a bare number)."""
     return str(value or "").split(" - ", 1)[0].strip()

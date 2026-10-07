@@ -60,11 +60,13 @@ class JournalStore:
             # A DOE voucher revalues one or more class 4/5 accounts (Automatic DOE posts one voucher per
             # currency with all its accounts) against exchange gain 7751 (credit) / loss 6751 (debit).
             affected=[(code,debit,credit) for code,_desc,debit,credit,_extra,_raw in normalized if code.startswith(("4","5"))]
-            offsets=[(code,debit,credit) for code,_desc,debit,credit,_extra,_raw in normalized if code in (EXCHANGE_GAIN_ACCOUNT,EXCHANGE_LOSS_ACCOUNT)]
+            chosen=self.default_accounts()  # 2.9.81: the gain / loss accounts of Accounting Settings are accepted too
+            gains={EXCHANGE_GAIN_ACCOUNT,chosen["exchange_gain"]}; losses={EXCHANGE_LOSS_ACCOUNT,chosen["exchange_loss"]}
+            offsets=[(code,debit,credit) for code,_desc,debit,credit,_extra,_raw in normalized if code in gains|losses]
             if not affected or not offsets or len(affected)+len(offsets)!=len(normalized):
                 raise ValueError("DOE needs class 4 or 5 accounts and the exchange gain (7751) or loss (6751) account only")
             for code,debit,credit in offsets:
-                if (code==EXCHANGE_GAIN_ACCOUNT and not credit) or (code==EXCHANGE_LOSS_ACCOUNT and not debit):
+                if (code in gains and not credit) or (code in losses and not debit):
                     raise ValueError("DOE gains credit 7751 and losses debit 6751")
         with self.connect() as db:
             branch_id=self._branch_id(db,item)
@@ -242,7 +244,8 @@ class JournalStore:
         try: debit=Decimal(str(line.get("debit") or 0)); credit=Decimal(str(line.get("credit") or 0))
         except Exception as exc: raise ValueError(f"Line {index}: Debit and Credit must be numbers") from exc
         value=(debit or credit).quantize(Decimal("0.01"))
-        zero=Decimal("0"); offset=code in (EXCHANGE_GAIN_ACCOUNT,EXCHANGE_LOSS_ACCOUNT)
+        chosen=self.default_accounts()
+        zero=Decimal("0"); offset=code in (EXCHANGE_GAIN_ACCOUNT,EXCHANGE_LOSS_ACCOUNT,chosen["exchange_gain"],chosen["exchange_loss"])
         native=str(line.get("native_currency") or basis).upper()
         other=basis not in ("LBP","USD")  # 2.9.78: EUR (or any) books - only that currency's value moves
         if offset or basis=="LBP": line_currency=basis if offset else "LBP"; amount=value

@@ -682,9 +682,10 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
 
     def reset_payment_accounts(self, form):
         """2.9.79: the default accounts of the bank commission and the exchange gain / loss."""
-        from chart_extra import BANK_COMMISSION_ACCOUNT, EXCHANGE_GAIN_ACCOUNT, EXCHANGE_LOSS_ACCOUNT
+        from desktop_common import default_account_code  # 2.9.81: Settings > Accounting Settings
         v = form["vars"]
-        for key, code in (("commission_account", BANK_COMMISSION_ACCOUNT), ("exchange_gain_account", EXCHANGE_GAIN_ACCOUNT), ("exchange_loss_account", EXCHANGE_LOSS_ACCOUNT)):
+        for key, code in (("commission_account", default_account_code(self, "bank_commission")), ("exchange_gain_account", default_account_code(self, "exchange_gain")),
+                          ("exchange_loss_account", default_account_code(self, "exchange_loss"))):
             v[key].set(account_label(self, code))
 
     def payment_journal_preview(self, form):
