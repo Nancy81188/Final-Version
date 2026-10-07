@@ -352,15 +352,17 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/fiscal-year/cash-flow":  # 2.9.79: cash flow of any fiscal year (its own file when kept per year)
             try:
                 year=int(self._query(parsed,"year")); year_db=self._year_db(year)
-                return self._json(200,{"items":year_db.cash_flow(self._query(parsed,"from_date"),self._query(parsed,"to_date"),self._query(parsed,"currency")),"year":year})
+                convert=self._query(parsed,"convert","")=="1" and self._query(parsed,"currency")
+                return self._json(200,{"items":(year_db.cash_flow_converted if convert else year_db.cash_flow)(self._query(parsed,"from_date"),self._query(parsed,"to_date"),self._query(parsed,"currency")),"year":year})
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path in ("/api/fiscal-year/profit-loss", "/api/fiscal-year/balance-sheet"):
             try:
                 year = int(self._query(parsed, "year")); year_db = self._year_db(year); currency = self._query(parsed, "currency")
+                convert = self._query(parsed, "convert", "") == "1" and currency  # 2.9.80: every currency converted (planning tools)
                 if path.endswith("profit-loss"):
-                    items = year_db.profit_and_loss(self._query(parsed, "from_date"), self._query(parsed, "to_date"), currency)
+                    items = (year_db.profit_and_loss_converted if convert else year_db.profit_and_loss)(self._query(parsed, "from_date"), self._query(parsed, "to_date"), currency)
                 else:
-                    items = year_db.balance_sheet(self._query(parsed, "to_date"), currency)
+                    items = (year_db.balance_sheet_converted if convert else year_db.balance_sheet)(self._query(parsed, "to_date"), currency)
                 return self._json(200, {"items": items, "year": year, "separate_file": year_db is not self.db})
             except Exception as exc: return self._json(400, {"error": str(exc)})
         if path == "/api/invoices/next-number":
@@ -512,7 +514,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             except KeyError: return self._json(404,{"error":"Journal Voucher not found"})
         if path == "/api/profit-loss":
             query=parse_qs(parsed.query)
-            return self._json(200,{"items":self.db.profit_and_loss(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0])})
+            convert=query.get("convert",[""])[0]=="1" and query.get("currency",[None])[0]  # 2.9.80
+            return self._json(200,{"items":(self.db.profit_and_loss_converted if convert else self.db.profit_and_loss)(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0])})
         if path == "/api/fiscal-years":
             return self._json(200,{"items":self.db.list_fiscal_years()})
         if path == "/api/general-ledger":
@@ -520,13 +523,15 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200,self.db.general_ledger(query.get("account",[None])[0],query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0]))
         if path == "/api/balance-sheet":
             query=parse_qs(parsed.query)
-            return self._json(200,{"items":self.db.balance_sheet(query.get("to_date",[None])[0],query.get("currency",[None])[0])})
+            convert=query.get("convert",[""])[0]=="1" and query.get("currency",[None])[0]  # 2.9.80
+            return self._json(200,{"items":(self.db.balance_sheet_converted if convert else self.db.balance_sheet)(query.get("to_date",[None])[0],query.get("currency",[None])[0])})
         if path == "/api/vat-report":
             query=parse_qs(parsed.query)
             return self._json(200,self.db.vat_report(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0]))
         if path == "/api/cash-flow":
             query=parse_qs(parsed.query)
-            return self._json(200,{"items":self.db.cash_flow(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0])})
+            convert=query.get("convert",[""])[0]=="1" and query.get("currency",[None])[0]  # 2.9.80
+            return self._json(200,{"items":(self.db.cash_flow_converted if convert else self.db.cash_flow)(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0])})
         if path == "/api/aging":
             query=parse_qs(parsed.query)
             return self._json(200,{"items":self.db.aging_report(query.get("as_of_date",[None])[0],query.get("kind",[None])[0],query.get("currency",[None])[0])})

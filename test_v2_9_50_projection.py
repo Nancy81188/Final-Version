@@ -139,7 +139,7 @@ class ScreenTest(unittest.TestCase):
             app.withdraw(); app.currency_codes = ["USD", "LBP"]; app.current_fiscal_year = 2025; app.current_company = {"id": 1}
             rows = {m: [{"code": "701100001", "name_en": "Goods Sales", "type": "income", "amount": 1000 + 100 * m},
                         {"code": "601100000", "name_en": "Purchases", "type": "expense", "amount": 600}] for m in range(1, 13)}
-            app.client = MagicMock(); app.client.profit_loss.side_effect = lambda a, b, c: rows[int(a[5:7])]
+            app.client = MagicMock(); app.client.profit_loss.side_effect = lambda a, b, c, **_kw: rows[int(a[5:7])]  # 2.9.80: convert=True
             app.client.balance_sheet.return_value = [{"code": "531", "balance": 4000}, {"code": "411", "balance": 1000}]
             notebook = ttk.Notebook(app); notebook.pack()
             with patch("desktop_projection.messagebox") as box:

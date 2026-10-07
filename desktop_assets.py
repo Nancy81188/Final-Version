@@ -29,7 +29,7 @@ class AssetsMixin:
         tk.Button(bar, text="Save Account", command=self.save_asset_account, bg=GOLD, fg=NAVY, border=0, padx=14, pady=5, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2)
         tk.Button(bar, text="New", command=lambda: [v.set("") for v in self.ac_vars.values()], bg=NAVY, fg="white", border=0, padx=12, pady=5).pack(side="left", padx=2)
         tk.Button(bar, text="Delete", command=self.delete_asset_account, bg=RED, fg="white", border=0, padx=12, pady=5).pack(side="left", padx=2)
-        tk.Label(bar, text="Example: 2244 Vehicles 20% - expense 681 - accumulated 2824. Double-click a line to change it.", bg=LIGHT, fg="#5f6b76").pack(side="left", padx=10)
+        tk.Label(bar, text="Example: 2251 Passenger Vehicles 20% - expense 6512.5 - accumulated 2825 (681 is the book value of assets SOLD, not depreciation). Double-click a line to change it.", bg=LIGHT, fg="#5f6b76").pack(side="left", padx=10)
         self.ac_tree = self.table(page, [("code", "Asset Account", 110), ("name", "Name", 230), ("rate", "Depreciation %", 110), ("years", "Useful Life", 90),
                                          ("dep", "Expense Account", 220), ("acc", "Accumulated Account", 240)])
         self.ac_tree.bind("<Double-1>", lambda _e: self.edit_asset_account())

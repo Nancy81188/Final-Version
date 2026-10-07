@@ -549,7 +549,7 @@ class ReportsMixin:
         try:
             for month in range(1,last+1):
                 start,end=month_range(year,month)
-                rows=self.client.cash_flow(start,end,currency)
+                rows=self.client.cash_flow(start,end,currency,convert=bool(currency))
                 for row in rows:
                     key=row["currency"]; currencies.add(key)
                     values=history.setdefault((key,month),{"inflow":0.0,"outflow":0.0})
@@ -586,18 +586,20 @@ class ReportsMixin:
             base=int(self.cash_budget_base.get()); target=int(self.cash_budget_year.get())
             cash_budget({},0,base,target,self.cash_budget_in.get(),self.cash_budget_out.get())  # checks the years and the %
         except ValueError as exc: return messagebox.showwarning("Cash Budget",str(exc))
-        currency=None if self.view_currency.get()=="All Currencies" else self.view_currency.get()
+        # 2.9.80: one cash budget with every currency converted (All Currencies = the company's main currency 1);
+        # opening balances and year closings are not cash movements
+        currency=main_currency(self,1) if self.view_currency.get()=="All Currencies" else self.view_currency.get()
         flows={}; opening={}
         try:
             for month in range(1,13):
                 start,end=month_range(base,month)
-                try: rows=self.client.fiscal_year_cash_flow(base,start,end,currency)
-                except Exception: rows=self.client.cash_flow(start,end,currency)
+                try: rows=self.client.fiscal_year_cash_flow(base,start,end,currency,convert=bool(currency))
+                except Exception: rows=self.client.cash_flow(start,end,currency,convert=bool(currency))
                 for row in rows:
                     values=flows.setdefault(row["currency"],{}).setdefault(month,{"inflow":0.0,"outflow":0.0})
                     values["inflow"]+=float(row["inflow"] or 0); values["outflow"]+=float(row["outflow"] or 0)
-            try: balance=self.client.fiscal_year_balance_sheet(base,f"{base}-12-31",currency)
-            except Exception: balance=self.client.balance_sheet(f"{base}-12-31",currency)
+            try: balance=self.client.fiscal_year_balance_sheet(base,f"{base}-12-31",currency,convert=bool(currency))
+            except Exception: balance=self.client.balance_sheet(f"{base}-12-31",currency,convert=bool(currency))
             for row in balance:
                 if str(row.get("code") or "").startswith("5"):
                     code=row.get("currency") or currency or "USD"; opening[code]=opening.get(code,0.0)+float(row.get("balance") or 0)
@@ -650,7 +652,7 @@ class ReportsMixin:
         try: growth_by_year=self._parse_growth_by_year(self.cash_long_growth_by_year.get())
         except ValueError as exc: return messagebox.showwarning("5-Year Projection",str(exc))
         currency=None if self.view_currency.get()=="All Currencies" else self.view_currency.get()
-        try: actual_rows=self.client.cash_flow(f"01-01-{base_year}",f"31-12-{base_year}",currency)
+        try: actual_rows=self.client.cash_flow(f"01-01-{base_year}",f"31-12-{base_year}",currency,convert=bool(currency))
         except Exception as exc: return messagebox.showerror("5-Year Projection",str(exc))
         base_by_currency={}
         for row in actual_rows:

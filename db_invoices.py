@@ -218,6 +218,12 @@ class InvoicesStore:
         if not isinstance(line_items, list) or not line_items:
             raise ValueError("Add at least one invoice item")
         normalized = []
+        item_cost_accounts = {}
+        if self._entry_type(item) not in ("sales", "assets") and any(line.get("item_code") for line in line_items):
+            try:
+                with self.connect() as db:
+                    item_cost_accounts = {str(r["sku"]).upper(): r["cost_account"] for r in db.execute("SELECT sku,cost_account FROM inventory_items WHERE COALESCE(cost_account,'')<>''")}
+            except Exception: item_cost_accounts = {}
         deductible_total = Decimal("0"); non_deductible_total=Decimal("0")
         vat_total = Decimal("0"); expense_splits={}
         for index, line in enumerate(line_items, start=1):
@@ -244,6 +250,8 @@ class InvoicesStore:
                 raise ValueError(f"Item {index}: VAT cannot be negative")
             total = subtotal + vat
             line_expense_account=str(line.get("expense_account") or "").split(" - ",1)[0].strip() or None
+            if not line_expense_account and line.get("item_code") and item_cost_accounts:  # 2.9.80: the item's cost account on every path
+                line_expense_account=item_cost_accounts.get(str(line.get("item_code")).strip().upper())
             normalized.append((description, quantity, unit_price, subtotal,deductible,non_deductible,vat_rate,vat,total,str(line.get("item_code") or "").strip() or None))
             deductible_total+=deductible; non_deductible_total+=non_deductible
             vat_total += vat

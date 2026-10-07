@@ -198,7 +198,17 @@ def _ratio(taxable, exempt):
     return Decimal("1") if total <= 0 or exempt <= 0 else (taxable / total).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
 
-def build_vat_return(db, year, quarter, currency=None, include_review=False, previous_year_db=None, credit_brought_forward=None, refund_requested=None):
+def build_vat_return(db, year, quarter, currency=None, include_review=False, previous_year_db=None, credit_brought_forward=None, refund_requested=None, _memo=None):
+    # 2.9.80: returns of earlier quarters calculated for the credit chain are kept for this one calculation
+    memo = {} if _memo is None else _memo
+    key = (str(getattr(db, "path", id(db))), int(year), int(quarter), str(currency), bool(include_review), str(getattr(previous_year_db, "path", None)))
+    if credit_brought_forward in (None, "") and refund_requested in (None, "") and key in memo: return memo[key]
+    result = _build_vat_return(db, year, quarter, currency, include_review, previous_year_db, credit_brought_forward, refund_requested, memo)
+    if credit_brought_forward in (None, "") and refund_requested in (None, ""): memo[key] = result
+    return result
+
+
+def _build_vat_return(db, year, quarter, currency, include_review, previous_year_db, credit_brought_forward, refund_requested, memo):
     start, end = quarter_range(year, quarter)
     currency = str(currency).upper() if currency and str(currency).upper() not in ("ALL", "ALL CURRENCIES") else None
     documents, skipped, review_excluded = _documents(db, start, end, currency, include_review)
@@ -269,7 +279,7 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
     annual_adjustment = ZERO; adjustment_detail = []
     if int(quarter) == 4 and not currency:
         for previous_q in (1, 2, 3):
-            previous = build_vat_return(db, year, previous_q, None, include_review, previous_year_db, None)
+            previous = build_vat_return(db, year, previous_q, None, include_review, previous_year_db, None, _memo=memo)
             mixed = sum((values["mixed"]["vat_lbp"] for values in previous["per_currency"].values()), ZERO)
             saved = saved_return(db, year, previous_q)
             applied = Decimal(str(saved["deduction_ratio"])) if saved and saved.get("deduction_ratio") not in (None, "") else previous["deduction_ratio"]
@@ -289,6 +299,18 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
             except Exception: previous = None
             if previous:
                 credit_bf = rnd(previous["credit_carried_forward_lbp"]); source = f"Q{previous_q} {previous_year} saved return"; break
+        else:
+            # 2.9.80: the previous quarter was not saved (a quiet quarter, or forgotten): its credit carried forward is
+            # calculated (and so on back to the first quarter of the books), so an older credit is never lost.
+            chain_db = db if previous_year == int(year) else previous_year_db
+            if chain_db is not None and _has_vat_history(chain_db, previous_year, previous_q):
+                try:
+                    previous = build_vat_return(chain_db, previous_year, previous_q, None, include_review, None if chain_db is previous_year_db else previous_year_db, _memo=memo)
+                    credit_bf = rnd(previous["credit_carried_forward_lbp"])
+                    source = f"Q{previous_q} {previous_year} not saved - calculated"
+                    if credit_bf or previous["payable_lbp"]:
+                        warnings.append(f"Q{previous_q} {previous_year} is not saved: its credit carried forward ({credit_bf:,.2f}) is calculated. Save Q{previous_q} {previous_year} first.")
+                except ValueError: pass
     net_after_credit = totals_lbp["net"] - credit_bf
     payable = (_rounded_up(net_after_credit, end) if vat_currency == "LBP" else rnd(net_after_credit)) if net_after_credit > 0 else ZERO
     if net_after_credit > 0 and end >= "2024-11-25" and vat_currency == "LBP":
@@ -315,6 +337,19 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
         "skipped": skipped, "review_excluded": review_excluded, "warnings": warnings, "saved": saved, "changed_since_saved": changed,
         "status": "saved" if saved and not changed else "changed after saving" if changed else "not saved",
         "vat_currency": vat_currency, "vat_second_currency": vat_second, "vat_rate": (std_rate * 100).normalize(), "second_rate": second_rate, "second": second}
+
+
+def _has_vat_history(db, year, quarter):
+    """A saved return or a VAT document on or before the end of this quarter (else the chain of credits stops)."""
+    end = quarter_range(year, quarter)[1]
+    with db.connect() as connection:
+        if connection.execute("SELECT 1 FROM vat_returns WHERE year*4+quarter<=? LIMIT 1", (int(year) * 4 + int(quarter),)).fetchone(): return True
+        for table, column in (("invoices", "invoice_date"), ("expenses", "expense_date")):
+            for row in connection.execute(f"SELECT {column} d FROM {table} WHERE CAST(COALESCE(vat,'0') AS REAL)<>0"):
+                try:
+                    if iso_date(row["d"]) <= end: return True
+                except ValueError: continue
+    return False
 
 
 def _ensure_not_saved(db, year, quarter):

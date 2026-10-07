@@ -254,21 +254,22 @@ class ApiClient:
         return self.request("PUT",f"/api/party-documents/{document_id}",{**item,"content":base64.b64encode(content or b"").decode("ascii")})
     def download_party_document(self,document_id):
         result=self.request("GET",f"/api/party-documents/{document_id}"); result["content"]=base64.b64decode(result["content"]); return result
-    def profit_loss(self, from_date=None, to_date=None, currency=None):
-        query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
+    def profit_loss(self, from_date=None, to_date=None, currency=None, convert=False):
+        # 2.9.80: convert=True gives every transaction converted into the currency (planning tools); False = entered in it
+        query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency,"convert":"1" if convert else None}.items() if v})
         return self.request("GET","/api/profit-loss"+(f"?{query}" if query else ""))["items"]
     def fiscal_years(self): return self.request("GET","/api/fiscal-years")["items"]
     def close_fiscal_year(self, year): return self.request("POST","/api/fiscal-years/close",{"year":year})
     def reopen_fiscal_year(self, year): return self.request("POST","/api/fiscal-years/reopen",{"year":year})
     def refresh_opening(self, source_year): return self.request("POST","/api/fiscal-years/refresh-opening",{"source_year":source_year})
-    def fiscal_year_profit_loss(self,year,from_date=None,to_date=None,currency=None):
-        query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
+    def fiscal_year_profit_loss(self,year,from_date=None,to_date=None,currency=None,convert=False):
+        query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency,"convert":"1" if convert else None}.items() if v})
         return self.request("GET",f"/api/fiscal-year/profit-loss?{query}")["items"]
-    def fiscal_year_cash_flow(self,year,from_date=None,to_date=None,currency=None):
-        query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
+    def fiscal_year_cash_flow(self,year,from_date=None,to_date=None,currency=None,convert=False):
+        query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency,"convert":"1" if convert else None}.items() if v})
         return self.request("GET",f"/api/fiscal-year/cash-flow?{query}")["items"]
-    def fiscal_year_balance_sheet(self,year,to_date=None,currency=None):
-        query=urlencode({k:v for k,v in {"year":year,"to_date":to_date,"currency":currency}.items() if v})
+    def fiscal_year_balance_sheet(self,year,to_date=None,currency=None,convert=False):
+        query=urlencode({k:v for k,v in {"year":year,"to_date":to_date,"currency":currency,"convert":"1" if convert else None}.items() if v})
         return self.request("GET",f"/api/fiscal-year/balance-sheet?{query}")["items"]
     def fiscal_year_journal(self,year,from_date=None,to_date=None,currency=None):
         query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
@@ -281,14 +282,14 @@ class ApiClient:
     def general_ledger(self, account=None, from_date=None, to_date=None, currency=None):
         query=urlencode({k:v for k,v in {"account":account,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
         return self.request("GET","/api/general-ledger"+(f"?{query}" if query else ""))
-    def balance_sheet(self, to_date=None, currency=None):
-        query=urlencode({k:v for k,v in {"to_date":to_date,"currency":currency}.items() if v})
+    def balance_sheet(self, to_date=None, currency=None, convert=False):
+        query=urlencode({k:v for k,v in {"to_date":to_date,"currency":currency,"convert":"1" if convert else None}.items() if v})
         return self.request("GET","/api/balance-sheet"+(f"?{query}" if query else ""))["items"]
     def vat_report(self, from_date=None, to_date=None, currency=None):
         query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
         return self.request("GET","/api/vat-report"+(f"?{query}" if query else ""))
-    def cash_flow(self,from_date=None,to_date=None,currency=None):
-        query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v}); return self.request("GET","/api/cash-flow"+(f"?{query}" if query else ""))["items"]
+    def cash_flow(self,from_date=None,to_date=None,currency=None,convert=False):
+        query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency,"convert":"1" if convert else None}.items() if v}); return self.request("GET","/api/cash-flow"+(f"?{query}" if query else ""))["items"]
     def aging(self,as_of_date=None,kind=None,currency=None):
         query=urlencode({k:v for k,v in {"as_of_date":as_of_date,"kind":kind,"currency":currency}.items() if v}); return self.request("GET","/api/aging"+(f"?{query}" if query else ""))["items"]
     def comparative_reports(self,from_date,to_date,currency=None):

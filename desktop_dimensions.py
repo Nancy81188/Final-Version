@@ -300,7 +300,7 @@ class DimensionsMixin:
         try:
             for month in range(1,last_month+1):
                 last=calendar.monthrange(source_year,month)[1]
-                rows=self.client.profit_loss(f"{source_year}-{month:02d}-01",f"{source_year}-{month:02d}-{last:02d}",currency)
+                rows=self.client.profit_loss(f"{source_year}-{month:02d}-01",f"{source_year}-{month:02d}-{last:02d}",currency,convert=True)
                 for row in rows:
                     if row["type"] not in ("income","expense"): continue
                     actual[row["code"]][month]=max(0,float(row["amount"])); names[row["code"]]=row["name_en"]
@@ -332,8 +332,8 @@ class DimensionsMixin:
         try:
             for month in range(1, 13):
                 start, end = month_range(base_year, month)
-                try: rows = self.client.fiscal_year_profit_loss(base_year, start, end, currency)
-                except Exception: rows = self.client.profit_loss(start, end, currency)
+                try: rows = self.client.fiscal_year_profit_loss(base_year, start, end, currency, convert=True)
+                except Exception: rows = self.client.profit_loss(start, end, currency, convert=True)
                 for row in rows:
                     if row["type"] not in ("income", "expense"): continue
                     monthly[row["code"]][month] = float(row["amount"] or 0); names[row["code"]] = row["name_en"]; types[row["code"]] = row["type"]
@@ -358,7 +358,7 @@ class DimensionsMixin:
         currency=self.budget_currency.get(); actual=defaultdict(dict); names={}; types={}
         try:
             for month in range(1,last+1):
-                rows=self.client.profit_loss(*month_range(year,month),currency)
+                rows=self.client.profit_loss(*month_range(year,month),currency,convert=True)
                 for row in rows:
                     if row["type"] not in ("income","expense"): continue
                     code=row["code"]; actual[code][month]={"amount":float(row["amount"])}
@@ -390,7 +390,7 @@ class DimensionsMixin:
         try: growth_by_year=self._parse_growth_by_year(self.budget_long_growth_by_year.get())
         except ValueError as exc: return messagebox.showwarning("5-Year Projection",str(exc))
         currency=self.budget_currency.get()
-        try: actual_rows=self.client.profit_loss(f"01-01-{base_year}",f"31-12-{base_year}",currency)
+        try: actual_rows=self.client.profit_loss(f"01-01-{base_year}",f"31-12-{base_year}",currency,convert=True)
         except Exception as exc: return messagebox.showerror("5-Year Projection",str(exc))
         base_values={}; names={}; types={}
         for row in actual_rows:

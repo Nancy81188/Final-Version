@@ -13,7 +13,9 @@ class ExpensesMixin:
         f = {"id": None, "pdf": None, "vars": {k: tk.StringVar() for k in ("date", "description", "category", "currency", "with_vat", "without_vat", "vat", "account", "no_vat_account",
                                                                           "vat_account", "payment_account", "reference")}}
         v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["category"].set("General")
-        v["account"].set("601100000"); v["no_vat_account"].set("601100001"); v["vat_account"].set("44216"); v["payment_account"].set("531")
+        # 2.9.80: no automatic expense account (it was 601100000 Purchase of Goods, which put rent, fuel ... in purchases):
+        # the account is chosen (F2), then kept for the next expense
+        v["vat_account"].set("44216"); v["payment_account"].set("531")
         f["department"] = tk.StringVar(); f["project"] = tk.StringVar(); f["non_deductible"] = tk.BooleanVar(value=False); f["vat_typed"] = False; self.expense_form = f
         f["use"] = tk.StringVar(value="Mixed (partial deduction)")
         box = tk.LabelFrame(page, text="Expense", bg=LIGHT, padx=8, pady=5); box.pack(fill="x", padx=8, pady=6)
@@ -108,6 +110,9 @@ class ExpensesMixin:
         amounts = {k: _num(v[k].get()) for k in ("with_vat", "without_vat", "vat")}
         if None in amounts.values() or min(amounts.values()) < 0: raise ValueError("Amounts must be positive numbers")
         if not amounts["with_vat"] and not amounts["without_vat"]: raise ValueError("Enter the expense amount")
+        for key, amount_key, label in (("account", "with_vat", "Expense A/C"), ("no_vat_account", "without_vat", "No-VAT A/C")):
+            if amounts[amount_key] and not v[key].get().split(" - ", 1)[0].strip():
+                raise ValueError(f"Choose the {label}: the class 6 account of this expense (F2 to search), for example 6263.1 rent")
         return {"expense_date": v["date"].get().strip(), "description": v["description"].get().strip(), "category": v["category"].get().strip(), "currency": v["currency"].get(),
                 "with_vat_subtotal": amounts["with_vat"], "without_vat_subtotal": amounts["without_vat"], "vat": amounts["vat"], "reference": v["reference"].get().strip(),
                 "expense_account": v["account"].get().split(" - ", 1)[0].strip(), "expense_without_vat_account": v["no_vat_account"].get().split(" - ", 1)[0].strip(),

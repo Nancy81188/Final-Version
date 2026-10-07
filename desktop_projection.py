@@ -150,14 +150,14 @@ class ProjectionMixin:
     # ------------------------------------------------------------ data from the books
     def _year_profit_loss(self, year, start, end, currency):
         """P&L of any fiscal year: its own file when the company keeps one per year (2.9.52), else this one."""
-        try: return self.client.fiscal_year_profit_loss(year, start, end, currency)
+        try: return self.client.fiscal_year_profit_loss(year, start, end, currency, convert=True)
         except Exception:
-            try: return self.client.profit_loss(start, end, currency)
+            try: return self.client.profit_loss(start, end, currency, convert=True)
             except Exception: return []
 
     def load_projection_base(self, base_year, currency):
         months, label = pm.base_period(base_year)
-        monthly = {month: self.client.profit_loss(f"{base_year}-{month:02d}-01", pm.month_end(base_year, month), currency) for month in range(1, months + 1)}
+        monthly = {month: self.client.profit_loss(f"{base_year}-{month:02d}-01", pm.month_end(base_year, month), currency, convert=True) for month in range(1, months + 1)}
         used = months
         if months < 12:  # 2.9.52: a year in progress is completed with the same months of last year (last 12 months)
             previous = {month: self._year_profit_loss(base_year - 1, f"{base_year - 1}-{month:02d}-01", pm.month_end(base_year - 1, month), currency)
@@ -166,7 +166,7 @@ class ProjectionMixin:
                 monthly.update(previous); used = 12
                 label = f"Last 12 months ({pm.MONTHS[months]} {base_year - 1} - {pm.MONTHS[months - 1]} {base_year})"
         accounts = pm.collect_base(monthly, used)
-        balances = pm.balances_from(self.client.balance_sheet(pm.month_end(base_year, months), currency))
+        balances = pm.balances_from(self.client.balance_sheet(pm.month_end(base_year, months), currency, convert=True))
         history = []
         for year in (base_year - 2, base_year - 1):
             if used == 12 and months < 12 and year == base_year - 1: continue  # already inside the last 12 months

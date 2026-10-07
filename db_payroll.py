@@ -85,7 +85,7 @@ class PayrollStore:
             str(item.get("marital_status") or "single").lower(),spouse_works,children,employee_group,
             hire_date,leave_date,
             str(item.get("job_title") or "").strip(),int(item["branch_id"]) if item.get("branch_id") else None,currency,
-            str(Decimal(str(item.get("base_salary") or 0))),item.get("salary_account") or "621100001",
+            str(Decimal(str(item.get("base_salary") or 0))),str(item.get("salary_account") or "").split(" - ",1)[0].strip() or None,  # 2.9.80: empty = the Standard Posting Accounts (6311 / 6316)
             item.get("payable_account") or "421100001",active)
         with self.connect() as db:
             if employee_id:
@@ -137,16 +137,16 @@ class PayrollStore:
                 result["schooling_rules_date"]=effective[-1]["date_from"]
         if result:
             result["tax_brackets"]=json.loads(result["tax_brackets"])
-            defaults=self.default_payroll_account_map()
             for key in ("employee_account_map","manager_account_map"):
+                defaults=self.default_payroll_account_map(key)  # 2.9.80: managers default to 6316 (they took the staff 6311 map)
                 try: result[key]={**defaults,**json.loads(result.get(key) or "{}")}
                 except (TypeError,ValueError): result[key]=dict(defaults)
         return result
 
     @staticmethod
-    def default_payroll_account_map():
+    def default_payroll_account_map(key="employee_account_map"):
         import chart_extra
-        return dict(chart_extra.PAYROLL_MAP)
+        return dict(chart_extra.MANAGER_PAYROLL_MAP if key=="manager_account_map" else chart_extra.PAYROLL_MAP)
 
     def list_payroll_settings(self):
         with self.connect() as db:
@@ -200,7 +200,7 @@ class PayrollStore:
                 salary_payable_account=excluded.salary_payable_account,payroll_tax_account=excluded.payroll_tax_account,nssf_payable_account=excluded.nssf_payable_account""",
                 (date_from,item.get("date_to") or None,json.dumps(brackets),*values,user_id,utcnow()))
             for key in ("employee_account_map","manager_account_map"):
-                mapping={**self.default_payroll_account_map(),**(item.get(key) or {})}
+                mapping={**self.default_payroll_account_map(key),**(item.get(key) or {})}
                 db.execute(f"UPDATE payroll_settings SET {key}=? WHERE date_from=?",(json.dumps(mapping),date_from))
             for key in ("transport_daily_exempt","default_transport_days","schooling_annual_exempt","schooling_max_children",
                         "schooling_public_child","schooling_public_cap","schooling_private_child","schooling_private_cap","tax_rounding","minimum_wage","max_children_deduction","family_allowance_spouse","family_allowance_child","family_allowance_cap","family_allowance_max_children"):
@@ -214,7 +214,7 @@ class PayrollStore:
         """Replace the effective-dated payroll settings with the official Lebanese periods (2024 onward), keeping the posting accounts."""
         import lebanese_payroll
         current=self.payroll_settings_for(None)
-        maps={k:current.get(k) for k in ("employee_account_map","manager_account_map")}
+        maps={k:current.get(k) for k in ("employee_account_map","manager_account_map") if current.get(k)}
         accounts={k:current.get(k) for k in ("salary_account","salary_payable_account","payroll_tax_account","nssf_payable_account") if current.get(k)}
         with self.connect() as db: db.execute("DELETE FROM payroll_settings")
         for period in lebanese_payroll.official_periods():
@@ -528,7 +528,7 @@ class PayrollStore:
             payable_account=record["employee_payable_account"] or mapping["payable"]
             mapping["salary"]=salary_account; mapping["payable"]=payable_account
             tax_account=mapping["tax"]; nssf_account=mapping["nssf"]
-            employer_expense="621100002"
+            employer_expense=str(mapping.get("employer_social") or "").strip() or "6351"  # 2.9.80: was 621100002 (6211 = sub-contractors in the Lebanese chart)
             component_names={"salary":"Salaries and Wages","transport":"Transportation","overtime":"Overtime","commission":"Commission","retro_salary":"Retroactive Salary","schooling":"Schooling Allowance","bonus":"Bonus","thirteenth_month":"13th Salary","director_remuneration":"Director Remuneration"}
             required=[(mapping[key],name,"expense") for key,name in component_names.items()]
             required+=((salary_account,"Salaries and Wages","expense"),(employer_expense,"Employer NSSF Contributions","expense"),

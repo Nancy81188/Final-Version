@@ -8,6 +8,55 @@ from database_common import _soft_iso  # noqa: F401
 
 
 class ReportsStore:
+    # ---------------------------------------------------------------- 2.9.80: every currency converted (planning tools)
+    def _converted_lines(self, currency, from_date=None, to_date=None, without_opening=False):
+        """Posted journal lines with their value in `currency` (USD, LBP or any currency of the company), whatever
+        the currency they were entered in. Closing entries are left out."""
+        import ledger_reports
+        options = {"first_column": currency, "second_column": "none", "posting_status": "posted", "without_closing": True, "exclude_closing": True}
+        if without_opening: options["without_opening"] = True
+        start = _soft_iso(from_date) or "0000-01-01"; end = _soft_iso(to_date) or "9999-12-31"
+        return [row for row in ledger_reports._load_lines(self, options) if start <= row["iso_date"] <= end]
+
+    def profit_and_loss_converted(self, from_date=None, to_date=None, currency="USD"):
+        """The P&L of every transaction (LBP payroll, EUR expenses ...) in one currency: same rows as profit_and_loss."""
+        totals = {}
+        for row in self._converted_lines(currency, from_date, to_date):
+            if row["account_type"] not in ("income", "expense"): continue
+            value = row["signed"].get(currency) or Decimal("0")
+            item = totals.setdefault(row["code"], {"currency": currency, "code": row["code"], "name_en": row["name_en"], "type": row["account_type"], "debit": 0.0, "credit": 0.0})
+            if value >= 0: item["debit"] += float(value)
+            else: item["credit"] -= float(value)
+        rows = sorted(totals.values(), key=lambda r: r["code"])
+        for row in rows: row["amount"] = (row["credit"] - row["debit"]) if row["type"] == "income" else (row["debit"] - row["credit"])
+        return rows
+
+    def cash_flow_converted(self, from_date=None, to_date=None, currency="USD"):
+        """Cash and bank (51 / 53) movements of every currency in one currency, without the opening / closing entries."""
+        categories = {"invoice": "Operating - Invoices", "expense": "Operating - Expenses", "payroll": "Operating - Payroll", "payment": "Operating - Receipts / Payments"}
+        grouped = {}
+        for row in self._converted_lines(currency, from_date, to_date, without_opening=True):
+            digits = "".join(ch for ch in str(row["code"]) if ch.isdigit())
+            if not digits.startswith(("51", "53")) or row.get("source_type") == "opening": continue
+            value = float(row["signed"].get(currency) or 0); category = categories.get(row.get("source_type"), "Other Cash Movement")
+            item = grouped.setdefault(category, {"currency": currency, "category": category, "inflow": 0.0, "outflow": 0.0, "net": 0.0})
+            if value > 0: item["inflow"] += value
+            else: item["outflow"] -= value
+            item["net"] = item["inflow"] - item["outflow"]
+        return sorted(grouped.values(), key=lambda r: r["category"])
+
+    def balance_sheet_converted(self, to_date=None, currency="USD"):
+        """Balances of classes 1-5 at to_date, every currency converted into one."""
+        totals = {}
+        for row in self._converted_lines(currency, None, to_date):
+            if row["account_type"] not in ("asset", "liability", "equity"): continue
+            value = float(row["signed"].get(currency) or 0)
+            item = totals.setdefault(row["code"], {"currency": currency, "code": row["code"], "name_en": row["name_en"], "type": row["account_type"], "debit": 0.0, "credit": 0.0, "balance": 0.0})
+            if value >= 0: item["debit"] += value
+            else: item["credit"] -= value
+            item["balance"] += value
+        return sorted(totals.values(), key=lambda r: r["code"])
+
     def profit_and_loss(self, from_date=None, to_date=None, currency=None):
         from_date=_soft_iso(from_date); to_date=_soft_iso(to_date)  # 2.9.63: DD-MM-YYYY or YYYY-MM-DD
         # The year-end closing brings 6 & 7 to zero; the P&L must show the year before closing.
@@ -403,6 +452,7 @@ class ReportsStore:
                 (SELECT COALESCE(SUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a JOIN payments x ON x.id=a.payment_id
                  WHERE a.invoice_id=i.id AND {payment_day}<=?)) outstanding FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
                 WHERE {' AND '.join(conditions)} ORDER BY p.name,i.due_date,i.invoice_date""",parameters)]
+        rows=self._apply_unallocated(rows,as_of.isoformat(),kind,currency)  # 2.9.80
         rows=[row for row in rows if abs(row["outstanding"])>=0.01]
         for row in rows:
             raw=row.get("due_date") or row.get("invoice_date"); due=as_of
@@ -412,6 +462,47 @@ class ReportsStore:
             days=max(0,(as_of-due).days); row["days_overdue"]=days
             row["bucket"]="Current" if days==0 else "1-30" if days<=30 else "31-60" if days<=60 else "61-90" if days<=90 else "Over 90"
         return rows
+
+    def _apply_unallocated(self,rows,as_of,kind=None,currency=None):
+        """2.9.80: receipts / payments not allocated to an invoice and open credit notes settle the oldest invoices of the
+        same customer / supplier and currency (as in the ledger); what is left is shown as one 'On account' line,
+        so the ageing of each party agrees with its account balance (invoices and receipts / payments)."""
+        payment_day="CASE WHEN x.payment_date GLOB '??-??-????' THEN substr(x.payment_date,7,4)||'-'||substr(x.payment_date,4,2)||'-'||substr(x.payment_date,1,2) ELSE x.payment_date END"
+        with self.connect() as db:
+            payments=[dict(r) for r in db.execute(f"""SELECT x.party_id,x.kind,x.currency,p.name party_name,p.account_number,
+                CAST(x.amount AS REAL)+CAST(COALESCE(x.exchange_difference,'0') AS REAL)-COALESCE((SELECT SUM(CAST(a.amount AS REAL)) FROM payment_allocations a WHERE a.payment_id=x.id),0) free
+                FROM payments x LEFT JOIN parties p ON p.id=x.party_id WHERE {payment_day}<=?""",(as_of,))]
+            party_of={r["id"]:r["party_id"] for r in db.execute("SELECT id,party_id FROM invoices")}
+        credits={}  # (party_id, kind, currency) -> amount that settles invoices
+        for pay in payments:
+            invoice_kind="sale" if pay["kind"]=="customer_receipt" else "purchase"
+            if (kind and invoice_kind!=kind) or (currency and pay["currency"]!=currency) or abs(pay["free"] or 0)<0.005: continue
+            key=(pay["party_id"],invoice_kind,pay["currency"])
+            entry=credits.setdefault(key,{"amount":0.0,"party_name":pay["party_name"],"account_number":pay["account_number"]})
+            entry["amount"]+=float(pay["free"])
+        def day(row):
+            for value in (row.get("due_date"),row.get("invoice_date")):
+                try: return _soft_iso(value) or ""
+                except Exception: continue
+            return ""
+        def key_of(row): return (party_of.get(row["id"]),row["kind"],row["currency"])
+        invoices=sorted([row for row in rows if row["outstanding"]>0],key=day)  # oldest first
+        notes=sorted([row for row in rows if row["outstanding"]<0],key=day)
+        def settle(key,amount):
+            for row in invoices:
+                if amount<=0.005: break
+                if key_of(row)!=key or row["outstanding"]<=0.005: continue
+                used=min(amount,row["outstanding"]); row["outstanding"]=round(row["outstanding"]-used,2); amount-=used
+            return amount
+        for note in notes:  # an open credit note settles the oldest invoices; what is left stays on the note
+            note["outstanding"]=-round(settle(key_of(note),-note["outstanding"]),2)
+        kept=list(rows)
+        for (party_id,invoice_kind,code),entry in credits.items():  # receipts / payments not allocated
+            left=settle((party_id,invoice_kind,code),entry["amount"]) if entry["amount"]>0 else entry["amount"]
+            if abs(left)<0.005: continue
+            kept.append({"id":None,"invoice_number":"On account (not allocated)","invoice_date":as_of,"due_date":as_of,"kind":invoice_kind,"currency":code,
+                         "party_name":entry["party_name"],"account_number":entry["account_number"],"outstanding":-round(left,2)})
+        return kept
 
     def comparative_reports(self,from_date,to_date,currency=None,prior_db=None):
         """Current period against the same period one year earlier. 2.9.52: the prior year is read from its own

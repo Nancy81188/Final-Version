@@ -365,6 +365,18 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
                     if not current or current==chart_extra.OLD_PAYROLL_MAP: db.execute(f"UPDATE payroll_settings SET {column}=? WHERE id=?",(json.dumps(new_map),row["id"]))
             db.execute("""UPDATE payroll_settings SET payroll_tax_account='4411',nssf_payable_account='4431',salary_account='6311'
                 WHERE payroll_tax_account='443100001' AND nssf_payable_account='447100001'""")
+            # 2.9.80: employees saved with the old automatic salary account 621100001 (6211 = sub-contractors) follow the
+            # Standard Posting Accounts again (6311 staff / 6316 managers). Payroll already posted is not changed. Once only.
+            if not db.execute("SELECT 1 FROM app_settings WHERE key='payroll_accounts_2980'").fetchone():
+                db.execute("UPDATE employees SET salary_account=NULL WHERE salary_account='621100001'")
+                # the managers' map was written as a copy of the staff map (6311): managers go to 6316 again
+                for row in db.execute("SELECT id,employee_account_map,manager_account_map FROM payroll_settings").fetchall():
+                    try: staff=json.loads(row["employee_account_map"] or "{}"); managers=json.loads(row["manager_account_map"] or "{}")
+                    except ValueError: continue
+                    if managers and managers==staff and managers.get("salary")=="6311":
+                        managers.update({key:"6316" for key in ("salary","overtime","retro_salary")})
+                        db.execute("UPDATE payroll_settings SET manager_account_map=? WHERE id=?",(json.dumps(managers),row["id"]))
+                db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('payroll_accounts_2980','done')")
             user_columns={row["name"] for row in db.execute("PRAGMA table_info(users)")}
             if "expires_at" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN expires_at TEXT")
             if "permissions" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'")
