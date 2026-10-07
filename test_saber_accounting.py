@@ -390,7 +390,7 @@ class SaberAccountingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             db=Database(Path(folder)/"lebanese.db"); db.initialize("secret")
             accounts=db.list_accounts()
-            self.assertEqual(len(accounts),len(LEBANESE_ACCOUNTS)+6+19)  # includes sale/credit-note posting + bank commission & exchange-difference accounts
+            self.assertEqual(len(accounts),len(LEBANESE_ACCOUNTS)+6+20)  # includes sale/credit-note posting + bank commission & exchange-difference accounts + 611100000 (2.9.79)
             codes={row["code"] for row in accounts}
             self.assertTrue({"1","2","3","4","5","6","7","4011","4111","4426.6","4427","6011","713",
                              "7011","701100001","711100001","7130","713000001","709000001","7190","719000001"}.issubset(codes))

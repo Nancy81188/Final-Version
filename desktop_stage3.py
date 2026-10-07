@@ -5,6 +5,7 @@ from desktop_stage3_common import *  # noqa: F401,F403
 from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
 from desktop_common import flow_toolbars
+from desktop_common import account_label, account_code  # 2.9.79
 from desktop_purchases import PurchasesMixin
 from desktop_asset_register import AssetRegisterMixin
 from desktop_expenses import ExpensesMixin
@@ -41,9 +42,9 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                  bg=LIGHT, fg=MUTED, anchor="w").pack(fill="x", padx=12)
         from desktop_brains import EditableSheet
         columns = [("line", "#", 40, "center"), ("invoice_number", "Invoice No.", 110, "w"), ("invoice_date", "Date", 90, "center"), ("party_name", "Customer / Supplier", 200, "w"),
-                   ("entry_type", "Type (review)", 120, "w"), ("currency", "Currency", 65, "center"), ("subtotal", "Before VAT", 105, "e"), ("vat", "VAT", 90, "e"), ("vat_account", "VAT A/C", 120, "w"),
-                   ("total", "Total", 105, "e"), ("supplier_account", "Party / Paid A/C", 135, "w"), ("expense_account", "Cost / Revenue A/C", 140, "w"),
-                   ("expense_no_vat_account", "No-VAT A/C", 120, "w"),
+                   ("entry_type", "Type (review)", 120, "w"), ("currency", "Currency", 65, "center"), ("subtotal", "Before VAT", 105, "e"), ("vat", "VAT", 90, "e"), ("vat_account", "VAT A/C", 170, "w"),
+                   ("total", "Total", 105, "e"), ("supplier_account", "Party / Paid A/C", 200, "w"), ("expense_account", "Cost / Revenue A/C", 200, "w"),
+                   ("expense_no_vat_account", "No-VAT A/C", 170, "w"),
                    ("source", "Source", 150, "w"), ("notes", "Check", 230, "w")]
         bottom = tk.Frame(page, bg=LIGHT); bottom.pack(side="bottom", fill="x", padx=10, pady=8)
         tk.Checkbutton(bottom, text="Replace ALL previous invoices (a safety backup is made first)", variable=self.import_replace, bg=LIGHT, fg=RED).pack(side="left")
@@ -504,7 +505,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         self.load_transactions()
 
     def build_payment_form(self, page, kind):
-        form = {"kind": kind, "id": None, "vars": {k: tk.StringVar() for k in ("number", "date", "party", "currency", "amount", "method", "cash_account", "reference", "description", "bank_commission", "exchange_difference")}}
+        form = {"kind": kind, "id": None, "vars": {k: tk.StringVar() for k in ("number", "date", "party", "currency", "amount", "method", "cash_account", "reference", "description", "bank_commission", "exchange_difference",
+                                                                            "commission_account", "exchange_gain_account", "exchange_loss_account")}}
         v = form["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["method"].set("Cash"); v["cash_account"].set("531")
         form["department"] = tk.StringVar(); form["project"] = tk.StringVar()
         box = tk.LabelFrame(page, text="Customer Receipt (RV)" if kind == "customer_receipt" else "Supplier Payment (PV)", bg=LIGHT, padx=8, pady=6); box.pack(fill="x", padx=8, pady=6)
@@ -529,10 +531,20 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         form["cash_box"] = ttk.Combobox(row2, textvariable=v["cash_account"], width=26, state="readonly"); form["cash_box"].pack(side="left", padx=(4, 10))
         tk.Label(row2, text="Ref. / Cheque", bg=LIGHT).pack(side="left"); tk.Entry(row2, textvariable=v["reference"], width=14).pack(side="left", padx=(4, 10))
         tk.Label(row2, text="Description", bg=LIGHT).pack(side="left"); tk.Entry(row2, textvariable=v["description"], width=22).pack(side="left", padx=4)
+        # 2.9.79: bank commission and exchange difference, each on the account chosen here (number - name)
         row_fx = tk.Frame(box, bg=LIGHT); row_fx.pack(fill="x", pady=(6, 0))
-        tk.Label(row_fx, text="Bank Commission (A/C 673900000)", bg=LIGHT).pack(side="left"); tk.Entry(row_fx, textvariable=v["bank_commission"], width=12).pack(side="left", padx=(4, 10))
-        tk.Label(row_fx, text="Exchange Difference", bg=LIGHT).pack(side="left"); tk.Entry(row_fx, textvariable=v["exchange_difference"], width=12).pack(side="left", padx=(4, 10))
-        tk.Label(row_fx, text="(+ gain / - loss)", bg=LIGHT, fg=MUTED).pack(side="left")
+        tk.Label(row_fx, text="Bank Commission", bg=LIGHT).pack(side="left"); tk.Entry(row_fx, textvariable=v["bank_commission"], width=11).pack(side="left", padx=(4, 4))
+        tk.Label(row_fx, text="on A/C", bg=LIGHT, fg=MUTED).pack(side="left"); self.account_search_box(row_fx, v["commission_account"], 30).pack(side="left", padx=(4, 14))
+        tk.Label(row_fx, text="Exchange Difference", bg=LIGHT).pack(side="left"); tk.Entry(row_fx, textvariable=v["exchange_difference"], width=11).pack(side="left", padx=(4, 4))
+        tk.Label(row_fx, text="(+ / -)", bg=LIGHT, fg=MUTED).pack(side="left")
+        row_fx2 = tk.Frame(box, bg=LIGHT); row_fx2.pack(fill="x", pady=(4, 0))
+        tk.Label(row_fx2, text="Exchange Gain A/C", bg=LIGHT).pack(side="left"); self.account_search_box(row_fx2, v["exchange_gain_account"], 30).pack(side="left", padx=(4, 14))
+        tk.Label(row_fx2, text="Exchange Loss A/C", bg=LIGHT).pack(side="left"); self.account_search_box(row_fx2, v["exchange_loss_account"], 30).pack(side="left", padx=(4, 14))
+        form["preview"] = tk.Label(box, text="", bg="#eef3f8", fg=NAVY, anchor="w", justify="left", font=("Consolas", 9))
+        form["preview"].pack(fill="x", pady=(6, 0))
+        self.reset_payment_accounts(form)
+        for key in ("amount", "bank_commission", "exchange_difference", "cash_account", "commission_account", "exchange_gain_account", "exchange_loss_account", "party"):
+            v[key].trace_add("write", lambda *_a, f=form: self.update_payment_preview(f))
         row3 = tk.Frame(box, bg=LIGHT); row3.pack(fill="x", pady=(6, 0))
         self.dimension_selectors(row3, form["department"], form["project"])
         form["balance"] = tk.Label(row3, text="", bg=LIGHT, fg=NAVY, font=("Segoe UI", 9, "bold")); form["balance"].pack(side="left", padx=10)
@@ -558,7 +570,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         find_entry.bind("<KeyRelease>", lambda _e: self.filter_payments(form))
         tk.Button(find_bar, text="Clear", command=lambda: (form["find"].set(""), self.filter_payments(form)), bg=LIGHT, border=0, fg=NAVY).pack(side="left")
         form["tree"] = self.table(page, [("number", "Number", 125), ("date", "Date", 90), ("party", "Customer" if kind == "customer_receipt" else "Supplier", 210), ("currency", "Currency", 65),
-            ("amount", "Amount", 110), ("method", "Method", 100), ("cash", "Cash / Bank", 90), ("reference", "Reference", 110), ("description", "Description", 200), ("dims", "Dep. / Project", 110)])
+            ("amount", "Amount", 110), ("method", "Method", 100), ("cash", "Cash / Bank", 220), ("reference", "Reference", 110), ("description", "Description", 200), ("dims", "Dep. / Project", 110)])
         form["tree"].bind("<Double-1>", lambda _e: self.edit_payment(form))
         return form
 
@@ -668,9 +680,44 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             form["balance"].config(text=f"Account {account}   Balance: " + ("   ".join(balances) if balances else "0.00") + "   (+ owes you / - you owe)")
         except Exception: form["balance"].config(text=f"Account {account}")
 
+    def reset_payment_accounts(self, form):
+        """2.9.79: the default accounts of the bank commission and the exchange gain / loss."""
+        from chart_extra import BANK_COMMISSION_ACCOUNT, EXCHANGE_GAIN_ACCOUNT, EXCHANGE_LOSS_ACCOUNT
+        v = form["vars"]
+        for key, code in (("commission_account", BANK_COMMISSION_ACCOUNT), ("exchange_gain_account", EXCHANGE_GAIN_ACCOUNT), ("exchange_loss_account", EXCHANGE_LOSS_ACCOUNT)):
+            v[key].set(account_label(self, code))
+
+    def payment_journal_preview(self, form):
+        """The journal entry the receipt / payment will post: [(account, debit, credit)] (same rule as the books)."""
+        v = form["vars"]
+        amount = _num(v["amount"].get(), 0.0) or 0.0; commission = _num(v["bank_commission"].get(), 0.0) or 0.0; difference = _num(v["exchange_difference"].get(), 0.0) or 0.0
+        if amount <= 0: return []
+        try: party = self.resolve_payment_party(form, refresh=False)
+        except ValueError: party = None
+        party_account = (party or {}).get("account_number") or ("4111" if form["kind"] == "customer_receipt" else "4011")
+        cash = account_code(v["cash_account"].get()) or "531"; settled = amount + difference
+        if form["kind"] == "customer_receipt": lines = [(cash, amount - commission, 0.0), (party_account, 0.0, settled)]
+        else: lines = [(party_account, settled, 0.0), (cash, 0.0, amount + commission)]
+        if commission: lines.append((account_code(v["commission_account"].get()), commission, 0.0))
+        balance = round(sum(d for _c, d, _cr in lines) - sum(c for _c, _d, c in lines), 2)
+        if balance > 0: lines.append((account_code(v["exchange_gain_account"].get()), 0.0, balance))
+        elif balance < 0: lines.append((account_code(v["exchange_loss_account"].get()), -balance, 0.0))
+        return [(code, debit, credit) for code, debit, credit in lines if round(debit, 2) or round(credit, 2)]
+
+    def update_payment_preview(self, form):
+        label = form.get("preview")
+        if label is None or not label.winfo_exists(): return
+        try: lines = self.payment_journal_preview(form)
+        except Exception: lines = []
+        if not lines: label.config(text=""); return
+        text = [f'{"Journal entry:":<63}{"Debit":>14}{"Credit":>14}'] + [f'  {"Dr" if debit else "   Cr"}  {account_label(self, code)[:57]:<{57 if debit else 54}}'
+                                                                         f'{(f"{debit:,.2f}" if debit else ""):>14}{(f"{credit:,.2f}" if credit else ""):>14}' for code, debit, credit in lines]
+        label.config(text="\n".join(text))
+
     def new_payment(self, form):
         form["id"] = None; v = form["vars"]; form.pop("_chosen_party_id", None)
         for key in ("party", "amount", "reference", "description", "bank_commission", "exchange_difference"): v[key].set("")
+        self.reset_payment_accounts(form)
         if "alloc_sheet" in form: form["alloc_sheet"].clear(); form["alloc_info"].config(text="Choose the customer / supplier to see the open invoices")
         v["date"].set(self.fiscal_today()); v["method"].set("Cash"); form["department"].set("(none)"); form["project"].set("(none)"); form["balance"].config(text="")
         try: v["number"].set(self.client.next_document_number(form["kind"], v["date"].get()))
@@ -685,7 +732,9 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         return {"kind": form["kind"], "party_id": party["id"], "payment_date": v["date"].get().strip(), "currency": v["currency"].get(), "amount": amount,
                 "cash_account": v["cash_account"].get().split(" - ", 1)[0].strip() or "531", "reference": v["reference"].get().strip(), "description": v["description"].get().strip(),
                 "payment_method": v["method"].get(), "department": self.dimension_code(form["department"].get()), "project": self.dimension_code(form["project"].get()),
-                "bank_commission": _num(v["bank_commission"].get(), 0.0) or 0.0, "exchange_difference": _num(v["exchange_difference"].get(), 0.0) or 0.0}
+                "bank_commission": _num(v["bank_commission"].get(), 0.0) or 0.0, "exchange_difference": _num(v["exchange_difference"].get(), 0.0) or 0.0,
+                "commission_account": account_code(v["commission_account"].get()), "exchange_gain_account": account_code(v["exchange_gain_account"].get()),
+                "exchange_loss_account": account_code(v["exchange_loss_account"].get())}
 
     def save_payment(self, form):
         try: payload = self.payment_payload(form)
@@ -712,9 +761,12 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         form["id"] = row["id"]; v = form["vars"]
         label = next((name for name, p in form.get("party_map", {}).items() if p["id"] == row["party_id"]), row["party_name"])
         for key, value in (("number", row.get("payment_number") or ""), ("date", _dd(row["payment_date"])), ("party", label), ("currency", row["currency"]), ("amount", f'{row["amount"]:g}'),
-                           ("method", row.get("payment_method") or "Cash"), ("cash_account", row["cash_account"]), ("reference", row.get("reference") or ""), ("description", row.get("description") or ""),
+                           ("method", row.get("payment_method") or "Cash"), ("cash_account", account_label(self, row["cash_account"])), ("reference", row.get("reference") or ""), ("description", row.get("description") or ""),
                            ("bank_commission", f'{row.get("bank_commission") or 0:g}' if (row.get("bank_commission") or 0) else ""), ("exchange_difference", f'{row.get("exchange_difference") or 0:g}' if (row.get("exchange_difference") or 0) else "")):
             v[key].set(value)
+        self.reset_payment_accounts(form)
+        for key in ("commission_account", "exchange_gain_account", "exchange_loss_account"):
+            if row.get(key): v[key].set(account_label(self, row[key]))
         lists = self.dimension_lists()
         form["department"].set(next((f'{d["code"]} - {d["name"]}' for d in lists["departments"] if d["code"] == row.get("department")), "(none)"))
         form["project"].set(next((f'{p["code"]} - {p["name"]}' for p in lists["projects"] if p["code"] == row.get("project")), "(none)"))
@@ -761,7 +813,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
 
     def _payment_tree_values(self, r):
         return (r.get("payment_number") or f"#{r['id']}", _dd(r["payment_date"]), r["party_name"], r["currency"], f'{r["amount"]:,.2f}',
-                r.get("payment_method") or "", r["cash_account"], r.get("reference") or "", r.get("description") or "", " / ".join(x for x in (r.get("department"), r.get("project")) if x))
+                r.get("payment_method") or "", account_label(self, r["cash_account"]), r.get("reference") or "", r.get("description") or "", " / ".join(x for x in (r.get("department"), r.get("project")) if x))
 
     def filter_payments(self, form):
         from desktop import row_matches_search

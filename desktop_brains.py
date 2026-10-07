@@ -7,8 +7,13 @@ import logging
 
 from desktop_brains_common import *  # noqa: F401,F403
 from desktop_common import main_currency  # 2.9.71
+from desktop_common import account_label  # 2.9.79
 from desktop_brains_common import _date_text, _fmt, _num
 from desktop_balance_reports import BalanceReportsMixin
+
+ACCOUNT_KEYS = {"account", "vat_account", "supplier_account", "expense_account", "expense_no_vat_account", "cost_account",
+                "cash_account", "party_account", "stock_account", "revenue_account", "commission_account", "exchange_account"}
+
 
 class EditableSheet:
     """A Treeview that edits like a spreadsheet: double-click / Enter to type, Tab / Enter to move on."""
@@ -17,6 +22,10 @@ class EditableSheet:
         self.app = app; self.columns = columns; self.editable = editable; self.on_change = on_change; self.on_select = on_select
         self.lookup_column = lookup_column; self.lookup_columns = tuple(lookup_columns or ([lookup_column] if lookup_column else []))
         self.lookup_groups = lookup_groups; self.rows = {}; self.choices_by_column = choices_by_column or {}
+        # 2.9.79: account cells show 'number - name' unless the sheet has its own name column
+        keys = [c[0] for c in columns]
+        self.labelled = {k for k in keys if (k in ACCOUNT_KEYS or k in self.lookup_columns)
+                         and f"{k}_name" not in keys and not (k == "account" and "name" in keys)}
         frame = tk.Frame(parent, bg=LIGHT); frame.pack(fill="both", expand=True, padx=10, pady=4)
         self.tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", height=height, selectmode=selectmode)
         for key, label, width, anchor in columns: self.tree.heading(key, text=label); self.tree.column(key, width=width, anchor=anchor, stretch=key == "account")
@@ -71,7 +80,9 @@ class EditableSheet:
         iid = self.tree.insert("", index, values=self.values(row)); self.rows[iid] = row; self.renumber(); return iid
 
     def values(self, row):
-        return [row.get("_display", {}).get(key, row.get(key, "")) for key, _l, _w, _a in self.columns]
+        shown = row.get("_display", {})
+        return [shown[key] if key in shown else account_label(self.app, row.get(key, "")) if key in self.labelled else row.get(key, "")
+                for key, _l, _w, _a in self.columns]
 
     def refresh(self, iid):
         if self.tree.exists(iid): self.tree.item(iid, values=self.values(self.rows[iid]))
@@ -236,7 +247,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
         branch_box.bind("<Return>", self.focus_voucher_entries)
         self.manual_currency.trace_add("write", lambda *_a: self.update_manual_totals())
         self.manual_date.trace_add("write", lambda *_a: self.voucher_date_changed())
-        columns = [("line", "#", 45, "center"), ("account", "Account No.", 110, "w"), ("description", "Line Detail", 330, "w"), ("line_currency", "Currency", 70, "center"), ("side", "D/C", 45, "center"),
+        columns = [("line", "#", 45, "center"), ("account", "Account No. - Name", 230, "w"), ("description", "Line Detail", 330, "w"), ("line_currency", "Currency", 70, "center"), ("side", "D/C", 45, "center"),
                    ("amount", "Amount (Account Currency)", 165, "e"), ("amount_lbp", "Amount LBP", 145, "e"), ("amount_usd", "Amount USD", 120, "e"),
                    ("due_date", "Due Date", 95, "center"), ("reference", "Reference", 110, "w"), ("department", "Dep.", 60, "center"), ("project", "Project", 85, "center"),
                    ("rate_lbp", "Rate LBP", 95, "e"), ("rate_usd", "Rate USD", 95, "e")]
@@ -607,7 +618,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
         columns=("currency","account","name","foreign","carrying","target","difference","offset")
         tree=ttk.Treeview(page,columns=columns,show="headings",selectmode="extended")
         for key,label,width in (("currency","Currency",70),("account","Class 4/5 account",130),("name","Account name",220),("foreign","Balance",140),
-                                ("carrying","Carrying",140),("target","At DOE rate",140),("difference","Difference",140),("offset","Gain / Loss A/C",120)):
+                                ("carrying","Carrying",140),("target","At DOE rate",140),("difference","Difference",140),("offset","Gain / Loss A/C",230)):
             tree.heading(key,text=label); tree.column(key,width=width,stretch=key=="name")
         tree.pack(fill="both",expand=True,padx=10,pady=6); add_search_bar(tree)  # 2.9.78
         state={"candidates":[],"preview":{},"date":None,"basis":None,"rates":{},"rate_vars":{}}
@@ -670,7 +681,7 @@ class BrainsScreensMixin(BalanceReportsMixin):
                 offset="775100000" if difference>0 else "675100000"; key=f'{code_currency}|{row["account"]}'
                 state["preview"][key]=(row,difference)
                 tree.insert("","end",iid=key,values=(code_currency,row["account"],row["name"],f'{balance:,.2f} {code_currency}',f'{carrying:,.2f}',
-                    f'{target:,.2f}',f'{difference:,.2f}',offset))
+                    f'{target:,.2f}',f'{difference:,.2f}',account_label(self,offset)))
             tree.selection_set(tree.get_children())
             vouchers=len({key.split("|")[0] for key in state["preview"]})
             info.config(text=f'{state["basis"]} books: {len(state["preview"])} account(s) to adjust = {vouchers} DOE voucher(s), one per currency; gains credit 7751, losses debit 6751.')

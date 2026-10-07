@@ -19,6 +19,24 @@ DOC_TYPES = {"opening": ("OPN", "Opening Stock", 1), "receipt": ("GRN", "Stock R
              "adjustment_in": ("ADJ", "Adjustment +", 1), "adjustment_out": ("ADJ", "Adjustment -", -1), "transfer": ("TRF", "Transfer", 0),
              "production": ("PRD", "Production", 0)}  # 2.9.65: materials out, finished product in (production.py)
 STOCK_ACCOUNT, OPENING_ACCOUNT, CLOSING_ACCOUNT = "37", "6051", "6052"
+# 2.9.79: each item has its stock account (class 3), linked to its cost (purchases) account and to the stock-variation
+# accounts of the Lebanese chart used at year end (periodic method):
+#   stock prefix: (purchases / cost account, variation - opening stock, variation - closing stock, description)
+STOCK_LINKS = {
+    "37": ("601100000", "6051", "6052", "Goods for sale: purchases 6011, variation 6051 / 6052"),
+    "31": ("611100000", "6151", "6152", "Raw materials & consumables: purchases 6111, variation 6151 / 6152"),
+    "33": ("", "7211", "7211", "Work in progress: production variation 7211"),
+    "35": ("", "7255", "7255", "Manufactured products: production variation 7255"),
+}
+
+
+def stock_link(stock_account):
+    """(cost account, opening variation, closing variation, note) of a stock account: the longest prefix of STOCK_LINKS.
+    31 covers 311, 312 ... but not 33 / 35 / 37, which have their own link."""
+    code = str(stock_account or STOCK_ACCOUNT).split(" - ", 1)[0].strip() or STOCK_ACCOUNT
+    for prefix in sorted(STOCK_LINKS, key=len, reverse=True):
+        if code.startswith(prefix): return STOCK_LINKS[prefix]
+    raise ValueError(f"Stock account {code} is not a stock account: use 31 (raw materials), 33 (work in progress), 35 (products) or 37 (goods)")
 
 # ---------------------------------------------------------------- negative stock (2.9.45)
 # Stock may go below zero only after the user confirmed the alert. The confirmation applies to the request
@@ -83,6 +101,7 @@ def migrate(db):
         if column not in item_columns: db.execute(f"ALTER TABLE inventory_items ADD COLUMN {column} TEXT")
     if "default_vat" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN default_vat TEXT NOT NULL DEFAULT '11'")
     if "cost_account" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN cost_account TEXT")
+    if "stock_account" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN stock_account TEXT")  # 2.9.79
     # 2.9.65: production - recipe (bill of materials) of a finished product, and the extra cost of a production order
     db.execute("""CREATE TABLE IF NOT EXISTS bom_headers (id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL UNIQUE, output_qty TEXT NOT NULL DEFAULT '1',
         overhead_per_unit TEXT NOT NULL DEFAULT '0', notes TEXT, active INTEGER NOT NULL DEFAULT 1, updated_by INTEGER, updated_at TEXT)""")
@@ -159,6 +178,14 @@ def save_item(database, item, user_id):
         company_rate = db.execute("SELECT value FROM app_settings WHERE key='vat_rate'").fetchone()
         default_vat = "0" if str(item.get("default_vat") or "11").strip() in ("0", "0.0", "0%") else str((company_rate[0] if company_rate else None) or "11")
         cost_account = str(item.get("cost_account") or "").split(" - ", 1)[0].strip() or None
+        # 2.9.79: the stock account (37 when none is given) and, when no cost account is chosen, its linked purchases account
+        stock_account = str(item.get("stock_account") or "").split(" - ", 1)[0].strip() or STOCK_ACCOUNT
+        if not stock_account.isdigit() or not stock_account.startswith("3") or stock_account.startswith("39"):
+            raise ValueError("The stock account must be a class 3 account: 31 raw materials, 33 work in progress, 35 products, 37 goods (39 is for provisions)")
+        linked_cost = stock_link(stock_account)[0]
+        if cost_account and not cost_account.replace(".", "").isdigit(): raise ValueError("Choose the cost account from the chart of accounts")
+        # goods (37) keep the account of the purchase screen (601100000 by default) when no cost account is chosen
+        if not cost_account and linked_cost and not stock_account.startswith(STOCK_ACCOUNT): cost_account = linked_cost
         brand = str(item.get("brand") or "").strip() or None
         values = (sku, name, unit, str(item.get("category") or "").strip() or None, str(reorder), str(price),
                   1 if item.get("active", True) else 0, str(item.get("notes") or "").strip() or None, str(item.get("barcode") or "").strip() or None,
@@ -168,6 +195,7 @@ def save_item(database, item, user_id):
             if "brand" in item: db.execute("UPDATE inventory_items SET brand=? WHERE id=?", (brand, saved))
         else:
             saved = db.execute("INSERT INTO inventory_items(sku,name,unit,category,reorder_level,sales_price,active,notes,barcode,subcategory,supplier_id,location,default_vat,cost_account,created_at,brand) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values + (utcnow(), brand)).lastrowid
+        db.execute("UPDATE inventory_items SET stock_account=? WHERE id=?", (stock_account, saved))
         db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "save", "inventory_item", saved, json.dumps({"sku": sku}), utcnow()))
     return next(i for i in list_items(database) if i["id"] == saved)
 
@@ -895,21 +923,50 @@ def stock_value(database, date_to, method=None):
 
 
 def post_stock_variation(database, year, user_id):
-    """Periodic method: cancel the opening stock (Dr 6051 / Cr 37) and book the closing stock (Dr 37 / Cr 6052)."""
+    """Periodic method: cancel the opening stock (Dr 6051 / Cr 37) and book the closing stock (Dr 37 / Cr 6052).
+    2.9.79: done for each stock account used by the items, with its own variation accounts
+    (37 -> 6051 / 6052, 31 -> 6151 / 6152, 33 -> 7211, 35 -> 7255)."""
     year = int(year); inv = settings(database); currency = inv["currency"]
     with database.connect() as db:
         for row in db.execute("SELECT id FROM journal_entries WHERE source_type='journal_voucher' AND voucher_type='06' AND description LIKE ?", (f"STOCK VARIATION - {year}%",)).fetchall():
             db.execute("DELETE FROM journal_entries WHERE id=?", (row["id"],))
-    # The stock already in the ledger (account 37 at year end, before this voucher) is cancelled; the counted closing stock replaces it.
-    opening = _ledger_stock(database, f"{year}-12-31", currency); closing = stock_value(database, f"{year}-12-31")
-    if not opening and not closing: return {"year": year, "opening": 0.0, "closing": 0.0, "voucher": None}
-    lines = []
-    if opening > 0: lines += [{"account_code": OPENING_ACCOUNT, "line_currency": currency, "side": "D", "amount": str(opening)}, {"account_code": STOCK_ACCOUNT, "line_currency": currency, "side": "C", "amount": str(opening)}]
-    elif opening < 0: lines += [{"account_code": STOCK_ACCOUNT, "line_currency": currency, "side": "D", "amount": str(-opening)}, {"account_code": OPENING_ACCOUNT, "line_currency": currency, "side": "C", "amount": str(-opening)}]
-    if closing: lines += [{"account_code": STOCK_ACCOUNT, "line_currency": currency, "side": "D", "amount": str(closing)}, {"account_code": CLOSING_ACCOUNT, "line_currency": currency, "side": "C", "amount": str(closing)}]
-    voucher = database.save_journal_voucher({"entry_date": f"31-12-{year}", "description": f"STOCK VARIATION - {year}: opening {opening:,.2f} / closing {closing:,.2f} {currency}",
+        accounts = {r["id"]: (r["stock_account"] or STOCK_ACCOUNT) for r in db.execute("SELECT id,stock_account FROM inventory_items")}
+    # The stock already in the ledger (at year end, before this voucher) is cancelled; the counted closing stock replaces it.
+    state = run_costing(database, f"{year}-12-31")
+    groups = {STOCK_ACCOUNT: {"opening": ZERO, "closing": ZERO}}
+    for item_id, data in state.items():
+        group = groups.setdefault(accounts.get(item_id, STOCK_ACCOUNT), {"opening": ZERO, "closing": ZERO}); group["closing"] += data["value"]
+    keys = sorted(groups, key=len, reverse=True)
+    for code, balance in _ledger_stock_accounts(database, f"{year}-12-31", currency).items():
+        owner = next((key for key in keys if code.startswith(key)), None)
+        if owner: groups[owner]["opening"] += balance  # a stock account no item uses (other than 37) is left as it is
+    lines = []; total_opening = total_closing = ZERO; detail = []
+    for stock, group in sorted(groups.items()):
+        opening = group["opening"].quantize(Decimal("0.01")); closing = group["closing"].quantize(Decimal("0.01"))
+        if not opening and not closing: continue
+        _cost, opening_account, closing_account, _note = stock_link(stock)
+        if opening > 0: lines += [{"account_code": opening_account, "line_currency": currency, "side": "D", "amount": str(opening)}, {"account_code": stock, "line_currency": currency, "side": "C", "amount": str(opening)}]
+        elif opening < 0: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(-opening)}, {"account_code": opening_account, "line_currency": currency, "side": "C", "amount": str(-opening)}]
+        if closing: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(closing)}, {"account_code": closing_account, "line_currency": currency, "side": "C", "amount": str(closing)}]
+        total_opening += opening; total_closing += closing
+        detail.append({"stock_account": stock, "opening_account": opening_account, "closing_account": closing_account, "opening": float(opening), "closing": float(closing)})
+    if not lines: return {"year": year, "opening": 0.0, "closing": 0.0, "voucher": None, "groups": []}
+    voucher = database.save_journal_voucher({"entry_date": f"31-12-{year}", "description": f"STOCK VARIATION - {year}: opening {total_opening:,.2f} / closing {total_closing:,.2f} {currency}",
                                              "currency": currency, "voucher_type": "06"}, lines, user_id)
-    return {"year": year, "opening": float(opening), "closing": float(closing), "variation": float(closing - opening), "voucher": voucher["voucher"]["entry_number"]}
+    return {"year": year, "opening": float(total_opening), "closing": float(total_closing), "variation": float(total_closing - total_opening),
+            "voucher": voucher["voucher"]["entry_number"], "groups": detail}
+
+
+def _ledger_stock_accounts(database, date_to, currency):
+    """2.9.79: the stock in the ledger at date_to by class 3 account (39 provisions excluded)."""
+    from ledger_reports import _load_lines, _digits
+    column = currency if currency in ("LBP", "USD") else "account"; totals = {}
+    for row in _load_lines(database, {"posting_status": "posted"}):
+        code = _digits(row["code"])
+        if not code.startswith("3") or code.startswith("39") or row["iso_date"] > date_to: continue
+        if column == "account" and row["account_currency"] != currency: continue
+        totals[code] = totals.get(code, ZERO) + row["signed"][column]
+    return {code: value.quantize(Decimal("0.01")) for code, value in totals.items() if value}
 
 
 def _ledger_stock(database, date_to, currency):
@@ -938,6 +995,10 @@ def carry_forward(source, target, year, user_id):
             db.execute("""INSERT INTO inventory_items(id,sku,name,unit,quantity,average_cost,category,reorder_level,sales_price,active,notes,barcode,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET sku=excluded.sku,name=excluded.name,unit=excluded.unit,category=excluded.category,reorder_level=excluded.reorder_level,sales_price=excluded.sales_price,active=excluded.active""",
                 (i["id"], i["sku"], i["name"], i["unit"], "0", "0", i.get("category"), i.get("reorder_level") or "0", i.get("sales_price") or "0", i.get("active", 1), i.get("notes"), i.get("barcode"), i.get("created_at")))
+            # 2.9.79: the item keeps its stock and cost accounts in the new year
+            target_columns = {row["name"] for row in db.execute("PRAGMA table_info(inventory_items)")}
+            for column in ("stock_account", "cost_account"):
+                if column in target_columns and i.get(column): db.execute(f"UPDATE inventory_items SET {column}=? WHERE id=?", (i[column], i["id"]))
         for old in db.execute("SELECT id FROM stock_documents WHERE doc_type='opening' AND number LIKE ?", (f"OPN-{year}-%",)).fetchall():
             db.execute("DELETE FROM stock_movements WHERE document_id=?", (old["id"],)); db.execute("DELETE FROM stock_documents WHERE id=?", (old["id"],))
     created = []

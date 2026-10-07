@@ -1022,16 +1022,18 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
             if event and event.keysym in ("Tab","Return","Escape","Up","Down"): return
             typed=variable.get().strip()
             box["values"]=[f'{row["code"]} - {row["name_en"]}' for row in matches(typed)] if typed else choices
+        def label(code):  # 2.9.79: the field shows "number - name"; the number alone is what is saved
+            name=next((row["name_en"] for row in accounts if str(row["code"])==code),None)
+            return f"{code} - {name}" if name else code
         def choose(event=None):
             value=variable.get().strip(); code=value.split(" - ",1)[0].strip()
             if not value: return
-            if code.isdigit() and (code in {str(row["code"]) for row in accounts} or " - " in value):
-                variable.set(code)
-            elif code.isdigit():
-                variable.set(code)  # allow an existing legacy code absent from the current chart
+            if code.isdigit():
+                shown=label(code)  # an existing legacy code absent from the current chart stays as typed
+                if variable.get()!=shown: variable.set(shown)
             else:
                 found=matches(value)
-                if len(found)==1: variable.set(str(found[0]["code"]))
+                if len(found)==1: variable.set(label(str(found[0]["code"])))
                 elif event and event.keysym in ("Tab","Return"):
                     box.bell(); return "break"
             if event and event.keysym=="Return":
@@ -1054,6 +1056,13 @@ class SaberApp(ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, 
         box._f2=lambda: self.open_account_lookup(variable,include_groups=True)
         box.bind("<F2>",lambda _event: (box._f2(),"break")[1])
         box._account_var=variable  # right-click opens the account search for this field
+        def show_name(*_args):  # 2.9.79: a number filled in by the program gets its name too (not while typing)
+            try:
+                if not box.winfo_exists() or box.focus_get()==box: return
+            except (tk.TclError, KeyError): return
+            value=variable.get().strip()
+            if value.isdigit() and label(value)!=value: variable.set(label(value))
+        variable.trace_add("write",show_name); show_name()
         return box
 
     def open_active_account_lookup(self,event=None):

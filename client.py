@@ -264,6 +264,9 @@ class ApiClient:
     def fiscal_year_profit_loss(self,year,from_date=None,to_date=None,currency=None):
         query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
         return self.request("GET",f"/api/fiscal-year/profit-loss?{query}")["items"]
+    def fiscal_year_cash_flow(self,year,from_date=None,to_date=None,currency=None):
+        query=urlencode({k:v for k,v in {"year":year,"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
+        return self.request("GET",f"/api/fiscal-year/cash-flow?{query}")["items"]
     def fiscal_year_balance_sheet(self,year,to_date=None,currency=None):
         query=urlencode({k:v for k,v in {"year":year,"to_date":to_date,"currency":currency}.items() if v})
         return self.request("GET",f"/api/fiscal-year/balance-sheet?{query}")["items"]
@@ -331,6 +334,12 @@ class ApiClient:
             "credit_brought_forward":credit_brought_forward,"refund_requested":refund_requested}.items() if v not in (None,"")})
         return self.request("GET",f"/api/vat-return?{query}")
     def vat_returns(self): return self.request("GET","/api/vat-returns")["items"]
+    def vat_check(self,year,quarter,credit_brought_forward=None,refund_requested=None,payable_account=None,credit_account=None,non_deductible_account=None):
+        query=urlencode({k:v for k,v in {"year":year,"quarter":quarter,"credit_brought_forward":credit_brought_forward,"refund_requested":refund_requested,
+            "payable_account":payable_account,"credit_account":credit_account,"non_deductible_account":non_deductible_account}.items() if v not in (None,"")})
+        return self.request("GET",f"/api/vat-return/check?{query}")
+    def post_vat_settlement(self,year,quarter,payable_account=None,credit_account=None,non_deductible_account=None):
+        return self.request("POST","/api/vat-return/settle",{"year":year,"quarter":quarter,"payable_account":payable_account,"credit_account":credit_account,"non_deductible_account":non_deductible_account})
     def add_vat_adjustment(self,item): return self.request("POST","/api/vat-return/adjustments",item)
     def delete_vat_adjustment(self,adjustment_id): return self.request("DELETE",f"/api/vat-return/adjustments/{adjustment_id}")
     def save_vat_return(self,year,quarter,credit_brought_forward=None,refund_requested=None):

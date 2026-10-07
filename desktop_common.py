@@ -367,6 +367,31 @@ def vat_rate_text(app):
     return f"{vat_rate(app):g}%"
 
 
+def account_names(app):
+    """2.9.79: {account number: name} of the open company, read once (Chart of Accounts changes clear it)."""
+    names = getattr(app, "_all_accounts", None)
+    if not isinstance(names, dict) or not names:
+        try: names = {str(a["code"]): a.get("name_en") or "" for a in app.client.accounts()}
+        except Exception: names = {}
+        if names:
+            try: app._all_accounts = names
+            except Exception: pass
+    return names or {}
+
+
+def account_label(app, value):
+    """2.9.79: an account is always shown as 'number - name' (lists, sheets, forms). Text already labelled is kept."""
+    text = str(value or "").strip()
+    if not text or " - " in text: return text
+    name = account_names(app).get(text)
+    return f"{text} - {name}" if name else text
+
+
+def account_code(value):
+    """The account number of 'number - name' (or of a bare number)."""
+    return str(value or "").split(" - ", 1)[0].strip()
+
+
 def vat_currency(app, which=1):
     """2.9.72: the currencies of the VAT return: 1 = LBP in Lebanon (AED, EUR ... elsewhere), 2 = the one shown next to it (USD)."""
     values = company_settings(app)

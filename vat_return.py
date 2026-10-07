@@ -382,6 +382,148 @@ def reopen_return(db, year, quarter, user_id):
     return {"reopened": True}
 
 
+# ---------------------------------------------------------------- 2.9.79: check against the books, settlement voucher
+SETTLEMENT_PREFIX = "VAT SETTLEMENT - "
+SETTLEMENT_DEFAULTS = {"payable_account": "4425", "credit_account": "4429", "non_deductible_account": "6459"}
+_SETTLEMENT_CODES = ("4425", "4428", "4429")  # VAT payable / to recover: balances of the settlement, not VAT of the quarter
+
+
+def vat_account_role(code):
+    """'output' (4427...), 'input' (other 442 accounts: 44210, 44211, 44216, 442660000 ...) or None (not a VAT account of the quarter)."""
+    digits = "".join(ch for ch in str(code or "") if ch.isdigit())
+    if not digits.startswith("442") or digits.startswith(_SETTLEMENT_CODES): return None
+    return "output" if digits.startswith("4427") else "input"
+
+
+def _quarter_vat_lines(db, result):
+    """Posted journal lines on the VAT accounts in the quarter, in the VAT currency (settlement vouchers left out)."""
+    from ledger_reports import _load_lines
+    vc = result.get("vat_currency") or "LBP"
+    rows = _load_lines(db, {"first_column": vc, "second_column": "none", "posting_status": "posted"})
+    with db.connect() as connection:
+        sources = {row["id"]: (row["source_type"], row["source_id"]) for row in connection.execute("SELECT id,source_type,source_id FROM journal_entries")}
+    lines = []
+    for row in rows:
+        role = vat_account_role(row["code"])
+        if not role or not result["date_from"] <= row["iso_date"] <= result["date_to"]: continue
+        if str(row.get("entry_description") or "").startswith(SETTLEMENT_PREFIX): continue
+        amount = Decimal(str(row["signed"].get(vc) if row["signed"].get(vc) is not None else 0))
+        lines.append({**row, "role": role, "value": amount, "source": sources.get(row["entry_id"], (None, None))})
+    return lines
+
+
+def ledger_check(db, result):
+    """The quarterly return against the books: VAT accounts of the quarter (number - name), the return's output and deductible VAT
+    against the ledger, and the documents whose VAT in the books differs from the VAT on the document."""
+    vc = result.get("vat_currency") or "LBP"; rnd = _lbp if vc == "LBP" else _money; tolerance = Decimal("1") if vc == "LBP" else CENT
+    lines = _quarter_vat_lines(db, result)
+    with db.connect() as connection:
+        names = {row["code"]: row["name_en"] for row in connection.execute("SELECT code,name_en FROM accounts")}
+    by_account = {}
+    for line in lines:
+        values = by_account.setdefault(str(line["code"]), {"role": line["role"], "debit": ZERO, "credit": ZERO})
+        if line["value"] >= 0: values["debit"] += line["value"]
+        else: values["credit"] -= line["value"]
+    account_rows = []
+    for code, values in sorted(by_account.items()):
+        net = values["debit"] - values["credit"]
+        account_rows.append([f"{code} - {names.get(code, '')}", "Output VAT" if values["role"] == "output" else "Deductible VAT", rnd(values["debit"]), rnd(values["credit"]), rnd(net)])
+    ledger_output = sum((v["credit"] - v["debit"] for v in by_account.values() if v["role"] == "output"), ZERO)
+    ledger_input = sum((v["debit"] - v["credit"] for v in by_account.values() if v["role"] == "input"), ZERO)
+    totals = {}
+    for values in result["per_currency"].values():
+        for key in ("sales", "reverse_output", "purchases", "assets", "expenses", "customs"):
+            totals[key] = totals.get(key, ZERO) + values[key]["vat_lbp"]
+    return_output = totals.get("sales", ZERO); return_input = sum((totals.get(k, ZERO) for k in ("purchases", "assets", "expenses", "customs")), ZERO)
+    compare = [["Output VAT on sales (return B: sales VAT)", rnd(return_output), rnd(ledger_output), rnd(return_output - ledger_output)],
+               ["Deductible VAT before the partial deduction (return C1-C4)", rnd(return_input), rnd(ledger_input), rnd(return_input - ledger_input)]]
+    # documents: VAT on the document against the VAT lines of its journal entry
+    posted = {}
+    for line in lines:
+        source_type, source_id = line["source"]
+        if source_type in ("invoice", "expense") and source_id is not None:
+            sign = -1 if line["role"] == "output" else 1
+            posted[(source_type, int(source_id))] = posted.get((source_type, int(source_id)), ZERO) + line["value"] * sign
+    differences = []
+    for doc in result["documents"]:
+        if doc["category"] != "sales" and (not doc["recoverable"] or doc.get("use") == "exempt"): continue  # blocked VAT is part of the cost
+        expected = doc["vat_lbp"]; booked = posted.pop((doc["source"], int(doc["id"])), ZERO)
+        if doc.get("treatment") == "reverse_charge": continue
+        if abs(expected - booked) >= tolerance:
+            differences.append([display_date(doc["date"]), doc["number"], doc["party"], CATEGORIES[doc["category"]], rnd(expected), rnd(booked), rnd(expected - booked)])
+    with db.connect() as connection:
+        numbers = {("invoice", row["id"]): (row["invoice_number"], row["invoice_date"]) for row in connection.execute("SELECT id,invoice_number,invoice_date FROM invoices")}
+    for (source_type, source_id), booked in sorted(posted.items(), key=lambda item: str(item[0])):  # VAT booked by documents that are not on the return
+        if abs(booked) < tolerance: continue
+        number, day = numbers.get((source_type, source_id), (f"{source_type} {source_id}", ""))
+        differences.append([display_date(day) if day else "", number, "(not on the return: status, date or currency filter)", "", ZERO, rnd(booked), rnd(-booked)])
+    other = rnd(sum((line["value"] if line["role"] == "input" else -line["value"] for line in lines if line["source"][0] not in ("invoice", "expense")), ZERO))
+    sections = [{"heading": f"VAT accounts in the books - Q{result['quarter']} {result['year']} ({vc})", "headers": ["Account", "Kind", "Debit", "Credit", "Net (Dr + / Cr -)"],
+                 "rows": account_rows or [["No VAT account movement in the quarter", "", "", "", ""]], "total_rows": []},
+                {"heading": "Return against the books", "headers": ["Item", f"Return ({vc})", f"Books ({vc})", "Difference"], "rows": compare, "total_rows": []},
+                {"heading": "Documents to check (VAT on the document is not the VAT in its journal entry)",
+                 "headers": ["Date", "Document", "Customer / Supplier", "Category", f"VAT document ({vc})", f"VAT books ({vc})", "Difference"],
+                 "rows": differences or [["Every document agrees with the books", "", "", "", "", "", ""]], "total_rows": []}]
+    notes = [f"Vouchers and other entries on the VAT accounts (not invoices / expenses): {other:,.2f} {vc} net debit." if other else "",
+             "Manual adjustments, the partial deduction (Art. 31) and the credit brought forward are on the return only: they are not differences."]
+    agreed = all(abs(Decimal(str(row[3]))) < tolerance for row in compare) and not differences
+    return {"sections": sections, "agreed": agreed, "notes": [n for n in notes if n], "ledger_output": ledger_output, "ledger_input": ledger_input,
+            "return_output": return_output, "return_input": return_input, "documents_to_check": len(differences)}
+
+
+def settlement_lines(db, result, payable_account=None, credit_account=None, non_deductible_account=None):
+    """Quarter-end VAT settlement voucher: the VAT accounts of the quarter are closed (Dr output / Cr deductible, as in the books),
+    the VAT that the partial deduction makes non-deductible goes to an expense, the credit brought forward is used,
+    and the rest is VAT payable (Cr 4425) or VAT to recover (Dr 4429)."""
+    vc = result.get("vat_currency") or "LBP"; rnd = _lbp if vc == "LBP" else _money
+    payable_account = str(payable_account or SETTLEMENT_DEFAULTS["payable_account"]).split(" - ", 1)[0].strip()
+    credit_account = str(credit_account or SETTLEMENT_DEFAULTS["credit_account"]).split(" - ", 1)[0].strip()
+    non_deductible_account = str(non_deductible_account or SETTLEMENT_DEFAULTS["non_deductible_account"]).split(" - ", 1)[0].strip()
+    if not payable_account.startswith("44") or not credit_account.startswith("44"): raise ValueError("VAT payable and VAT to recover must be class 44 accounts (4425 / 4429)")
+    if not non_deductible_account.startswith("6"): raise ValueError("Non-deductible VAT goes to an expense account (class 6)")
+    balances = {}
+    for line in _quarter_vat_lines(db, result):
+        balances[str(line["code"])] = balances.get(str(line["code"]), ZERO) + line["value"]
+    lines = []
+    def add(code, amount, note):
+        amount = rnd(amount)
+        if amount > 0: lines.append({"account_code": code, "line_currency": vc, "side": "D", "amount": str(amount), "description": note})
+        elif amount < 0: lines.append({"account_code": code, "line_currency": vc, "side": "C", "amount": str(-amount), "description": note})
+    for code, balance in sorted(balances.items()): add(code, -balance, "VAT of the quarter closed")
+    totals = result["totals_lbp"]
+    blocked = -(totals.get("prorata", ZERO) + totals.get("annual_adjustment", ZERO))  # prorata is negative: VAT that is not deductible
+    if blocked: add(non_deductible_account, blocked, "VAT not deductible (Art. 31)")
+    net = sum((Decimal(line["amount"]) * (1 if line["side"] == "D" else -1) for line in lines), ZERO)  # debit left to balance = VAT owed (+) / credit (-)
+    credit_bf = rnd(result.get("credit_brought_forward_lbp") or ZERO)
+    if net > 0:
+        used = min(credit_bf, net)
+        if used: add(credit_account, -used, "Credit brought forward used")
+        add(payable_account, -(net - used), "VAT payable to the Ministry of Finance")
+    elif net < 0: add(credit_account, -net, "VAT credit to recover / carry forward")
+    with db.connect() as connection:
+        names = {row["code"]: row["name_en"] for row in connection.execute("SELECT code,name_en FROM accounts")}
+    for line in lines:
+        if line["account_code"] not in names: raise ValueError(f"Account {line['account_code']} was not found in the chart of accounts")
+        line["account_name"] = names[line["account_code"]]
+    payable = sum((Decimal(l["amount"]) for l in lines if l["account_code"] == payable_account and l["side"] == "C"), ZERO)
+    return {"lines": lines, "payable": payable, "net": net, "return_payable": result["payable_lbp"], "currency": vc,
+            "date": result["date_to"], "description": f"{SETTLEMENT_PREFIX}Q{result['quarter']} {result['year']}"}
+
+
+def post_settlement(db, year, quarter, user_id, previous_year_db=None, payable_account=None, credit_account=None, non_deductible_account=None):
+    """Post (or replace) the settlement voucher of a SAVED quarterly return."""
+    result = build_vat_return(db, year, quarter, None, False, previous_year_db)
+    if not result["saved"] or result["changed_since_saved"]: raise ValueError(f"Save the Q{int(quarter)} {int(year)} VAT return first (documents changed after saving count as not saved)")
+    plan = settlement_lines(db, result, payable_account, credit_account, non_deductible_account)
+    if len(plan["lines"]) < 2: raise ValueError("Nothing to settle: no VAT movement in the quarter")
+    with db.connect() as connection:
+        for row in connection.execute("SELECT id FROM journal_entries WHERE source_type='journal_voucher' AND description=?", (plan["description"],)).fetchall():
+            connection.execute("DELETE FROM journal_entries WHERE id=?", (row["id"],))
+    voucher = db.save_journal_voucher({"entry_date": display_date(plan["date"]), "description": plan["description"], "currency": plan["currency"], "voucher_type": "06"},
+                                      [{k: v for k, v in line.items() if k != "account_name"} for line in plan["lines"]], user_id)
+    return {**plan, "voucher": voucher["voucher"]["entry_number"]}
+
+
 def export_sections(result):
     """Export an internal VAT calculation schedule plus supporting documents."""
     title = f"Quarterly VAT Calculation Schedule - Q{result['quarter']} {result['year']} | {ARABIC_TITLE}"

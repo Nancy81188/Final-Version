@@ -18,6 +18,17 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from database import Database, iso_date
+
+
+def _account_codes(value, key=""):
+    """2.9.79: the screens show every account as 'number - name'; what is saved is the number alone.
+    Any field named ...account / ...account_code / account_from / account_to keeps only the number."""
+    if isinstance(value, dict): return {k: _account_codes(v, str(k)) for k, v in value.items()}
+    if isinstance(value, list): return [_account_codes(v, key) for v in value]
+    if isinstance(value, str) and " - " in value and key.endswith(("account", "account_code", "account_from", "account_to")):
+        code = value.split(" - ", 1)[0].strip()
+        if code and code.replace(".", "").isdigit(): return code
+    return value
 from company_manager import CompanyManager
 from payroll_reports import build_payroll_report, json_ready as payroll_json
 import ledger_reports
@@ -83,7 +94,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         if raw is None:
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length > 0 else b""; self._raw_body = raw
-        return json.loads(raw or b"{}")
+        return _account_codes(json.loads(raw or b"{}"))
 
     def _user(self):
         auth = self.headers.get("Authorization", "")
@@ -317,6 +328,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,vat_return.json_ready(result))
         if path == "/api/vat-returns": return self._json(200,{"items":vat_return.list_saved_returns(self.db)})
+        if path == "/api/vat-return/check":  # 2.9.79: the return against the books + the settlement voucher it would post
+            try:
+                year=self._query(parsed,"year"); result=vat_return.build_vat_return(self.db,year,self._query(parsed,"quarter"),None,False,self._previous_year_db(year),
+                    self._query(parsed,"credit_brought_forward"),self._query(parsed,"refund_requested"))
+                check=vat_return.ledger_check(self.db,result)
+                try: check["settlement"]=vat_return.settlement_lines(self.db,result,self._query(parsed,"payable_account"),self._query(parsed,"credit_account"),self._query(parsed,"non_deductible_account"))
+                except ValueError as exc: check["settlement_error"]=str(exc)
+                check.update(saved=bool(result["saved"]) and not result["changed_since_saved"],payable=result["payable_lbp"],credit_carried_forward=result["credit_carried_forward_lbp"],vat_currency=result["vat_currency"])
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+            return self._json(200,vat_return.json_ready(check))
         if path == "/api/alerts/documents":
             try: return self._json(200,self.db.legal_document_alerts(int(self._query(parsed,"days","30"))))
             except Exception as exc: return self._json(400,{"error":str(exc)})
@@ -327,6 +348,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if not company_id: raise ValueError("Select a company first")
                 year_db=self.company_manager.database(company_id,year)
                 return self._json(200,{"items":year_db.journal(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0]),"year":year,"read_only":True})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/fiscal-year/cash-flow":  # 2.9.79: cash flow of any fiscal year (its own file when kept per year)
+            try:
+                year=int(self._query(parsed,"year")); year_db=self._year_db(year)
+                return self._json(200,{"items":year_db.cash_flow(self._query(parsed,"from_date"),self._query(parsed,"to_date"),self._query(parsed,"currency")),"year":year})
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path in ("/api/fiscal-year/profit-loss", "/api/fiscal-year/balance-sheet"):
             try:
@@ -643,6 +669,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 year=body.get("year"); result=vat_return.save_return(self.db,year,body.get("quarter"),user["id"],self._previous_year_db(year),body.get("credit_brought_forward"),user["username"],body.get("refund_requested"))
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,vat_return.json_ready(result))
+        if path == "/api/vat-return/settle":  # 2.9.79: post the settlement voucher of a saved return
+            try:
+                year=body.get("year"); result=vat_return.post_settlement(self.db,year,body.get("quarter"),user["id"],self._previous_year_db(year),
+                    body.get("payable_account"),body.get("credit_account"),body.get("non_deductible_account"))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+            return self._json(201,vat_return.json_ready(result))
         if path == "/api/vat-return/reopen":
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             try: result=vat_return.reopen_return(self.db,body.get("year"),body.get("quarter"),user["id"])

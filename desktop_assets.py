@@ -1,6 +1,7 @@
 """Assets & Depreciation: 1. asset accounts with depreciation %, 2. data entry (existing form + category), 3. monthly depreciation table."""
 from __future__ import annotations
 from desktop_common import add_search_bar  # 2.9.78
+from desktop_common import account_label  # 2.9.79
 
 import tkinter as tk
 from datetime import datetime
@@ -30,7 +31,7 @@ class AssetsMixin:
         tk.Button(bar, text="Delete", command=self.delete_asset_account, bg=RED, fg="white", border=0, padx=12, pady=5).pack(side="left", padx=2)
         tk.Label(bar, text="Example: 2244 Vehicles 20% - expense 681 - accumulated 2824. Double-click a line to change it.", bg=LIGHT, fg="#5f6b76").pack(side="left", padx=10)
         self.ac_tree = self.table(page, [("code", "Asset Account", 110), ("name", "Name", 230), ("rate", "Depreciation %", 110), ("years", "Useful Life", 90),
-                                         ("dep", "Expense Account", 120), ("acc", "Accumulated Account", 140)])
+                                         ("dep", "Expense Account", 220), ("acc", "Accumulated Account", 240)])
         self.ac_tree.bind("<Double-1>", lambda _e: self.edit_asset_account())
         self.load_asset_accounts()
 
@@ -41,7 +42,7 @@ class AssetsMixin:
             self.ac_tree.delete(*self.ac_tree.get_children())
             for c in self.asset_categories_rows:
                 rate = float(c["annual_rate"]); self.ac_tree.insert("", "end", iid=c["account_code"], values=(c["account_code"], c["name"], f"{rate:g}%", f"{100 / rate:g} years",
-                                                                                                            c["depreciation_account"], c["accumulated_account"]))
+                                                                                                            account_label(self, c["depreciation_account"]), account_label(self, c["accumulated_account"])))
         labels = [f'{c["account_code"]} - {c["name"]} ({float(c["annual_rate"]):g}%)' for c in self.asset_categories_rows]
         for name in ("asset_category_box", "dt_account_box"):
             box = getattr(self, name, None)

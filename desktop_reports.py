@@ -366,6 +366,25 @@ class ReportsMixin:
         tk.Label(long_cash_bar,text="Uses \"Report year\" above as the base year; compounds the growth % each year ahead.",bg=LIGHT,fg=NAVY).pack(side="left",padx=10)
         self.cash_long_tree=self.table(cash_outlook,[("year","Year",70),("up_to","Up to",100),("currency","Currency",85),("source","Source",85),
             ("inflow","Inflow",130),("outflow","Outflow",130),("net","Net cash movement",150)])
+        # 2.9.79: cash budget month by month - choose the base year and the % of cash in / cash out
+        cash_budget_page=tk.Frame(nested,bg=LIGHT); nested.insert(nested.index(cash_outlook)+1,cash_budget_page,text="Cash Budget")
+        budget_bar=tk.LabelFrame(cash_budget_page,text="Cash Budget - from a year + %",bg=LIGHT,padx=8,pady=4); budget_bar.pack(fill="x",padx=10,pady=(8,4))
+        fiscal=int(self.current_fiscal_year)
+        self.cash_budget_base=tk.StringVar(value=str(fiscal-1)); self.cash_budget_year=tk.StringVar(value=str(fiscal))
+        self.cash_budget_in=tk.StringVar(value="10"); self.cash_budget_out=tk.StringVar(value="5")
+        years=[str(y) for y in range(fiscal-6,fiscal+6)]
+        for label,var,values in (("Base year (actual)",self.cash_budget_base,years[:7]),("Cash budget year",self.cash_budget_year,years[1:])):
+            tk.Label(budget_bar,text=label,bg=LIGHT,fg=NAVY).pack(side="left")
+            ttk.Combobox(budget_bar,textvariable=var,values=values,width=6).pack(side="left",padx=(4,12))
+        for label,var in (("Cash in %",self.cash_budget_in),("Cash out %",self.cash_budget_out)):
+            tk.Label(budget_bar,text=label,bg=LIGHT,fg=NAVY).pack(side="left"); tk.Entry(budget_bar,textvariable=var,width=6).pack(side="left",padx=(4,12))
+        tk.Button(budget_bar,text="Build Cash Budget",command=self.build_cash_budget,bg=GOLD,fg=NAVY,border=0,padx=14,pady=5,font=("Segoe UI",9,"bold")).pack(side="left",padx=3)
+        for label,mode in (("Excel","xlsx"),("PDF","pdf")):
+            self.action_button(budget_bar,label,lambda fmt=mode:self.export_cash_budget(fmt)).pack(side="left",padx=2)
+        self.cash_budget_info=tk.Label(cash_budget_page,text="Each month of the base year x (1 + %) per year ahead; opening cash = class 5 at the end of the base year (+ the years in between).",
+                                       bg=LIGHT,fg=NAVY,anchor="w"); self.cash_budget_info.pack(fill="x",padx=12)
+        self.cash_budget_tree=self.table(cash_budget_page,[("month","Month",110),("currency","Currency",80),("opening","Opening cash",140),("inflow","Cash in",130),
+            ("outflow","Cash out",130),("net","Net",130),("closing","Closing cash",140)])
         ageing_controls=tk.Frame(aging,bg=LIGHT); ageing_controls.pack(fill="x",padx=8,pady=4)
         self.ageing_kind=tk.StringVar(value="Customers & Suppliers")
         tk.Label(ageing_controls,text="Show",bg=LIGHT).pack(side="left")
@@ -559,6 +578,52 @@ class ReportsMixin:
         for row in self.cash_projection_rows:
             self.cash_projection_tree.insert("","end",values=(row["month"],row["status"],row["currency"],
                 f'{row["inflow"]:,.2f}',f'{row["outflow"]:,.2f}',f'{row["net"]:,.2f}'))
+
+    def build_cash_budget(self):
+        """2.9.79: monthly cash budget of the chosen year from the base year's cash flow and the % typed."""
+        from financial_projection import cash_budget, month_range
+        try:
+            base=int(self.cash_budget_base.get()); target=int(self.cash_budget_year.get())
+            cash_budget({},0,base,target,self.cash_budget_in.get(),self.cash_budget_out.get())  # checks the years and the %
+        except ValueError as exc: return messagebox.showwarning("Cash Budget",str(exc))
+        currency=None if self.view_currency.get()=="All Currencies" else self.view_currency.get()
+        flows={}; opening={}
+        try:
+            for month in range(1,13):
+                start,end=month_range(base,month)
+                try: rows=self.client.fiscal_year_cash_flow(base,start,end,currency)
+                except Exception: rows=self.client.cash_flow(start,end,currency)
+                for row in rows:
+                    values=flows.setdefault(row["currency"],{}).setdefault(month,{"inflow":0.0,"outflow":0.0})
+                    values["inflow"]+=float(row["inflow"] or 0); values["outflow"]+=float(row["outflow"] or 0)
+            try: balance=self.client.fiscal_year_balance_sheet(base,f"{base}-12-31",currency)
+            except Exception: balance=self.client.balance_sheet(f"{base}-12-31",currency)
+            for row in balance:
+                if str(row.get("code") or "").startswith("5"):
+                    code=row.get("currency") or currency or "USD"; opening[code]=opening.get(code,0.0)+float(row.get("balance") or 0)
+        except Exception as exc: return messagebox.showerror("Cash Budget",str(exc))
+        if not flows: return messagebox.showwarning("Cash Budget",f"No cash movement in {base} to build the cash budget from")
+        self.cash_budget_rows=[]; notes=[]
+        for code in sorted(flows):
+            result=cash_budget(flows[code],opening.get(code,0.0),base,target,self.cash_budget_in.get(),self.cash_budget_out.get())
+            self.cash_budget_rows+= [{**row,"currency":code} for row in result["rows"]]
+            self.cash_budget_rows.append({"month":f"{target} total","currency":code,"opening":result["opening"],**result["totals"],"closing":result["closing"]})
+            notes.append(f"{code}: lowest cash {result['lowest']['closing']:,.2f} in {result['lowest']['month']}"+("  - NEGATIVE, plan financing" if result["lowest"]["closing"]<0 else ""))
+        self.cash_budget_tree.delete(*self.cash_budget_tree.get_children())
+        for row in self.cash_budget_rows:
+            self.cash_budget_tree.insert("","end",values=(row["month"],row["currency"],f'{row["opening"]:,.2f}',f'{row["inflow"]:,.2f}',f'{row["outflow"]:,.2f}',f'{row["net"]:,.2f}',f'{row["closing"]:,.2f}'))
+        self.cash_budget_info.config(text=f"Cash budget {target} from {base} actuals: cash in {self.cash_budget_in.get()}%, cash out {self.cash_budget_out.get()}% per year.   "+"   |   ".join(notes),
+                                     fg="#8B1E1E" if any("NEGATIVE" in n for n in notes) else NAVY)
+
+    def export_cash_budget(self,format_name):
+        rows=getattr(self,"cash_budget_rows",None)
+        if not rows: return messagebox.showwarning("Cash Budget","Build the cash budget first")
+        sections=[{"heading":"Cash budget by month","headers":["Month","Currency","Opening cash","Cash in","Cash out","Net","Closing cash"],
+                   "rows":[[r["month"],r["currency"],r["opening"],r["inflow"],r["outflow"],r["net"],r["closing"]] for r in rows],
+                   "total_rows":[i for i,r in enumerate(rows) if str(r["month"]).endswith("total")]}]
+        meta=[f"Base year: {self.cash_budget_base.get()} actual cash flow",f"Cash in: {self.cash_budget_in.get()}% per year   Cash out: {self.cash_budget_out.get()}% per year",
+              "Opening cash = class 5 accounts at the end of the base year (+ the projected years in between). A budget is an estimate."]
+        self.save_sections(f"Cash Budget {self.cash_budget_year.get()}",meta,sections,f"Cash_Budget_{self.cash_budget_year.get()}",format_name)
 
     def _parse_growth_by_year(self,text):
         """Parse 'YYYY=rate%' pairs (comma/semicolon separated) into {year: decimal_rate}. Empty -> {}."""

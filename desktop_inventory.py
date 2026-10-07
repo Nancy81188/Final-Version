@@ -7,6 +7,7 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
+from desktop_common import account_names, account_label, account_code  # 2.9.79
 
 from desktop_brains import EditableSheet
 from multi_select import MultiSelect, chosen_values
@@ -87,25 +88,32 @@ class InventoryMixin:
     # ------------------------------------------------------------ items
     def build_items_page(self, page):
         form = tk.LabelFrame(page, text="Item", bg=LIGHT, padx=8, pady=5); form.pack(fill="x", padx=8, pady=6)
-        self.item_id = None; self.item_vars = {k: tk.StringVar() for k in ("sku", "name", "unit", "category", "subcategory", "brand", "supplier_name", "location", "sales_price", "reorder_level", "barcode", "notes", "default_vat", "cost_account")}
+        self.item_id = None; self.item_vars = {k: tk.StringVar() for k in ("sku", "name", "unit", "category", "subcategory", "brand", "supplier_name", "location", "sales_price", "reorder_level", "barcode", "notes", "default_vat", "cost_account", "stock_account")}
         self.item_vars["unit"].set("unit"); self.item_vars["default_vat"].set(vat_rate_text(self)); self.item_active = tk.BooleanVar(value=True)
         self.item_boxes = {}
         for index, (key, label, width) in enumerate((("sku", "Item Code (auto if blank)", 14), ("name", "Item Name", 24), ("unit", "Unit", 12), ("category", "Category", 16),
                                                      ("subcategory", "Subcategory", 16), ("brand", "Brand", 16), ("supplier_name", "Supplier", 22), ("sales_price", "Sales Price", 11), ("default_vat", "Default VAT", 9), ("reorder_level", "Reorder Level", 9),
-                                                     ("location", "Location (shelf)", 12), ("barcode", "Barcode", 14), ("notes", "Notes", 24), ("cost_account", "Cost Account (opt.)", 14))):
+                                                     ("location", "Location (shelf)", 12), ("barcode", "Barcode", 14), ("notes", "Notes", 24),
+                                                     ("stock_account", "Stock Account", 26), ("cost_account", "Cost Account (linked)", 24))):
             tk.Label(form, text=label, bg=LIGHT).grid(row=index // 3, column=(index % 3) * 2, sticky="w", padx=4, pady=2)
             if key == "default_vat":
                 widget = ttk.Combobox(form, textvariable=self.item_vars[key], values=[vat_rate_text(self), "0%"], state="readonly", width=width); self.item_boxes[key] = widget
             elif key in ("unit", "category", "subcategory", "supplier_name", "brand"):
                 widget = ttk.Combobox(form, textvariable=self.item_vars[key], width=width); self.item_boxes[key] = widget
                 if key == "category": widget.bind("<<ComboboxSelected>>", lambda _e: self.item_category_chosen())
+            elif key == "stock_account":  # 2.9.79: class 3 stock account, linked to its cost account
+                widget = ttk.Combobox(form, textvariable=self.item_vars[key], width=width); self.item_boxes[key] = widget
+                widget.bind("<<ComboboxSelected>>", lambda _e: self.item_stock_account_chosen(True)); widget.bind("<FocusOut>", lambda _e: self.item_stock_account_chosen(False), add="+")
+            elif key == "cost_account": widget = self.account_search_box(form, self.item_vars[key], width)
             else: widget = tk.Entry(form, textvariable=self.item_vars[key], width=width)
             widget.grid(row=index // 3, column=(index % 3) * 2 + 1, sticky="w", padx=4, pady=2)
             if key == "brand": self.item_brand_widgets = (form.grid_slaves(row=index // 3, column=(index % 3) * 2)[0], widget)
-        self.item_cost_label = tk.Label(form, text="Cost price (average of purchases): -", bg=LIGHT, fg="#1a5fb4", cursor="hand2", font=("Segoe UI", 9, "bold", "underline")); self.item_cost_label.grid(row=4, column=4, columnspan=2, sticky="w", padx=4)
+        self.item_link_label = tk.Label(form, text="", bg=LIGHT, fg=NAVY, anchor="w", justify="left", wraplength=620); self.item_link_label.grid(row=5, column=0, columnspan=4, sticky="w", padx=4)
+        self.item_cost_label = tk.Label(form, text="Cost price (average of purchases): -", bg=LIGHT, fg="#1a5fb4", cursor="hand2", font=("Segoe UI", 9, "bold", "underline")); self.item_cost_label.grid(row=5, column=4, columnspan=2, sticky="w", padx=4)
         # The cost is a link: click it to open the item's Stock Card (each purchase / sale and the running average cost).
         self.item_cost_label.bind("<Button-1>", lambda _event: self.open_item_cost_link())
-        buttons = tk.Frame(form, bg=LIGHT); buttons.grid(row=5, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        buttons = tk.Frame(form, bg=LIGHT); buttons.grid(row=6, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        self.load_item_stock_accounts(); self.item_vars["stock_account"].set(self.item_stock_choice("37")); self.item_stock_account_chosen(False)
         tk.Checkbutton(buttons, text="Active", variable=self.item_active, bg=LIGHT).pack(side="left", padx=(0, 8))
         self.action_button(buttons, "New", self.new_item).pack(side="left", padx=3)
         tk.Button(buttons, text="Save", command=self.save_item, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
@@ -115,8 +123,38 @@ class InventoryMixin:
             ("unit", "Unit", 50), ("qty", "On Hand", 80), ("cost", "Cost Price (avg)", 100), ("value", "Stock Value", 100), ("price", "Sales Price", 85), ("status", "Status", 65)])
         self.items_tree.tag_configure("reorder", foreground=RED); self.items_tree.bind("<Double-1>", lambda _e: self.edit_item())
 
+    # 2.9.79: stock account (class 3) linked to the cost account and the year-end variation accounts
+    def load_item_stock_accounts(self):
+        names = account_names(self)
+        codes = sorted(code for code in names if code.isdigit() and code.startswith("3") and not code.startswith("39") and len(code) >= 2)
+        self._item_stock_choices = [f"{code} - {names[code]}" for code in codes] or ["37 - Stock of Goods for Sale"]
+        box = getattr(self, "item_boxes", {}).get("stock_account")
+        if box is not None: box["values"] = self._item_stock_choices
+
+    def item_stock_choice(self, code):
+        code = account_code(code) or "37"
+        return next((label for label in getattr(self, "_item_stock_choices", []) if account_code(label) == code), account_label(self, code))
+
+    def item_stock_account_chosen(self, fill_cost):
+        """Show the link of the chosen stock account; when it is chosen from the list, put its linked cost account in Cost Account."""
+        import inventory as inventory_rules
+        code = account_code(self.item_vars["stock_account"].get())
+        try: cost, opening, closing, note = inventory_rules.stock_link(code or "37")
+        except ValueError as exc:
+            if hasattr(self, "item_link_label"): self.item_link_label.config(text=str(exc), fg=RED)
+            return
+        if fill_cost:
+            current = account_code(self.item_vars["cost_account"].get())
+            if cost and (not current or current in {link[0] for link in inventory_rules.STOCK_LINKS.values()}): self.item_vars["cost_account"].set(account_label(self, cost))
+            elif not cost and current in {link[0] for link in inventory_rules.STOCK_LINKS.values() if link[0]}: self.item_vars["cost_account"].set("")
+        year_end = f"Dr {opening} / Cr {code}, then Dr {code} / Cr {closing}" if opening != closing else f"variation on {account_label(self, opening)}"
+        if hasattr(self, "item_link_label"):
+            self.item_link_label.config(text=f"Link: {note}. Purchases: Cost Account ({'empty = purchase screen account' if code.startswith('37') or not cost else 'empty = ' + cost}). "
+                                         f"Year end: {year_end}.", fg=NAVY)
+
     def new_item(self):
         self.item_id = None; [v.set("") for v in self.item_vars.values()]; self.item_vars["unit"].set("unit"); self.item_vars["default_vat"].set(vat_rate_text(self)); self.item_active.set(True)
+        self.item_vars["stock_account"].set(self.item_stock_choice("37")); self.item_stock_account_chosen(False)
         if hasattr(self, "item_cost_label"): self.item_cost_label.config(text="Cost price (average of purchases): -")
 
     def edit_item(self):
@@ -126,6 +164,8 @@ class InventoryMixin:
         for key in self.item_vars: self.item_vars[key].set("" if item.get(key) in (None, 0.0) and key in ("barcode", "notes", "category", "brand") else str(item.get(key) if item.get(key) is not None else ""))
         self.item_vars["default_vat"].set("0%" if str(item.get("default_vat") or "11").strip() in ("0", "0.0", "0%") else vat_rate_text(self))
         self.item_vars["sales_price"].set(f'{item["sales_price"]:g}'); self.item_vars["reorder_level"].set(f'{item["reorder_level"]:g}'); self.item_active.set(bool(item["active"]))
+        self.item_vars["stock_account"].set(self.item_stock_choice(item.get("stock_account") or "37"))
+        self.item_vars["cost_account"].set(account_label(self, item.get("cost_account") or "")); self.item_stock_account_chosen(False)
         self.item_cost_label.config(text=f'Cost price (average of purchases): {item["average_cost"]:,.4f} {getattr(self, "inventory_currency", "")}   On hand: {item["quantity"]:,.3f}   ▸ how is it calculated?')
 
     def save_item(self):
@@ -494,8 +534,9 @@ class InventoryMixin:
         self.action_button(box, "Save Settings", self.save_inventory_settings).pack(side="left", padx=4)
         year = getattr(self, "current_fiscal_year", datetime.now().year)
         tk.Button(box, text=f"Post Stock Variation {year}", command=self.post_stock_variation, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(20, 4))
-        tk.Label(page, text="Lebanese periodic method: purchases stay in 601. The Stock Variation voucher (type 06) cancels the stock in account 37 against 6051 and books the counted "
-                 "closing stock (Dr 37 / Cr 6052). It is made automatically when you close the year, and the closing stock becomes the Opening Stock of the next year.",
+        tk.Label(page, text="Lebanese periodic method: purchases stay in 601 / 611. The Stock Variation voucher (type 06) cancels the stock in each item's stock account and books the counted "
+                 "closing stock: goods 37 against 6051 / 6052, raw materials 31 against 6151 / 6152, work in progress 33 against 7211, products 35 against 7255 (the Stock Account of the item). "
+                 "It is made automatically when you close the year, and the closing stock becomes the Opening Stock of the next year.",
                  bg=LIGHT, fg=MUTED, wraplength=1080, justify="left").pack(fill="x", padx=12, pady=(0, 6))
         wh = tk.LabelFrame(page, text="Warehouses", bg=LIGHT, padx=8, pady=6); wh.pack(fill="both", expand=True, padx=8, pady=6)
         self.wh_id = None; self.wh_code = tk.StringVar(); self.wh_name = tk.StringVar(); self.wh_active = tk.BooleanVar(value=True)
@@ -531,7 +572,10 @@ class InventoryMixin:
         if not messagebox.askyesno("Stock Variation", f"Post (or replace) the Stock Variation voucher of {year} with the stock value at 31-12-{year}?"): return
         try: result = self.client.post_stock_variation(year)
         except Exception as exc: return messagebox.showerror("Stock Variation", str(exc))
-        messagebox.showinfo("Stock Variation", f"Voucher {result.get('voucher') or '-'}\nStock in the ledger before: {result['opening']:,.2f}\nClosing stock: {result['closing']:,.2f}")
+        lines = [f"Voucher {result.get('voucher') or '-'}", f"Stock in the ledger before: {result['opening']:,.2f}", f"Closing stock: {result['closing']:,.2f}"]
+        for group in result.get("groups") or []:  # 2.9.79: one line per stock account
+            lines.append(f"{account_label(self, group['stock_account'])}: before {group['opening']:,.2f} (Dr {group['opening_account']}), closing {group['closing']:,.2f} (Cr {group['closing_account']})")
+        messagebox.showinfo("Stock Variation", "\n".join(lines))
         self.load_journal(); self.load_trial()
 
     # ------------------------------------------------------------ lists for the item form and filters

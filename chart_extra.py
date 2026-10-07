@@ -15,6 +15,7 @@ EXTRA_ACCOUNTS = [
     ("601800001", "Purchase Costs - Freight", "expense"), ("601800002", "Purchase Costs - Insurance", "expense"),
     ("601800003", "Purchase Costs - Customs Duties", "expense"), ("601800004", "Purchase Costs - Customs Broker Fees", "expense"),
     ("601800005", "Purchase Costs - Other", "expense"),
+    ("611100000", "Raw Materials Purchases", "expense"),  # 2.9.79: cost account linked to raw-material stock (31)
     ("6739", "Bank Commissions & Charges", "expense"), ("673900000", "Bank Commissions", "expense"),
     ("6751", "Losses on Exchange Differences", "expense"), ("675100000", "Loss on Exchange Difference", "expense"),
     ("7751", "Gains on Exchange Differences", "income"), ("775100000", "Gain on Exchange Difference", "income"),

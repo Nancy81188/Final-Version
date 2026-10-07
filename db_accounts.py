@@ -14,8 +14,9 @@ from database_common import _soft_iso  # noqa: F401
 ACCOUNT_COLUMNS = (
     ("invoices", "supplier_account"), ("invoices", "vat_account"), ("invoices", "expense_account"), ("invoices", "expense_no_vat_account"), ("invoices", "payment_account"),
     ("document_cases", "supplier_account"), ("document_cases", "expense_account"), ("document_cases", "vat_account"),
-    ("inventory_items", "cost_account"),
+    ("inventory_items", "cost_account"), ("inventory_items", "stock_account"),
     ("payments", "cash_account"), ("payments", "party_account"), ("payments", "commission_account"), ("payments", "exchange_account"),
+    ("payments", "exchange_gain_account"), ("payments", "exchange_loss_account"),
     ("expenses", "expense_account"), ("expenses", "expense_without_vat_account"), ("expenses", "vat_account"), ("expenses", "payment_account"),
     ("employees", "salary_account"), ("employees", "payable_account"),
     ("payroll_settings", "salary_account"), ("payroll_settings", "salary_payable_account"), ("payroll_settings", "payroll_tax_account"), ("payroll_settings", "nssf_payable_account"),

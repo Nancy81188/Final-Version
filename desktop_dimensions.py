@@ -185,6 +185,16 @@ class DimensionsMixin:
         self.budget_projection_mode=tk.StringVar(value="Monthly")
         ttk.Combobox(bar,textvariable=self.budget_projection_mode,values=["Monthly","Yearly"],state="readonly",width=9).pack(side="left",padx=3)
         self.action_button(bar,"Project from Actual",self.project_budget).pack(side="left",padx=3)
+        # 2.9.79: the budget of the year above from the actual months of a chosen year, + the % for revenues and for expenses
+        from_bar = tk.LabelFrame(page, text="Budget from a year + %", bg=LIGHT, padx=8, pady=4); from_bar.pack(fill="x", padx=10, pady=(0, 6))
+        self.budget_base_year = tk.StringVar(value=str(int(year) - 1)); self.budget_revenue_pct = tk.StringVar(value="10"); self.budget_expense_pct = tk.StringVar(value="5")
+        tk.Label(from_bar, text="Base year (actual)", bg=LIGHT).pack(side="left")
+        ttk.Combobox(from_bar, textvariable=self.budget_base_year, values=[str(y) for y in range(int(year) - 6, int(year) + 1)], width=6).pack(side="left", padx=(4, 12))
+        tk.Label(from_bar, text="Revenue %", bg=LIGHT).pack(side="left"); tk.Entry(from_bar, textvariable=self.budget_revenue_pct, width=6).pack(side="left", padx=(4, 12))
+        tk.Label(from_bar, text="Expenses %", bg=LIGHT).pack(side="left"); tk.Entry(from_bar, textvariable=self.budget_expense_pct, width=6).pack(side="left", padx=(4, 12))
+        tk.Button(from_bar, text="Fill the Budget", command=self.budget_from_year, bg=GOLD, fg=NAVY, border=0, padx=14, pady=5, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Label(from_bar, text="Months of the base year x (1 + %) per year up to the Year above. Review, then Save Budget.",
+                 bg=LIGHT, fg=MUTED, wraplength=420, justify="left").pack(side="left", padx=10)
         forecast_bar=tk.Frame(page,bg=LIGHT); forecast_bar.pack(fill="x",padx=10,pady=(0,5))
         self.budget_forecast_year=tk.StringVar(value=str(year)); self.budget_forecast_horizon=tk.StringVar(value="Quarter (3 months)")
         tk.Label(forecast_bar,text="Actual report year",bg=LIGHT).pack(side="left")
@@ -310,6 +320,33 @@ class DimensionsMixin:
             self.budget_sheet.insert(self.budget_row(code,names[code],round(sum(months),2),months))
         self.update_budget_total()
         messagebox.showinfo("Budget Projection",f"Draft based on {source_year} actual months 1–{last_month}. {mode} projection; review each account before saving.")
+
+    def budget_from_year(self):
+        """2.9.79: draft budget of the budget year = the base year's actual months x (1 + revenue % / expenses %)."""
+        from financial_projection import budget_from_year, month_range
+        try:
+            target_year, currency, _department, _project = self.budget_filters(); base_year = int(self.budget_base_year.get())
+            budget_from_year({}, {}, base_year, target_year, self.budget_revenue_pct.get(), self.budget_expense_pct.get())  # checks the years and the %
+        except ValueError as exc: return messagebox.showwarning("Budget from a year", str(exc))
+        monthly = defaultdict(dict); names = {}; types = {}
+        try:
+            for month in range(1, 13):
+                start, end = month_range(base_year, month)
+                try: rows = self.client.fiscal_year_profit_loss(base_year, start, end, currency)
+                except Exception: rows = self.client.profit_loss(start, end, currency)
+                for row in rows:
+                    if row["type"] not in ("income", "expense"): continue
+                    monthly[row["code"]][month] = float(row["amount"] or 0); names[row["code"]] = row["name_en"]; types[row["code"]] = row["type"]
+        except Exception as exc: return messagebox.showerror("Budget from a year", str(exc))
+        lines = budget_from_year(monthly, types, base_year, target_year, self.budget_revenue_pct.get(), self.budget_expense_pct.get())
+        if not lines: return messagebox.showwarning("Budget from a year", f"No posted income or expense in {base_year} ({currency}) to build the budget from")
+        if any(r["account"] for r in self.budget_sheet.ordered()) and not messagebox.askyesno("Budget from a year", "Replace the lines on the screen? Nothing is saved until you press Save Budget."): return
+        self.budget_sheet.clear()
+        for code, _kind, months, annual in lines: self.budget_sheet.insert(self.budget_row(code, names[code], annual, months))
+        self.update_budget_total()
+        income = sum(annual for _c, kind, _m, annual in lines if kind == "income"); expense = sum(annual for _c, kind, _m, annual in lines if kind == "expense")
+        messagebox.showinfo("Budget from a year", f"Budget {target_year} drafted from {base_year} actuals: revenues {income:,.2f}, expenses {expense:,.2f}, "
+                            f"result {income - expense:,.2f} {currency}. Review the lines, then Save Budget.")
 
     def budget_year_forecast(self):
         from financial_projection import HORIZONS, completed_months, future_months, month_range, trailing_average

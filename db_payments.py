@@ -91,9 +91,19 @@ class PaymentsStore:
         try: exchange_diff=Decimal(str(item.get("exchange_difference") or 0))
         except Exception as exc: raise ValueError("Invalid exchange difference amount") from exc
         import chart_extra
-        commission_account=str(item.get("commission_account") or chart_extra.BANK_COMMISSION_ACCOUNT).split(" - ",1)[0].strip() or chart_extra.BANK_COMMISSION_ACCOUNT
-        if not commission_account.isdigit() or len(commission_account)!=9 or not commission_account.startswith("6739"):
-            raise ValueError("Bank commission account must be a 9-digit 6739 account")
+        # 2.9.79: the bank commission and the exchange gain / loss go to the accounts chosen on the receipt / payment
+        # (673900000 / 775100000 / 675100000 when none is chosen).
+        def chosen(key, default):
+            return str(item.get(key) or default).split(" - ",1)[0].strip() or default
+        commission_account=chosen("commission_account",chart_extra.BANK_COMMISSION_ACCOUNT)
+        gain_account=chosen("exchange_gain_account",chart_extra.EXCHANGE_GAIN_ACCOUNT)
+        loss_account=chosen("exchange_loss_account",chart_extra.EXCHANGE_LOSS_ACCOUNT)
+        if not commission_account.isdigit() or not commission_account.startswith("6"):
+            raise ValueError("Bank commission account must be an expense account (class 6), for example 673900000")
+        if not gain_account.isdigit() or not gain_account.startswith("7"):
+            raise ValueError("Exchange gain account must be a revenue account (class 7), for example 775100000")
+        if not loss_account.isdigit() or not loss_account.startswith("6"):
+            raise ValueError("Exchange loss account must be an expense account (class 6), for example 675100000")
         party_account=str(item.get("party_account") or (DEFAULT_LEBANESE_ACCOUNTS["accounts_receivable"] if kind=="customer_receipt" else DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"])).strip()
         party_id=int(item.get("party_id"))
         with self.connect() as db:
@@ -109,16 +119,19 @@ class PaymentsStore:
             department_id,project_id=self._dimension_ids(db,item)
             db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(cash_account,"Cash / Bank Account","asset"))
             db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(party_account,"Party Control Account","asset" if kind=="customer_receipt" else "liability"))
-            if commission: db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(commission_account,"Bank Commissions","expense"))
-            if exchange_diff:
-                db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(chart_extra.EXCHANGE_GAIN_ACCOUNT,"Gain on Exchange Difference","income"))
-                db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(chart_extra.EXCHANGE_LOSS_ACCOUNT,"Loss on Exchange Difference","expense"))
+            defaults={chart_extra.BANK_COMMISSION_ACCOUNT:("Bank Commissions","expense"),chart_extra.EXCHANGE_GAIN_ACCOUNT:("Gain on Exchange Difference","income"),
+                      chart_extra.EXCHANGE_LOSS_ACCOUNT:("Loss on Exchange Difference","expense")}
+            for code,used in ((commission_account,commission),(gain_account,exchange_diff),(loss_account,exchange_diff)):
+                if not used: continue
+                if code in defaults: db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(code,)+defaults[code])
+                elif not db.execute("SELECT 1 FROM accounts WHERE code=?",(code,)).fetchone():
+                    raise ValueError(f"Account {code} was not found in the chart of accounts")
             result=db.execute("""INSERT INTO payments(kind,party_id,payment_date,currency,amount,cash_account,party_account,reference,description,bank_commission,commission_account,exchange_difference,created_by,created_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(kind,party_id,date,currency,str(amount),cash_account,party_account,
                 str(item.get("reference") or "").strip(),str(item.get("description") or "").strip(),str(commission),commission_account,str(exchange_diff),user_id,utcnow()))
             payment_id=result.lastrowid
-            db.execute("UPDATE payments SET payment_number=?,payment_method=?,department_id=?,project_id=? WHERE id=?",
-                (number,str(item.get("payment_method") or "Cash").strip(),department_id,project_id,payment_id))
+            db.execute("UPDATE payments SET payment_number=?,payment_method=?,department_id=?,project_id=?,exchange_gain_account=?,exchange_loss_account=? WHERE id=?",
+                (number,str(item.get("payment_method") or "Cash").strip(),department_id,project_id,gain_account,loss_account,payment_id))
             entry=db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,created_by,created_at)
                 VALUES(?,?,?,?,?,?,?,?)""",(number,date,str(item.get("description") or (("Receipt from " if kind=="customer_receipt" else "Payment to ")+party["name"])).strip(),"payment",payment_id,currency,user_id,utcnow()))
             party_settlement=amount+exchange_diff
@@ -126,8 +139,8 @@ class PaymentsStore:
             else: lines=[(party_account,party_settlement,Decimal("0")),(cash_account,Decimal("0"),amount+commission)]
             if commission: lines.append((commission_account,commission,Decimal("0")))
             balance=sum(d for _c,d,_cr in lines)-sum(cr for _c,_d,cr in lines)
-            if balance>0: lines.append((chart_extra.EXCHANGE_GAIN_ACCOUNT,Decimal("0"),balance))
-            elif balance<0: lines.append((chart_extra.EXCHANGE_LOSS_ACCOUNT,-balance,Decimal("0")))
+            if balance>0: lines.append((gain_account,Decimal("0"),balance))
+            elif balance<0: lines.append((loss_account,-balance,Decimal("0")))
             lines=[(code,debit,credit) for code,debit,credit in lines if Decimal(str(debit)) or Decimal(str(credit))]
             for code,debit,credit in lines:
                 db.execute("INSERT INTO journal_lines(entry_id,account_id,party_id,debit,credit,department_id,project_id) VALUES(?,?,?,?,?,?,?)",
@@ -141,6 +154,7 @@ class PaymentsStore:
             return [dict(row) for row in db.execute("""SELECT x.id,x.kind,x.payment_number,x.payment_date,x.party_id,p.name party_name,x.currency,
                 CAST(x.amount AS REAL) amount,x.cash_account,x.party_account,x.reference,x.description,x.payment_method,
                 CAST(x.bank_commission AS REAL) bank_commission,x.commission_account,CAST(x.exchange_difference AS REAL) exchange_difference,
+                x.exchange_gain_account,x.exchange_loss_account,
                 d.code department,pr.code project
                 FROM payments x JOIN parties p ON p.id=x.party_id LEFT JOIN departments d ON d.id=x.department_id LEFT JOIN projects pr ON pr.id=x.project_id
                 ORDER BY x.id DESC""")]

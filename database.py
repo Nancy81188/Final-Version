@@ -306,7 +306,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             payment_columns={row["name"] for row in db.execute("PRAGMA table_info(payments)")}
             for column,definition in (("payment_number","TEXT"),("payment_method","TEXT"),("department_id","INTEGER"),("project_id","INTEGER"),
                                       ("bank_commission","TEXT NOT NULL DEFAULT '0'"),("commission_account","TEXT"),
-                                      ("exchange_difference","TEXT NOT NULL DEFAULT '0'"),("exchange_account","TEXT")):
+                                      ("exchange_difference","TEXT NOT NULL DEFAULT '0'"),("exchange_account","TEXT"),
+                                      ("exchange_gain_account","TEXT"),("exchange_loss_account","TEXT")):  # 2.9.79
                 if column not in payment_columns: db.execute(f"ALTER TABLE payments ADD COLUMN {column} {definition}")
             expense_cols={row["name"] for row in db.execute("PRAGMA table_info(expenses)")}
             if "expense_number" not in expense_cols: db.execute("ALTER TABLE expenses ADD COLUMN expense_number TEXT")

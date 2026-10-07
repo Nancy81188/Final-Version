@@ -8,6 +8,7 @@ import traceback
 from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox, ttk
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
+from desktop_common import account_label, account_code  # 2.9.79
 
 from report_export import export_sections_excel, export_sections_pdf
 import vat_return as vat_rules
@@ -422,9 +423,15 @@ class FinalFeaturesMixin:
         controls = tk.Frame(page, bg=LIGHT); controls.pack(fill="x", padx=10, pady=8)
         self.vat_year = tk.StringVar(value=str(getattr(self, "current_fiscal_year", now.year))); self.vat_quarter = tk.StringVar(value=f"Q{(now.month - 1) // 3 + 1}")
         self.vat_currency = tk.StringVar(value="All Currencies"); self.vat_include_review = tk.BooleanVar(value=False); self.vat_credit_override = tk.StringVar()
-        tk.Label(controls, text="Year", bg=LIGHT).pack(side="left"); tk.Entry(controls, textvariable=self.vat_year, width=7).pack(side="left", padx=4)
+        # 2.9.79: year from a list, quarter with previous / next arrows (the return is generated at once)
+        base_year = int(getattr(self, "current_fiscal_year", now.year))
+        tk.Button(controls, text="<", command=lambda: self.move_vat_quarter(-1), bg=LIGHT, fg=NAVY, border=0, padx=6, font=("Segoe UI", 10, "bold")).pack(side="left")
+        tk.Label(controls, text="Year", bg=LIGHT).pack(side="left")
+        ttk.Combobox(controls, textvariable=self.vat_year, values=[str(y) for y in range(base_year - 6, base_year + 2)], width=6).pack(side="left", padx=4)
         tk.Label(controls, text="Quarter", bg=LIGHT).pack(side="left", padx=(6, 0))
-        ttk.Combobox(controls, textvariable=self.vat_quarter, values=["Q1", "Q2", "Q3", "Q4"], state="readonly", width=5).pack(side="left", padx=4)
+        quarter_box = ttk.Combobox(controls, textvariable=self.vat_quarter, values=["Q1", "Q2", "Q3", "Q4"], state="readonly", width=5); quarter_box.pack(side="left", padx=4)
+        quarter_box.bind("<<ComboboxSelected>>", lambda _e: self.load_vat_return())
+        tk.Button(controls, text=">", command=lambda: self.move_vat_quarter(1), bg=LIGHT, fg=NAVY, border=0, padx=6, font=("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 6))
         tk.Label(controls, text="Currency", bg=LIGHT).pack(side="left", padx=(6, 0))
         ttk.Combobox(controls, textvariable=self.vat_currency, values=["All Currencies", "USD", "EUR", "LBP", "AED"], state="readonly", width=13).pack(side="left", padx=4)
         tk.Checkbutton(controls, text="Include Review documents", variable=self.vat_include_review, bg=LIGHT).pack(side="left", padx=6)
@@ -449,6 +456,7 @@ class FinalFeaturesMixin:
         actions2 = tk.Frame(page, bg=LIGHT); actions2.pack(fill="x", padx=10, pady=(3, 0))
         tk.Button(actions2, text="Taux Récupérable (PDF)", command=lambda: self.export_vat_recoverable_rate("pdf"), bg=GOLD, fg=NAVY, border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(actions2, "Taux Récupérable Excel", lambda: self.export_vat_recoverable_rate("xlsx")).pack(side="left", padx=3)
+        tk.Button(actions2, text="VAT Settlement Entry...", command=self.vat_settlement_dialog, bg=NAVY, fg="white", border=0, padx=12, pady=7).pack(side="left", padx=(12, 3))
         tk.Label(actions2, text="Calcul du taux récupérable (Art. 31): revenues taxable / exempt, recoverable and non-recoverable VAT, VAT payable.", bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
         self.vat_headline = tk.Label(page, text="Choose the year and quarter, then press Generate.", bg=LIGHT, fg=NAVY, font=("Segoe UI", 11, "bold"), anchor="w", justify="left")
         self.vat_headline.pack(fill="x", padx=12, pady=(8, 0))
@@ -457,6 +465,13 @@ class FinalFeaturesMixin:
         summary = tk.Frame(nested, bg=LIGHT); filing = tk.Frame(nested, bg=LIGHT); documents = tk.Frame(nested, bg=LIGHT); adjustments = tk.Frame(nested, bg=LIGHT); history = tk.Frame(nested, bg=LIGHT)
         nested.add(summary, text="VAT Return"); nested.add(documents, text="Supporting Documents"); nested.add(adjustments, text="Manual Adjustments"); nested.add(history, text="Saved Returns")
         nested.insert(1, filing, text="Filing Worksheet")
+        check = tk.Frame(nested, bg=LIGHT); nested.insert(2, check, text="Check with the Books")  # 2.9.79
+        check_bar = tk.Frame(check, bg=LIGHT); check_bar.pack(fill="x", padx=8, pady=(6, 0))
+        self.vat_check_label = tk.Label(check_bar, text="Generate the return: the VAT accounts of the quarter are compared with it here.", bg=LIGHT, fg=NAVY, anchor="w", justify="left",
+                                        font=("Segoe UI", 9, "bold"), wraplength=1000)
+        self.vat_check_label.pack(side="left", fill="x", expand=True)
+        for label, fmt in (("Excel", "xlsx"), ("PDF", "pdf")): self.action_button(check_bar, label, lambda f=fmt: self.export_vat_check(f)).pack(side="right", padx=2)
+        self.vat_check_tree = self.report_viewer(check, [330, 250, 140, 140, 140, 140, 140])
         self.vat_summary_tree = self.report_viewer(summary, [55, 390, 330, 115, 115, 125])
         self.vat_filing_tree = self.report_viewer(filing, [110, 390, 330, 160, 170])
         tk.Label(filing, text="Based on published 2010 Q1-2 / Q11-2 specimen sections only. Not an official form; A-F are internal refs. Obtain issued forms from the VAT Directorate.",
@@ -535,10 +550,89 @@ class FinalFeaturesMixin:
         for a in result["adjustments"]:
             self.vat_adjustments_tree.insert("", "end", iid=str(a["id"]), values=(vat_rules.ADJUSTMENT_TYPES[a["adjustment_type"]], a["currency"], _fmt(float(a["amount"])),
                 _fmt(a.get("amount_lbp", "")), a["reason"], a.get("created_by_name") or "", str(a["created_at"])[:16].replace("T", " ")))
+        self.load_vat_check(year, quarter, credit)
         self.vat_history_tree.delete(*self.vat_history_tree.get_children())
         for row in history:
             self.vat_history_tree.insert("", "end", values=(f"Q{row['quarter']} {row['year']}", _fmt(float(row["net_lbp"])), _fmt(float(row["credit_brought_forward_lbp"])),
                 _fmt(float(row["payable_lbp"])), _fmt(float(row["credit_carried_forward_lbp"])), row.get("saved_by_name") or "", str(row["saved_at"])[:16].replace("T", " ")))
+
+    # ------------------------------------------------------------ 2.9.79: quarter arrows, check with the books, settlement entry
+    def move_vat_quarter(self, step):
+        try: year = int(self.vat_year.get().strip()); quarter = int(self.vat_quarter.get().lstrip("Q"))
+        except ValueError: year, quarter = int(getattr(self, "current_fiscal_year", datetime.now().year)), 1
+        index = year * 4 + quarter - 1 + step
+        self.vat_year.set(str(index // 4)); self.vat_quarter.set(f"Q{index % 4 + 1}"); self.load_vat_return()
+
+    def load_vat_check(self, year, quarter, credit=None):
+        if not hasattr(self, "vat_check_tree"): return
+        try: check = self.client.vat_check(year, quarter, credit, getattr(self, "_vat_refund_value", None))
+        except Exception as exc:
+            self.vat_check_result = None; self.vat_check_tree.delete(*self.vat_check_tree.get_children())
+            self.vat_check_label.config(text=f"Check with the books unavailable: {exc}", fg=RED); return
+        self.vat_check_result = check
+        self.show_sections(self.vat_check_tree, check["sections"])
+        vc = check.get("vat_currency") or vat_currency(self)
+        if check["agreed"]: text = f"The return agrees with the books (VAT accounts of the quarter, {vc})."
+        else: text = f"Differences with the books: see below ({check['documents_to_check']} document(s) to check)."
+        self.vat_check_label.config(text="   ".join([text] + check.get("notes", [])), fg=NAVY if check["agreed"] else RED)
+
+    def export_vat_check(self, format_name):
+        check = getattr(self, "vat_check_result", None); result = getattr(self, "vat_return_result", None)
+        if not check or not result: return messagebox.showwarning("Quarterly VAT", "Generate the return first")
+        self.save_sections(f"VAT return check with the books - Q{result['quarter']} {result['year']}", check.get("notes", []), check["sections"],
+                           f"VAT_Check_Q{result['quarter']}_{result['year']}", format_name)
+
+    def vat_settlement_dialog(self):
+        """Preview, then post, the quarter-end VAT settlement voucher (the return must be saved)."""
+        try: year, quarter, _currency, credit = self.vat_parameters()
+        except Exception as exc: return messagebox.showerror("VAT Settlement", str(exc))
+        from vat_return import SETTLEMENT_DEFAULTS
+        window = tk.Toplevel(self); window.title(f"VAT Settlement Entry - Q{quarter} {year}"); window.configure(bg=LIGHT); window.transient(self)
+        self.fit_dialog(window, 900, 520)
+        tk.Label(window, text="At the end of the quarter the VAT accounts are closed: Dr output VAT (4427) / Cr deductible VAT (442...), the VAT the partial deduction "
+                 "does not allow goes to an expense, the credit brought forward is used, and the rest is VAT payable (Cr 4425) or VAT to recover (Dr 4429). "
+                 "The return must be saved first. Posting again replaces the voucher.", bg=LIGHT, fg=MUTED, wraplength=860, justify="left").pack(fill="x", padx=12, pady=8)
+        accounts = {key: tk.StringVar(value=account_label(self, code)) for key, code in SETTLEMENT_DEFAULTS.items()}
+        grid = tk.Frame(window, bg=LIGHT); grid.pack(fill="x", padx=12)
+        for row, (key, label) in enumerate((("payable_account", "VAT payable account"), ("credit_account", "VAT credit / to recover account"),
+                                            ("non_deductible_account", "Non-deductible VAT expense account"))):
+            tk.Label(grid, text=label, bg=LIGHT).grid(row=row, column=0, sticky="w", pady=2)
+            self.account_search_box(grid, accounts[key], 46).grid(row=row, column=1, sticky="w", padx=8, pady=2)
+        tree = ttk.Treeview(window, columns=("account", "detail", "debit", "credit"), show="headings", height=9)
+        for key, label, width, anchor in (("account", "Account", 360, "w"), ("detail", "Detail", 260, "w"), ("debit", "Debit", 120, "e"), ("credit", "Credit", 120, "e")):
+            tree.heading(key, text=label); tree.column(key, width=width, anchor=anchor)
+        tree.pack(fill="both", expand=True, padx=12, pady=6)
+        info = tk.Label(window, text="", bg=LIGHT, fg=NAVY, anchor="w", justify="left", font=("Segoe UI", 9, "bold")); info.pack(fill="x", padx=12)
+        state = {"plan": None}
+        def chosen(): return {key: account_code(var.get()) for key, var in accounts.items()}
+        def preview():
+            try: check = self.client.vat_check(year, quarter, credit, getattr(self, "_vat_refund_value", None), **chosen())
+            except Exception as exc: return messagebox.showerror("VAT Settlement", str(exc), parent=window)
+            tree.delete(*tree.get_children()); plan = check.get("settlement"); state["plan"] = plan
+            if not plan or not plan["lines"]: info.config(text=check.get("settlement_error") or "Nothing to settle: no VAT movement in this quarter.", fg=RED); state["plan"] = None; return
+            debit = credit_total = 0.0
+            for line in plan["lines"]:
+                amount = float(line["amount"]); side = line["side"]
+                debit += amount if side == "D" else 0; credit_total += amount if side == "C" else 0
+                tree.insert("", "end", values=(f'{line["account_code"]} - {line.get("account_name", "")}', line.get("description", ""),
+                                               f"{amount:,.2f}" if side == "D" else "", f"{amount:,.2f}" if side == "C" else ""))
+            tree.insert("", "end", values=("TOTAL", "", f"{debit:,.2f}", f"{credit_total:,.2f}"))
+            vc = plan["currency"]
+            note = f'Voucher date {_display(plan["date"])} in {vc}.  VAT payable in the voucher: {float(plan["payable"]):,.2f}   Return payable: {float(plan["return_payable"]):,.2f} {vc}'
+            if abs(float(plan["payable"]) - float(plan["return_payable"])) >= 1: note += "  (difference = rounding / manual adjustments / items only on the return)"
+            if not check.get("saved"): note += "\nSave the return (Save Return) before posting."
+            info.config(text=note, fg=NAVY if check.get("saved") else RED)
+        def post():
+            if not state["plan"]: return
+            if not messagebox.askyesno("VAT Settlement", f"Post the VAT settlement voucher of Q{quarter} {year}? An earlier one for this quarter is replaced.", parent=window): return
+            try: result = self.client.post_vat_settlement(year, quarter, **chosen())
+            except Exception as exc: return messagebox.showerror("VAT Settlement", str(exc), parent=window)
+            messagebox.showinfo("VAT Settlement", f'Voucher {result["voucher"]} posted.', parent=window); window.destroy()
+            self.load_journal(); self.load_trial(); self.load_vat_return()
+        bar = tk.Frame(window, bg=LIGHT); bar.pack(fill="x", padx=12, pady=8)
+        self.action_button(bar, "Preview", preview).pack(side="left", padx=3)
+        tk.Button(bar, text="Post Settlement Voucher", command=post, bg=GOLD, fg=NAVY, border=0, padx=16, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        preview()
 
     def add_vat_adjustment(self):
         try:

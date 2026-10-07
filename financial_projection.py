@@ -106,3 +106,55 @@ def long_term_projection(base_year_values, base_year, target_date, growth_rate=N
         rows.append({"year": year, "date_to": target.strftime("%Y-%m-%d") if year == target.year else f"{year}-12-31",
                      "fraction": round(fraction, 4), "source": source, "growth_rate": year_rate, "values": values})
     return rows
+
+
+# ---------------------------------------------------------------- 2.9.79: budget and cash budget from a chosen year and %
+def _pct(value):
+    """'10', '10%', '-5', '' -> 0.10, 0.10, -0.05, 0.0"""
+    text = str(value if value is not None else "").strip().replace(",", "").rstrip("%").strip()
+    if not text: return 0.0
+    try: number = float(text)
+    except ValueError: raise ValueError(f"Enter the % as a number, for example 10 or -5 (not '{value}')")
+    if number <= -100: raise ValueError("A decrease cannot be 100% or more")
+    return number / 100
+
+
+def budget_from_year(monthly_by_account, types, base_year, budget_year, revenue_pct, expense_pct):
+    """Draft budget of `budget_year` from the actual months of `base_year`, account by account:
+    every month of the base year x (1 + revenue %) for income accounts and x (1 + expense %) for expense accounts,
+    compounded once per year between the two years. Returns [(account, type, [12 months], annual)]."""
+    years = int(budget_year) - int(base_year)
+    if years < 1: raise ValueError("The budget year must come after the base year")
+    if years > MAX_LONG_TERM_YEARS: raise ValueError(f"The budget year can be at most {MAX_LONG_TERM_YEARS} years after the base year")
+    factors = {"income": (1 + _pct(revenue_pct)) ** years, "expense": (1 + _pct(expense_pct)) ** years}
+    lines = []
+    for code, months in sorted(monthly_by_account.items()):
+        kind = types.get(code)
+        if kind not in factors: continue
+        values = [round(max(0.0, float(months.get(month, 0) or 0)) * factors[kind], 2) for month in range(1, 13)]
+        if any(values): lines.append((code, kind, values, round(sum(values), 2)))
+    return lines
+
+
+def cash_budget(monthly_flows, opening_cash, base_year, budget_year, inflow_pct, outflow_pct):
+    """Monthly cash budget of `budget_year`: the base year's cash in / out of each month x (1 + %) per year ahead.
+    The years between the base year and the budget year are added to the opening cash.
+    monthly_flows = {month: {"inflow": x, "outflow": y}} of the base year; opening_cash = cash at the end of the base year.
+    Returns {"rows": [{month, opening, inflow, outflow, net, closing}], "opening": cash at 1 January of the budget year, "totals": {...}}."""
+    years = int(budget_year) - int(base_year)
+    if years < 1: raise ValueError("The cash budget year must come after the base year")
+    if years > MAX_LONG_TERM_YEARS: raise ValueError(f"The cash budget year can be at most {MAX_LONG_TERM_YEARS} years after the base year")
+    grow_in = 1 + _pct(inflow_pct); grow_out = 1 + _pct(outflow_pct)
+    cash = float(opening_cash or 0)
+    for ahead in range(1, years):  # years in between: their whole net cash movement
+        cash += sum(float(v.get("inflow", 0)) * grow_in ** ahead - float(v.get("outflow", 0)) * grow_out ** ahead for v in monthly_flows.values())
+    opening = round(cash, 2); rows = []
+    for month in range(1, 13):
+        flows = monthly_flows.get(month, {})
+        inflow = round(float(flows.get("inflow", 0)) * grow_in ** years, 2); outflow = round(float(flows.get("outflow", 0)) * grow_out ** years, 2)
+        start = round(cash, 2); cash = round(cash + inflow - outflow, 2)
+        rows.append({"month": f"{int(budget_year)}-{month:02d}", "opening": start, "inflow": inflow, "outflow": outflow, "net": round(inflow - outflow, 2), "closing": cash})
+    totals = {"inflow": round(sum(r["inflow"] for r in rows), 2), "outflow": round(sum(r["outflow"] for r in rows), 2)}
+    totals["net"] = round(totals["inflow"] - totals["outflow"], 2)
+    lowest = min(rows, key=lambda r: r["closing"])
+    return {"rows": rows, "opening": opening, "closing": cash, "totals": totals, "lowest": {"month": lowest["month"], "closing": lowest["closing"]}}

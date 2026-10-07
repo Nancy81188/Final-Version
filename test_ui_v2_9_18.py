@@ -75,7 +75,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
         app.load_asset_accounts(); app.update()
         label = next(v for v in app.asset_category_box["values"] if v.startswith("2244"))
         app.asset_category.set(label); app.asset_category_chosen()
-        self.assertEqual((app.asset_fields["asset_account"].get(), app.asset_rate.get(), app.asset_fields["useful_months"].get()), ("2244", "20", "60"))
+        self.assertEqual((app.asset_fields["asset_account"].get().split(" - ")[0], app.asset_rate.get(), app.asset_fields["useful_months"].get()), ("2244", "20", "60"))  # 2.9.79: shown with its name
         app.asset_fields["asset_code"].set("VAN-1"); app.asset_fields["name"].set("Delivery van"); app.asset_fields["cost"].set("12000")
         app.asset_fields["acquired_on"].set(f"01-01-{app.current_fiscal_year}"); app.asset_fields["start_on"].set(f"01-01-{app.current_fiscal_year}")
         app.save_asset_entry(review_confirmed=True); app.update()
@@ -151,7 +151,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
         variable=tk.StringVar(value=account["name_en"])
         box=self.app.account_search_box(self.app,variable); box.pack(); box.focus_set(); self.app.update()
         box.event_generate("<Tab>"); self.app.update()
-        self.assertEqual(variable.get(),"44216")
+        self.assertEqual(variable.get(),"44216 - "+account["name_en"])  # 2.9.79: the box shows the number and the name
         self.assertIn("44216", " ".join(box["values"]))
 
     def test_import_preview_account_edits_advance_with_tab_and_offer_lookup(self):
@@ -205,7 +205,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
         self.assertIn("2 selected", confirm.call_args.args[1])
         self.assertEqual([sheet.rows[iid]["vat_account"] for iid in (first, second, third)],
                          ["44216", "44216", "4427"])
-        self.assertEqual([sheet.tree.set(iid, "vat_account") for iid in (first, second, third)],
+        self.assertEqual([sheet.tree.set(iid, "vat_account").split(" - ")[0] for iid in (first, second, third)],  # 2.9.79: cells show "number - name"
                          ["44216", "44216", "4427"])
         app.populate_import_preview(); app.update()
         self.assertEqual([row["vat_account"] for row in sheet.ordered()], ["44216", "44216", "4427"])
@@ -330,7 +330,7 @@ class ProgramWindowFixesTest(unittest.TestCase):
             self.assertTrue(any(isinstance(child,tk.Button) and child.cget("text")=="Find" for child in box.master.winfo_children()))
             self.assertLessEqual(box.master.winfo_rootx()+box.master.winfo_width(),window.winfo_rootx()+window.winfo_width())
         # 2.9.78: the window lists VAT, purchases with / without VAT, supplier, then payment - find each box by its account
-        supplier_box=next(box for box in account_boxes if box._account_var.get()=="4011")
+        supplier_box=next(box for box in account_boxes if box._account_var.get().split(" - ")[0]=="4011")  # 2.9.79: boxes show "number - name"
         supplier_box.focus_set(); app.update()
         self.assertTrue(supplier_box.selection_present())
         find=next(child for child in supplier_box.master.winfo_children() if isinstance(child,tk.Button) and child.cget("text")=="Find")
@@ -340,13 +340,13 @@ class ProgramWindowFixesTest(unittest.TestCase):
         self.assertTrue(search.selection_present())
         search.delete(0,"end"); search.insert(0,"4111"); app.update()
         search.event_generate("<Return>"); app.update()
-        self.assertEqual(supplier_box._account_var.get(),"4111")
+        self.assertEqual(supplier_box._account_var.get().split(" - ")[0],"4111")
         self.assertEqual(app.grab_current(),window)
-        vat_box=next(box for box in account_boxes if box._account_var.get()=="44210")
+        vat_box=next(box for box in account_boxes if box._account_var.get().split(" - ")[0]=="44210")
         vat_box.focus_set(); app.update()
         vat_box._account_var.set("VAT on Expenses - Deductible")
         vat_box.event_generate("<Tab>"); app.update()
-        self.assertEqual(vat_box._account_var.get(),"44216")
+        self.assertEqual(vat_box._account_var.get().split(" - ")[0],"44216")
         with mock.patch.object(app.client,"update_invoice") as update, \
              mock.patch.object(app,"load_invoices"),mock.patch.object(app,"load_dashboard"), \
              mock.patch.object(app,"load_journal"),mock.patch.object(app,"load_trial"):
