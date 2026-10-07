@@ -135,6 +135,10 @@ def attention_items(app, metrics=None):
         if unbalanced:
             items.append(("red", f"{len(unbalanced)} journal entr{'y is' if len(unbalanced) == 1 else 'ies are'} not balanced", "Check", app.check_unbalanced_entries))
     except Exception: log.debug("Balance check not available", exc_info=True)
+    try:  # 2.9.82: accounts off budget
+        alert = app.budget_alert_item() if hasattr(app, "budget_alert_item") else None
+        if alert: items.append(alert)
+    except Exception: log.debug("Budget alerts not available", exc_info=True)
     role = (getattr(app, "current_user", None) or {}).get("role")
     if role != "viewer":
         try:

@@ -194,6 +194,7 @@ class ReportsMixin:
         actions=tk.Frame(self.pnl_tab,bg=LIGHT); actions.pack(side="bottom",pady=(0,8))
         self.pnl_tree=self.table(self.pnl_tab,[("currency","Currency",85),("type","Type",90),("account","Account",100),
             ("name","Account Name",300),("debit","Debit",130),("credit","Credit",130),("amount","P&L Amount",140)])
+        self.enable_drill_down(self.pnl_tree,2,lambda:(self.profit_loss_range() or (None,None)))  # 2.9.82: double-click = the entries
         self.action_button(actions,"Export Excel",lambda:self.profit_loss_report("xlsx")).pack(side="left",padx=4)
         self.action_button(actions,"Export PDF",lambda:self.profit_loss_report("pdf")).pack(side="left",padx=4)
         self.action_button(actions,"Print",lambda:self.profit_loss_report("print")).pack(side="left",padx=4)
@@ -336,6 +337,7 @@ class ReportsMixin:
         nested=ttk.Notebook(self.reports_tab); nested.pack(fill="both",expand=True,padx=10,pady=(0,10)); self.financial_notebook=nested
         gl=tk.Frame(nested,bg=LIGHT); bs=tk.Frame(nested,bg=LIGHT); vat=tk.Frame(nested,bg=LIGHT); cash=tk.Frame(nested,bg=LIGHT); cash_outlook=tk.Frame(nested,bg=LIGHT); aging=self.ageing_tab; comparative=tk.Frame(nested,bg=LIGHT)
         nested.add(gl,text="General Ledger"); nested.add(bs,text="Balance Sheet"); nested.add(vat,text="Lebanese VAT Report"); nested.add(cash,text="Cash Flow"); nested.add(cash_outlook,text="Cash Flow Outlook"); nested.add(comparative,text="Comparative P&L"); self.ageing_page=aging; self.build_budget_page(nested); self.build_projection_page(nested); self.build_business_reports_page(nested)
+        self.build_management_pack_page(nested)  # 2.9.82
         self.ledger_tree=self.table(gl,[("date","Date",95),("entry","Entry",90),("account","Account",85),("currency","Currency",70),("name","Account Name",180),("description","Description",200),("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
         self.report_buttons(gl,"ledger"); self.ledger_tree._totals_skip={"balance"}
         self.balance_tree=self.table(bs,[("type","Type",90),("account","Account",90),("currency","Currency",80),("name","Account Name",280),("debit","Debit",120),("credit","Credit",120),("balance","Balance",130)])
@@ -404,6 +406,8 @@ class ReportsMixin:
             bg=LIGHT,fg="#5f6b76",anchor="w").pack(fill="x",padx=12)
         self.aging_tree=self.table(aging,[("kind","Type",85),("party","Customer / Supplier",220),("invoice","Invoice",110),("due","Due Date",100),("currency","Currency",75),("outstanding","Outstanding",120),("days","Days Overdue",110),("bucket","Aging Bucket",100)]); self.report_buttons(aging,"aging")
         self.comparative_tree=self.table(comparative,[("currency","Currency",75),("type","Type",85),("account","Account",95),("name","Account Name",260),("current","Current Period",130),("prior","Prior Year",130),("variance","Variance",130)]); self.report_buttons(comparative,"comparative")
+        self.enable_drill_down(self.comparative_tree,2,lambda:(self.financial_report_range() or (None,None)))  # 2.9.82
+        self.enable_drill_down(self.balance_tree,1,lambda:(None,(self.financial_report_range() or (None,None))[1]))
         self.load_financial_reports()
         self.load_ageing_report()
         self.load_cashflow_outlook()

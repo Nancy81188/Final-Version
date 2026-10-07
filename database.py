@@ -328,6 +328,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             fixed_assets.migrate(db)
             import bank_rec
             bank_rec.migrate(db)
+            import payroll_extras  # 2.9.82: end-of-service provision, leave
+            payroll_extras.migrate(db)
             employee_cols={row["name"] for row in db.execute("PRAGMA table_info(employees)")}
             for column in ("nationality","father_name","mother_name","birth_date","birth_place","sex")+self.EMPLOYEE_REGISTER_FIELDS:
                 if column not in employee_cols: db.execute(f"ALTER TABLE employees ADD COLUMN {column} TEXT")
@@ -983,14 +985,14 @@ def _schema_fingerprint():
     """'4-' + a short hash of the schema and of every text in the upgrade code (CREATE / ALTER TABLE ...), including
     the inventory, fixed assets and bank upgrades and the extra accounts. Any new column, table or account changes it,
     so every company / year file is upgraded once when the new version opens it."""
-    import bank_rec, chart_extra, fixed_assets, inventory
+    import bank_rec, chart_extra, fixed_assets, inventory, payroll_extras
     texts = [SCHEMA, repr(getattr(chart_extra, "EXTRA_ACCOUNTS", ""))]
     def collect(code):
         for constant in code.co_consts:
             if isinstance(constant, str): texts.append(constant)
             elif hasattr(constant, "co_consts"): collect(constant)
     functions = [getattr(Database, name, None) for name in ("_initialize", "_auto_lebanese_payroll_rules", "_upgrade_default_family_allowance_periods")]
-    functions += [inventory.migrate, fixed_assets.migrate, bank_rec.migrate, chart_extra.ensure_accounts] + list(getattr(inventory, "MIGRATIONS", ()))
+    functions += [inventory.migrate, fixed_assets.migrate, bank_rec.migrate, payroll_extras.migrate, chart_extra.ensure_accounts] + list(getattr(inventory, "MIGRATIONS", ()))
     for function in functions:
         if function is not None: collect(function.__code__)
     return "4-" + hashlib.sha256("\x00".join(texts).encode("utf-8")).hexdigest()[:16]

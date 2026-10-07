@@ -17,7 +17,7 @@ from desktop_common import flow_toolbars
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
 RED, MUTED = "#8B1E1E", "#5f6b76"
 DOC_TYPES = {"Opening Stock": "opening", "Stock Receipt": "receipt", "Stock Issue": "issue", "Adjustment +": "adjustment_in", "Adjustment -": "adjustment_out", "Transfer": "transfer"}
-REPORTS = {"Inventory Summary": "summary", "Stock by Brand & Warehouse": "brands", "Stock Ageing": "ageing", "Inventory Analysis (3D)": "analysis3d", "Inventory Health": "health", "Stock Valuation": "valuation", "Stock Card": "stock_card", "Stock Movements": "movements", "Stock Turnover": "turnover", "Stock by Supplier": "supplier_stock", "Physical Count Variances": "count_variances", "Sales Margin (COGS)": "margin", "Reorder Report": "reorder", "Slow-moving Stock": "slow"}
+REPORTS = {"Inventory Summary": "summary", "Stock by Brand & Warehouse": "brands", "Stock Ageing": "ageing", "Inventory Analysis (3D)": "analysis3d", "Inventory Health": "health", "Stock Valuation": "valuation", "Stock Card": "stock_card", "Stock Movements": "movements", "Stock Turnover": "turnover", "Stock by Supplier": "supplier_stock", "Physical Count Variances": "count_variances", "Sales Margin (COGS)": "margin", "Reorder Report": "reorder", "Slow-moving Stock": "slow", "Stock vs Ledger": "ledger_check"}
 
 
 def _num(value):
@@ -534,6 +534,10 @@ class InventoryMixin:
         self.action_button(box, "Save Settings", self.save_inventory_settings).pack(side="left", padx=4)
         year = getattr(self, "current_fiscal_year", datetime.now().year)
         tk.Button(box, text=f"Post Stock Variation {year}", command=self.post_stock_variation, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(20, 4))
+        # 2.9.82: the stock variation of a month, so the P&L shows each month's cost of sales and gross margin
+        self.monthly_variation_end = tk.StringVar(value=datetime.now().strftime("%m-%Y") if str(datetime.now().year) == str(year) else f"12-{year}")
+        tk.Label(box, text="Month (MM-YYYY)", bg=LIGHT).pack(side="left", padx=(12, 2)); tk.Entry(box, textvariable=self.monthly_variation_end, width=8).pack(side="left")
+        self.action_button(box, "Post Monthly Variation", self.post_monthly_stock_variation).pack(side="left", padx=4)
         tk.Label(page, text="Lebanese periodic method: purchases stay in 601 / 611. The Stock Variation voucher (type 06) cancels the stock in each item's stock account and books the counted "
                  "closing stock: goods 37 against 6051 / 6052, raw materials 31 against 6151 / 6152, work in progress 33 against 7211, products 35 against 7255 (the Stock Account of the item). "
                  "It is made automatically when you close the year, and the closing stock becomes the Opening Stock of the next year.",
@@ -576,6 +580,18 @@ class InventoryMixin:
         for group in result.get("groups") or []:  # 2.9.79: one line per stock account
             lines.append(f"{account_label(self, group['stock_account'])}: before {group['opening']:,.2f} (Dr {group['opening_account']}), closing {group['closing']:,.2f} (Cr {group['closing_account']})")
         messagebox.showinfo("Stock Variation", "\n".join(lines))
+        self.load_journal(); self.load_trial()
+
+    def post_monthly_stock_variation(self):
+        import calendar
+        text = self.monthly_variation_end.get().strip()
+        try: month, year = (int(part) for part in text.split("-")); last = f"{calendar.monthrange(year, month)[1]:02d}-{month:02d}-{year}"
+        except (ValueError, calendar.IllegalMonthError): return messagebox.showwarning("Stock Variation", "Enter the month as MM-YYYY, for example 03-2026")
+        if not messagebox.askyesno("Stock Variation", f"Post (or replace) the stock variation of {month:02d}-{year} at {last}?\nLater months already posted are posted again, in order."): return
+        try: result = self.client.post_monthly_stock_variation(last)
+        except Exception as exc: return messagebox.showerror("Stock Variation", str(exc))
+        lines = [f'{p["date"]}: voucher {p["voucher"]}, stock before {p["opening"]:,.2f}, at month end {p["closing"]:,.2f}' for p in result.get("posted") or []]
+        messagebox.showinfo("Stock Variation", "\n".join(lines) or "Nothing to post: the ledger already shows the stock of that month.")
         self.load_journal(); self.load_trial()
 
     # ------------------------------------------------------------ lists for the item form and filters

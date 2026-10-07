@@ -1,5 +1,21 @@
 # Saber Accounting MVP
 
+## Version 2.9.82 (stock, payroll and reports for the accountant)
+- Stock:
+  - Inventory Reports > "Stock vs Ledger": the stock valuation (Stock Card costs) against the balance of each stock account (31 / 33 / 35 / 37) in the books at a date, with the difference and how to read it.
+  - Monthly Stock Variation (Inventory > Warehouses & Settings, month MM-YYYY): the Lebanese periodic method month by month - the stock in the ledger is cancelled and the month-end stock booked (6051 / 6052, 6151 / 6152 ...) for each stock account, so the P&L shows the cost of sales and the gross margin of each month. Posting a month again posts the later months again, in order. The year-end Stock Variation is unchanged (it cancels and books the same stock).
+  - Landed costs (freight, insurance, customs duties, broker fees, other - not the import VAT) of a purchase now go into the cost of the items received with it, spread by value (IAS 2). Deleting the landed cost takes it out again.
+- Payroll > new tab "End of Service & Leave":
+  - End-of-service provision at a date: last salary x years of service (1 month per year) less the end-of-service contributions paid (Saber's posted payroll + "End-of-service contributions before Saber" on the employee); "Post Provision" brings 1552.1 to it (Dr 6355 / Cr 1552.1, or Dr 1552.1 / Cr 7552.2 when it goes down). An estimate for the accounts, not the NSSF settlement.
+  - Annual leave: leave taken (annual / sick / unpaid / other) and the balance of each employee - carried in + earned this year (15 days a year unless set on the employee, pro rata) - annual leave taken, with its value (balance x monthly salary / 30).
+  - "All Payslips (PDF)": every payslip of a month in one PDF, one page each.
+  - Employee file: new fields "End-of-service contributions before Saber (LBP)", "Annual leave days / year", "Leave days carried in".
+- Reports:
+  - Financial Reports > new tab "Management Pack" (month, currency): results of the month and the year to date against the budget and against last year, balance sheet summary (with its check), cash and banks, customers / suppliers ageing, VAT position of the quarter and key ratios (margins, current ratio, DSO / DPO, cash months), every currency converted. Excel / PDF.
+  - Drill-down: double-click an account in Profit & Loss, Balance Sheet or Comparative P&L to see its entries; double-click an entry to open its document.
+  - Dashboard: accounts off budget (costs above / revenue below the company budget of the year to date) by more than the % set in Accounting Settings (10% by default) are shown in "Needs attention".
+- Changed files: inventory.py, payroll_extras.py (new), management_pack.py (new), desktop_payroll_extras.py (new), desktop_reports_extras.py (new), database.py, db_payroll.py, db_accounts.py, accounting_setup.py, server.py, client.py, desktop.py, desktop_inventory.py, desktop_payroll.py, desktop_reports.py, desktop_layout.py, desktop_accounting_setup.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_82.py.
+
 ## Version 2.9.81 (Accounting Settings and the Year-End Check)
 - Settings > new tab "Accounting Settings":
   - "This company uses" (administrator): tick what the company uses - Sales Invoice, Uploaded Data, Journal Voucher, Import, Payment & Receipt, Purchases & Expenses, Inventory, Payroll, Quarterly VAT, Profit & Loss, Financial Reports, Fixed Assets, Production, Bank Reconciliation, and each Financial Report (General Ledger ... Business Reports). What is unticked leaves the menu / the report tabs for everybody in this company.

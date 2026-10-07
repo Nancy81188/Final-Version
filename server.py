@@ -36,6 +36,8 @@ import inventory
 import fixed_assets
 import vat_return
 import accounting_setup
+import payroll_extras
+import management_pack
 
 MAX_REQUEST_BODY_BYTES = 22 * 1024 * 1024
 log = logging.getLogger("saber.server")
@@ -164,6 +166,26 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/me":
             info={k:user[k] for k in ("id","username","role","language","expires_at")}; info["permissions"]={m:self.master_db.user_can(user,m) for m in ("payroll","vat","delete")}
             return self._json(200,info)
+        if path in ("/api/payroll/eos-provision","/api/payroll/leave","/api/payroll/leave-balances","/api/payroll/payslips"):  # 2.9.82
+            try:
+                if path.endswith("eos-provision"):
+                    result=payroll_extras.eos_provision(self.db,self._query(parsed,"date")); result["sections"]=payroll_extras.eos_sections(result)
+                    return self._json(200,ledger_reports.json_ready(result))
+                if path.endswith("leave"): return self._json(200,{"items":payroll_extras.list_leave(self.db,self._query(parsed,"year"))})
+                if path.endswith("leave-balances"):
+                    result=payroll_extras.leave_balances(self.db,self._query(parsed,"date")); result["sections"]=payroll_extras.leave_sections(result)
+                    return self._json(200,ledger_reports.json_ready(result))
+                return self._json(200,{"sections":ledger_reports.json_ready(payroll_extras.payslip_sections(self.db,self._query(parsed,"month_end")))})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/management-pack":  # 2.9.82
+            try:
+                month_end=self._query(parsed,"month_end"); year=int(iso_date(month_end)[:4])
+                return self._json(200,ledger_reports.json_ready(management_pack.build(self.db,month_end,self._query(parsed,"currency","USD"),self._previous_year_db(year))))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/budget-alerts":  # 2.9.82
+            try: return self._json(200,{"items":management_pack.budget_variances(self.db,self._query(parsed,"year"),self._query(parsed,"month"),
+                                        self._query(parsed,"currency","USD"),self._query(parsed,"threshold","10"))})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/accounting-setup":  # 2.9.81: what the company / this user hides, the default posting accounts
             try: return self._json(200,accounting_setup.setup(self.db,self.master_db,user["id"]))
             except Exception as exc: return self._json(400,{"error":str(exc)})
@@ -649,6 +671,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if path == "/api/inventory/documents":
                     return self._json(201,inventory.save_document(self.db,body.get("header",{}),body.get("lines",[]),user["id"],body.get("id")))
                 if path == "/api/inventory/stock-variation": return self._json(200,inventory.post_stock_variation(self.db,body.get("year"),user["id"]))
+                if path == "/api/inventory/monthly-variation": return self._json(200,inventory.post_monthly_stock_variation(self.db,body.get("month_end"),user["id"]))  # 2.9.82
                 if path == "/api/inventory/categories": return self._json(200,inventory.save_category(self.db,body,user["id"]))
                 if path == "/api/inventory/counts": return self._json(201,inventory.save_count(self.db,body.get("header",{}),body.get("lines",[]),user["id"],body.get("id"),bool(body.get("post"))))
                 if path == "/api/inventory/find-or-create": return self._json(200,{"item":inventory.find_or_create_item(self.db,body.get("name"),body.get("unit"),body.get("sku"),user["id"],body.get("supplier_id"))})
@@ -684,6 +707,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 year=body.get("year"); result=vat_return.save_return(self.db,year,body.get("quarter"),user["id"],self._previous_year_db(year),body.get("credit_brought_forward"),user["username"],body.get("refund_requested"))
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,vat_return.json_ready(result))
+        if path == "/api/payroll/eos-provision":  # 2.9.82
+            try: return self._json(201,ledger_reports.json_ready(payroll_extras.post_eos_provision(self.db,body.get("date"),user["id"])))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/payroll/leave":
+            try: return self._json(201,{"id":payroll_extras.save_leave(self.db,body,user["id"])})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/accounting-setup":  # 2.9.81: company settings (administrator)
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             try: return self._json(200,accounting_setup.save_setup(self.db,body,user["id"]))
@@ -1051,6 +1080,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return self._json(403,{"error":"You do not have permission to delete. Ask the administrator."})
             if path.startswith("/api/fixed-assets/"): result=fixed_assets.delete_asset(self.db,int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/vat-return/adjustments/"): result=vat_return.delete_adjustment(self.db,int(path.rsplit("/",1)[-1]),user["id"])
+            elif path.startswith("/api/payroll/leave/"): result=payroll_extras.delete_leave(self.db,int(path.rsplit("/",1)[-1]),user["id"])  # 2.9.82
             elif path.startswith("/api/inventory/documents/"): result=inventory.delete_document(self.db,int(path.rsplit("/",1)[-1]),user["id"])
             elif path.startswith("/api/production/recipes/"):
                 import production; from urllib.parse import unquote

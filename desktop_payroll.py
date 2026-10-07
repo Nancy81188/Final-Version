@@ -12,6 +12,7 @@ class PayrollMixin:
         self.payroll_employees_page=employees
         self.cnss_forms_page=forms_page
         nested.add(employees,text="Employees"); nested.add(run,text="Payroll Entry"); nested.add(reports_page,text="Payroll Reports & Worksheets (R5 / R6 / R10)"); nested.add(forms_page,text="CNSS Forms"); nested.add(settings_outer,text="Tax & NSSF Settings")
+        extras_page=tk.Frame(nested,bg=LIGHT); nested.insert(2,extras_page,text="End of Service & Leave"); self.build_payroll_extras_page(extras_page)  # 2.9.82
         employee_actions=tk.Frame(employees,bg=LIGHT); employee_actions.pack(fill="x",padx=10,pady=8)
         self.action_button(employee_actions,"New Employee",lambda:self.employee_dialog()).pack(side="left",padx=4)
         self.action_button(employee_actions,"Edit Selected",self.edit_selected_employee).pack(side="left",padx=4)
@@ -144,17 +145,19 @@ class PayrollMixin:
         register=tk.LabelFrame(form,text="Employee register | سجل المستخدمين",bg=LIGHT,padx=6,pady=4)
         register.grid(row=12,column=0,columnspan=4,padx=10,pady=8,sticky="ew")
         register_vars={key:tk.StringVar(value=str(data.get(key) or "")) for key in ("unit_code","unit_name","cost_of_living","extra_indemnity","representation_taxable","representation_exempt",
-            "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","leave_reason")}
+            "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","leave_reason",
+            "eos_paid_before","leave_days_year","leave_carried")}  # 2.9.82
         register_labels=(("unit_code","Unit code | رمز القسم"),("unit_name","Unit | القسم"),("cost_of_living","Cost of living / month"),("extra_indemnity","Extra indemnity (phone) / month"),
             ("representation_taxable","Representation taxable / month"),("representation_exempt","Representation not taxable / month"),
             ("addr_governorate","Governorate | محافظة"),("addr_caza","Caza | قضاء"),("addr_town","Town | بلدة"),("addr_district","District | حي"),
-            ("addr_street","Street | شارع"),("addr_building","Building | مبنى"),("addr_floor","Floor | طابق"),("phone2","Phone 2"),("leave_reason","Leaving reason | سبب الترك"))
+            ("addr_street","Street | شارع"),("addr_building","Building | مبنى"),("addr_floor","Floor | طابق"),("phone2","Phone 2"),("leave_reason","Leaving reason | سبب الترك"),
+            ("eos_paid_before","End-of-service contributions before Saber (LBP)"),("leave_days_year","Annual leave days / year (empty = 15)"),("leave_carried","Leave days carried in"))
         for index,(key,label) in enumerate(register_labels):
             row,column=index//2,(index%2)*2
             tk.Label(register,text=label,bg=LIGHT).grid(row=row,column=column,padx=6,pady=3,sticky="w")
             tk.Entry(register,textvariable=register_vars[key],width=26).grid(row=row,column=column+1,padx=6,pady=3,sticky="w")
         flags={key:tk.BooleanVar(value=str(data.get(key) or "0")=="1") for key in ("nssf_no_end_service","nssf_no_family","nssf_no_medical")}
-        flag_row=tk.Frame(register,bg=LIGHT); flag_row.grid(row=8,column=0,columnspan=4,sticky="w",pady=(4,0))
+        flag_row=tk.Frame(register,bg=LIGHT); flag_row.grid(row=10,column=0,columnspan=4,sticky="w",pady=(4,0))
         tk.Label(flag_row,text="Not subject to NSSF:",bg=LIGHT,fg=NAVY).pack(side="left",padx=4)
         for key,label in (("nssf_no_end_service","End of service | تعويض نهاية الخدمة"),("nssf_no_family","Family allowances | التعويضات العائلية"),("nssf_no_medical","Sickness & maternity | المرض والأمومة")):
             tk.Checkbutton(flag_row,text=label,variable=flags[key],bg=LIGHT).pack(side="left",padx=6)

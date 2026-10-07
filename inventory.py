@@ -209,13 +209,45 @@ def _movements(database, date_to=None, exclude_document_id=None):
     return [r for r in rows if (not date_to or r["doc_date"] <= date_to) and r["document_id"] != exclude_document_id]
 
 
+def _landed_cost_per_unit(database):
+    """2.9.82: {stock movement id: extra cost per unit}. The landed costs of a purchase (its linked 'Customs Case':
+    freight, insurance, customs duties, broker fees, other - not the import VAT) are spread over the items received
+    with that purchase, in proportion to their value, in the inventory currency (IAS 2: costs of purchase)."""
+    currency = settings(database)["currency"]
+    with database.connect() as db:
+        costs = [dict(r) for r in db.execute("""SELECT linked_invoice_id,currency,invoice_date,CAST(subtotal AS REAL) subtotal FROM invoices
+            WHERE source_file='Customs Case' AND linked_invoice_id IS NOT NULL AND status NOT IN ('cancelled','deleted')""")]
+        if not costs: return {}
+        receipts = [dict(r) for r in db.execute("""SELECT m.id,m.quantity,m.unit_cost,d.invoice_id FROM stock_movements m JOIN stock_documents d ON d.id=m.document_id
+            WHERE d.doc_type='receipt' AND d.invoice_id IS NOT NULL AND CAST(m.quantity AS REAL)>0""")]
+    total_by_purchase = {}
+    for cost in costs:
+        if not cost["subtotal"]: continue
+        try: rate = _recorded_conversion_rate(database, cost["currency"], currency, cost["invoice_date"])
+        except ValueError: rate = None
+        if rate is None: continue
+        total_by_purchase[cost["linked_invoice_id"]] = total_by_purchase.get(cost["linked_invoice_id"], ZERO) + _d(cost["subtotal"]) * _d(rate)
+    result = {}
+    for purchase_id, total in total_by_purchase.items():
+        lines = [r for r in receipts if r["invoice_id"] == purchase_id]
+        value = sum((_d(r["quantity"]) * _d(r["unit_cost"]) for r in lines), ZERO)
+        quantity = sum((_d(r["quantity"]) for r in lines), ZERO)
+        for line in lines:
+            share = (_d(line["quantity"]) * _d(line["unit_cost"]) / value) if value else (_d(line["quantity"]) / quantity if quantity else ZERO)
+            result[line["id"]] = (total * share / _d(line["quantity"])) if _d(line["quantity"]) else ZERO
+    return result
+
+
 def run_costing(database, date_to=None, method=None, callback=None, exclude_document_id=None, layers_callback=None):
     """Replays every movement in date order. Returns per-item {qty, value, by_warehouse, last_date}.
 
     Average: company-wide moving average; transfers carry that average cost.
     FIFO: issues consume the source warehouse's oldest layers; transfers carry those layers."""
     method = method or settings(database)["method"]; state = {}; transfers = {}; produced = {}
+    landed = _landed_cost_per_unit(database)  # 2.9.82: freight, customs ... of the purchase are part of the cost of its items
     for row in _movements(database, date_to, exclude_document_id):
+        extra = landed.get(row.get("id"))
+        if extra and not row.get("cost_layers"): row = {**row, "unit_cost": str(_d(row["unit_cost"]) + extra)}
         if row.get("movement_type") == "production_output":
             # 2.9.65: the finished product costs the materials used by the same order (at their real cost now) plus its extra cost
             made = _d(row["quantity"])
@@ -910,6 +942,15 @@ def build_report(database, report, options):
         else:
             title = "Slow-moving Stock"; sections.append({"heading": f"Items in stock with no issue since {display_date(cutoff)} ({int(options.get('days') or 90)} days)",
                                                           "headers": ["Item Code", "Item", "Unit", "On Hand", f"Value ({currency})", "Last Issue"], "rows": rows or [["No slow-moving items"] + [""] * 5], "total_rows": []})
+    elif report == "ledger_check":  # 2.9.82: stock valuation against the stock accounts of the ledger
+        check = stock_ledger_check(database, date_to, method)
+        title = "Stock vs Ledger"
+        sections.append({"heading": f"Stock valuation against the ledger on {display_date(date_to)} ({currency})",
+                         "headers": ["Stock account", "Items", f"Valuation ({currency})", f"Ledger ({currency})", "Difference", "Variation accounts"],
+                         "rows": [[g["stock_account"] + (f" - {g['name']}" if g.get("name") else ""), g["items"], g["valuation"], g["ledger"], g["difference"], g["variation"]] for g in check["groups"]]
+                         + [["TOTAL", sum(g["items"] for g in check["groups"]), check["valuation"], check["ledger"], check["difference"], ""]],
+                         "total_rows": [len(check["groups"])]})
+        sections.append({"heading": "How to read it", "headers": ["Note"], "rows": [[n] for n in check["notes"]], "total_rows": []})
     else: raise ValueError("Unknown inventory report")
     meta = [f"Company: {company.get('company_name') or '-'}   Inventory currency: {currency}   Costing: {'FIFO' if method == 'fifo' else 'Weighted average'}",
             f"Period: {display_date(date_from)} to {display_date(date_to)}" + (("   Filters: " + ", ".join(filters)) if filters else "")]
@@ -955,6 +996,95 @@ def post_stock_variation(database, year, user_id):
                                              "currency": currency, "voucher_type": "06"}, lines, user_id)
     return {"year": year, "opening": float(total_opening), "closing": float(total_closing), "variation": float(total_closing - total_opening),
             "voucher": voucher["voucher"]["entry_number"], "groups": detail}
+
+
+def _stock_groups(database, date_to, method=None):
+    """{stock account: {"valuation", "items"}} at date_to, and the account of each item (37 when none)."""
+    with database.connect() as db:
+        accounts = {r["id"]: (r["stock_account"] or STOCK_ACCOUNT) for r in db.execute("SELECT id,stock_account FROM inventory_items")}
+    groups = {STOCK_ACCOUNT: {"valuation": ZERO, "items": 0}}
+    for item_id, data in run_costing(database, date_to, method).items():
+        group = groups.setdefault(accounts.get(item_id, STOCK_ACCOUNT), {"valuation": ZERO, "items": 0})
+        group["valuation"] += data["value"]
+        if data["qty"]: group["items"] += 1
+    return groups
+
+
+def stock_ledger_check(database, date_to, method=None):
+    """2.9.82: the stock valuation (costing) against the balance of each stock account in the ledger at date_to.
+    With the periodic method the ledger only follows the stock when a stock variation is posted at that date."""
+    date_to = iso_date(date_to); currency = settings(database)["currency"]
+    groups = _stock_groups(database, date_to, method)
+    for group in groups.values(): group["ledger"] = ZERO
+    keys = sorted(groups, key=len, reverse=True); other = ZERO
+    for code, balance in _ledger_stock_accounts(database, date_to, currency).items():
+        owner = next((key for key in keys if code.startswith(key)), None)
+        if owner: groups[owner]["ledger"] += balance
+        else: other += balance
+    with database.connect() as db:
+        names = {r["code"]: r["name_en"] for r in db.execute("SELECT code,name_en FROM accounts")}
+        variations = [r["description"] for r in db.execute("SELECT description FROM journal_entries WHERE source_type='journal_voucher' AND voucher_type='06' AND description LIKE 'STOCK VARIATION%'")]
+    rows = []
+    for stock in sorted(groups):
+        g = groups[stock]; _cost, opening, closing, _note = stock_link(stock)
+        rows.append({"stock_account": stock, "name": names.get(stock, ""), "items": g["items"], "valuation": g["valuation"].quantize(Decimal("0.01")),
+                     "ledger": g["ledger"].quantize(Decimal("0.01")), "difference": (g["valuation"] - g["ledger"]).quantize(Decimal("0.01")),
+                     "variation": opening if opening == closing else f"{opening} / {closing}"})
+    rows = [r for r in rows if r["valuation"] or r["ledger"] or r["stock_account"] == STOCK_ACCOUNT]
+    valuation = sum((r["valuation"] for r in rows), ZERO); ledger = sum((r["ledger"] for r in rows), ZERO)
+    month = date_to[:7]; posted_here = any(d.startswith((f"STOCK VARIATION - {date_to[:4]}", f"STOCK VARIATION MONTH - {month}")) for d in variations)
+    notes = ["Valuation = quantities x cost of the stock documents (Stock Card); Ledger = balance of the stock accounts (31 / 33 / 35 / 37) in the books.",
+             "Periodic method: purchases go to 601 / 611 and the ledger follows the stock only through the Stock Variation voucher.",
+             ("A stock variation is posted at this date: a difference means a stock document or an entry on a stock account was changed after it - post the variation again."
+              if posted_here else "No stock variation at this date: the difference is what the monthly / year-end Stock Variation will book.")]
+    if other: notes.append(f"Class 3 accounts with no item linked to them: {other:,.2f} {currency} (not in the table).")
+    return {"date": date_to, "currency": currency, "groups": rows, "valuation": valuation, "ledger": ledger, "difference": valuation - ledger, "notes": notes, "posted": posted_here}
+
+
+def post_monthly_stock_variation(database, month_end, user_id):
+    """2.9.82: the Stock Variation of a month (Lebanese periodic method), so the P&L shows the month's cost of sales:
+    the stock in the ledger is cancelled (Dr 6051 / Cr 37 ...) and the stock valuation at the month end is booked
+    (Dr 37 / Cr 6052 ...), for each stock account. The later months already posted are posted again, in order."""
+    from calendar import monthrange
+    day = iso_date(month_end); year, month = int(day[:4]), int(day[5:7])
+    last = f"{year}-{month:02d}-{monthrange(year, month)[1]:02d}"
+    with database.connect() as db:
+        posted = sorted({r["description"][len("STOCK VARIATION MONTH - "):][:7] for r in db.execute(
+            "SELECT description FROM journal_entries WHERE source_type='journal_voucher' AND voucher_type='06' AND description LIKE ?", (f"STOCK VARIATION MONTH - {year}-%",))})
+    months = sorted({f"{year}-{month:02d}"} | {m for m in posted if m > f"{year}-{month:02d}"})
+    with database.connect() as db:
+        for m in months:
+            for row in db.execute("SELECT id FROM journal_entries WHERE source_type='journal_voucher' AND voucher_type='06' AND description LIKE ?", (f"STOCK VARIATION MONTH - {m}%",)).fetchall():
+                db.execute("DELETE FROM journal_entries WHERE id=?", (row["id"],))
+    results = []
+    for m in months:
+        y, mo = int(m[:4]), int(m[5:7]); end = f"{y}-{mo:02d}-{monthrange(y, mo)[1]:02d}"
+        results.append(_post_variation_at(database, end, f"STOCK VARIATION MONTH - {m}", user_id))
+    return {"month": last[:7], "posted": [r for r in results if r["voucher"]], "reposted": months[1:]}
+
+
+def _post_variation_at(database, date_to, description, user_id):
+    currency = settings(database)["currency"]
+    groups = _stock_groups(database, date_to)
+    for group in groups.values(): group["opening"] = ZERO
+    keys = sorted(groups, key=len, reverse=True)
+    for code, balance in _ledger_stock_accounts(database, date_to, currency).items():
+        owner = next((key for key in keys if code.startswith(key)), None)
+        if owner: groups[owner]["opening"] += balance
+    lines = []; total_opening = total_closing = ZERO
+    for stock, group in sorted(groups.items()):
+        opening = group["opening"].quantize(Decimal("0.01")); closing = group["valuation"].quantize(Decimal("0.01"))
+        if opening == closing: continue  # nothing changed on this account
+        _cost, opening_account, closing_account, _note = stock_link(stock)
+        if opening > 0: lines += [{"account_code": opening_account, "line_currency": currency, "side": "D", "amount": str(opening)}, {"account_code": stock, "line_currency": currency, "side": "C", "amount": str(opening)}]
+        elif opening < 0: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(-opening)}, {"account_code": opening_account, "line_currency": currency, "side": "C", "amount": str(-opening)}]
+        if closing: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(closing)}, {"account_code": closing_account, "line_currency": currency, "side": "C", "amount": str(closing)}]
+        total_opening += opening; total_closing += closing
+    if not lines: return {"date": date_to, "voucher": None, "opening": 0.0, "closing": 0.0}
+    day = f"{date_to[8:10]}-{date_to[5:7]}-{date_to[:4]}"
+    voucher = database.save_journal_voucher({"entry_date": day, "description": f"{description}: stock before {total_opening:,.2f} / at month end {total_closing:,.2f} {currency}",
+                                             "currency": currency, "voucher_type": "06"}, lines, user_id)
+    return {"date": date_to, "voucher": voucher["voucher"]["entry_number"], "opening": float(total_opening), "closing": float(total_closing)}
 
 
 def _ledger_stock_accounts(database, date_to, currency):

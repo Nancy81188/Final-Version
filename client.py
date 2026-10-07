@@ -335,6 +335,15 @@ class ApiClient:
             "credit_brought_forward":credit_brought_forward,"refund_requested":refund_requested}.items() if v not in (None,"")})
         return self.request("GET",f"/api/vat-return?{query}")
     def vat_returns(self): return self.request("GET","/api/vat-returns")["items"]
+    def eos_provision(self,date): return self.request("GET",f"/api/payroll/eos-provision?{urlencode({'date':date})}")
+    def post_eos_provision(self,date): return self.request("POST","/api/payroll/eos-provision",{"date":date})
+    def leave_records(self,year=None): return self.request("GET","/api/payroll/leave"+(f"?{urlencode({'year':year})}" if year else ""))["items"]
+    def save_leave(self,item): return self.request("POST","/api/payroll/leave",item)
+    def delete_leave(self,leave_id): return self.request("DELETE",f"/api/payroll/leave/{leave_id}")
+    def leave_balances(self,date): return self.request("GET",f"/api/payroll/leave-balances?{urlencode({'date':date})}")
+    def payslips(self,month_end): return self.request("GET",f"/api/payroll/payslips?{urlencode({'month_end':month_end})}")["sections"]
+    def management_pack(self,month_end,currency="USD"): return self.request("GET",f"/api/management-pack?{urlencode({'month_end':month_end,'currency':currency})}")
+    def budget_alerts(self,year,month,currency="USD",threshold=10): return self.request("GET",f"/api/budget-alerts?{urlencode({'year':year,'month':month,'currency':currency,'threshold':threshold})}")["items"]
     def accounting_setup(self): return self.request("GET","/api/accounting-setup")
     def save_accounting_setup(self,item): return self.request("POST","/api/accounting-setup",item)
     def save_my_hidden(self,hidden): return self.request("POST","/api/accounting-setup/user",{"hidden":list(hidden)})["user_hidden"]
@@ -400,6 +409,7 @@ class ApiClient:
     def next_stock_number(self,doc_type,date): return self.request("GET","/api/inventory/next-number?"+urlencode({"type":doc_type,"date":date}))["number"]
     def inventory_report(self,report,options): return self.request("GET","/api/inventory/report?"+urlencode({"report":report,"options":json.dumps(options)}))
     def post_stock_variation(self,year): return self.request("POST","/api/inventory/stock-variation",{"year":year})
+    def post_monthly_stock_variation(self,month_end): return self.request("POST","/api/inventory/monthly-variation",{"month_end":month_end})
     def record_nssf_payment(self,item): return self.request("POST","/api/payroll/nssf-payment",item)
     def open_documents(self,party_id): return self.request("GET",f"/api/parties/{party_id}/open-documents")["items"]
     def payment_allocations(self,payment_id): return self.request("GET",f"/api/payments/{payment_id}/allocations")["items"]

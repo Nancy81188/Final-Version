@@ -189,7 +189,7 @@ class AccountsStore:
         with self.connect() as db:
             self._account_row(db, code, "From")
             rows = [dict(r) for r in db.execute(f"""SELECT j.id,{day} entry_date,e.entry_number,e.description,COALESCE(j.description,'') line_description,e.currency,
-                CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit,COALESCE(p.name,'') party_name,e.source_type,e.source_id
+                CAST(j.debit AS REAL) debit,CAST(j.credit AS REAL) credit,COALESCE(p.name,'') party_name,e.source_type,e.source_id,e.id entry_id
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id LEFT JOIN parties p ON p.id=j.party_id
                 WHERE {' AND '.join(conditions)} ORDER BY {day},e.id,j.id""", parameters)]
         return rows

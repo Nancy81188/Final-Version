@@ -37,7 +37,7 @@ MODULES = {
     "bank_reconciliation": ("Bank Reconciliation (Payment & Receipt)", "tab", "Bank Reconciliation"),
 }
 REPORTS = ("General Ledger", "Balance Sheet", "Lebanese VAT Report", "Cash Flow", "Cash Flow Outlook", "Cash Budget", "Comparative P&L",
-           "Budget", "Projection & Budget (3D)", "Business Reports")
+           "Budget", "Projection & Budget (3D)", "Business Reports", "Management Pack")
 ALWAYS_SHOWN = ("dashboard_tab", "journal_tab", "account_reports_tab", "settings_tab")  # never hidden: the books and the settings stay reachable
 
 
@@ -125,6 +125,11 @@ def save_setup(db, item, user_id):
         names = {row["code"] for row in connection.execute("SELECT code FROM accounts")}
     changes = {}
     if "hidden" in item: changes["hidden_modules"] = json.dumps(clean_hidden(item.get("hidden")))
+    if "budget_alert_percent" in item:  # 2.9.82: the Dashboard flags accounts off budget by more than this %
+        try: percent = float(str(item.get("budget_alert_percent") or "10").replace("%", ""))
+        except ValueError: raise ValueError("The budget alert % must be a number, for example 10")
+        if not 0 < percent <= 1000: raise ValueError("The budget alert % must be between 0 and 1000")
+        changes["budget_alert_percent"] = f"{percent:g}"
     if "defaults" in item:
         current = default_accounts(db); chosen = {}
         for key, value in (item.get("defaults") or {}).items():
@@ -145,7 +150,9 @@ def save_setup(db, item, user_id):
 
 
 def setup(db, master_db=None, user_id=None):
-    return {"hidden": company_hidden(db), "user_hidden": user_hidden(master_db, user_id) if master_db is not None and user_id else [],
+    with db.connect() as connection:
+        row = connection.execute("SELECT value FROM app_settings WHERE key='budget_alert_percent'").fetchone()
+    return {"budget_alert_percent": row["value"] if row else "10", "hidden": company_hidden(db), "user_hidden": user_hidden(master_db, user_id) if master_db is not None and user_id else [],
             "modules": [{"key": key, "label": spec[0]} for key, spec in MODULES.items()], "reports": list(REPORTS),
             "defaults": default_accounts_listing(db), "payroll_note": PAYROLL_NOTE}
 

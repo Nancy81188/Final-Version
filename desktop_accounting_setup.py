@@ -50,6 +50,12 @@ class AccountingSetupMixin:
             bar = tk.Frame(accounts, bg=LIGHT); bar.grid(row=len(self.setup_default_vars) + 1, column=0, columnspan=3, sticky="w", pady=(6, 0))
             tk.Button(bar, text="Save Default Accounts", command=self.save_default_accounts, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
             self.action_button(bar, "Program Defaults", self.restore_default_accounts).pack(side="left", padx=3)
+        alerts = tk.LabelFrame(page, text="Dashboard", bg=LIGHT, padx=8, pady=6); alerts.pack(fill="x", padx=8, pady=6)  # 2.9.82
+        self.setup_alert_percent = tk.StringVar(value=str(values.get("budget_alert_percent") or "10"))
+        tk.Label(alerts, text="Show the accounts off budget (costs above / revenue below) by more than", bg=LIGHT).pack(side="left")
+        tk.Entry(alerts, textvariable=self.setup_alert_percent, width=6, state="normal" if is_admin else "disabled").pack(side="left", padx=4)
+        tk.Label(alerts, text="% (year to date, the company budget in the main currency)", bg=LIGHT).pack(side="left")
+        if is_admin: self.action_button(alerts, "Save", self.save_alert_percent).pack(side="left", padx=8)
         check = tk.LabelFrame(page, text="Year-End Check", bg=LIGHT, padx=8, pady=6); check.pack(fill="x", padx=8, pady=6)
         tk.Label(check, text="The points an auditor checks before the books are closed. It runs again by itself when you close the year (Profit & Loss).", bg=LIGHT, fg=MUTED).pack(side="left")
         tk.Button(check, text="Run Year-End Check", command=self.show_year_end_check, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=8)
@@ -78,6 +84,11 @@ class AccountingSetupMixin:
         except Exception as exc: return messagebox.showerror("Accounting Settings", str(exc))
         accounting_setup(self, refresh=True)
         messagebox.showinfo("Accounting Settings", "Default accounts saved. New documents use them from now on; documents already saved are not changed.")
+
+    def save_alert_percent(self):
+        try: self.client.save_accounting_setup({"budget_alert_percent": self.setup_alert_percent.get()})
+        except Exception as exc: return messagebox.showerror("Accounting Settings", str(exc))
+        accounting_setup(self, refresh=True); messagebox.showinfo("Accounting Settings", "Saved. The Dashboard uses it from now on.")
 
     def restore_default_accounts(self):
         if not messagebox.askyesno("Accounting Settings", "Put back the program's default accounts?"): return

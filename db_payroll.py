@@ -12,7 +12,8 @@ class PayrollStore:
     # a Lebanese statutory change does not rewrite previously calculated payroll periods.
     # 2.9.44 employee register (like the official declaration workbooks): unit, recurring allowances,
     # NSSF branches the employee is not subject to, structured address, how the employee left.
-    EMPLOYEE_MONEY_FIELDS = ("cost_of_living","extra_indemnity","representation_taxable","representation_exempt")
+    EMPLOYEE_MONEY_FIELDS = ("cost_of_living","extra_indemnity","representation_taxable","representation_exempt",
+                             "eos_paid_before","leave_carried","leave_days_year")  # 2.9.82: end of service, leave
     EMPLOYEE_FLAG_FIELDS = ("nssf_no_end_service","nssf_no_family","nssf_no_medical")
     EMPLOYEE_REGISTER_FIELDS = ("unit_code","unit_name")+EMPLOYEE_MONEY_FIELDS+EMPLOYEE_FLAG_FIELDS+(
         "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","pay_type","leave_reason")
