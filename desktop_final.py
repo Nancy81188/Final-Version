@@ -439,7 +439,15 @@ class FinalFeaturesMixin:
         law = tk.Frame(page, bg=LIGHT); law.pack(fill="x", padx=10, pady=(0, 4))
         self.vat_ratio = tk.StringVar(); self.vat_refund = tk.StringVar()
         tk.Label(law, text=f"Credit B/F ({vat_currency(self)}, optional)", bg=LIGHT).pack(side="left"); tk.Entry(law, textvariable=self.vat_credit_override, width=13).pack(side="left", padx=(4, 12))
-        tk.Label(law, text="Provisional deduction % for the year (Art. 31)", bg=LIGHT).pack(side="left"); tk.Entry(law, textvariable=self.vat_ratio, width=7).pack(side="left", padx=4)
+        # 2.9.83: Art. 31 ratio - each quarter from its own turnover (default) or the annual method with the Q4 adjustment
+        methods = {"quarter": "Each quarter alone (automatic)", "annual": "Annual (provisional + Q4 adjustment)"}
+        try: current_method = str((self.client.settings() or {}).get("vat_ratio_method") or "quarter")
+        except Exception: current_method = "quarter"
+        self.vat_ratio_method = tk.StringVar(value=methods.get(current_method, methods["quarter"]))
+        tk.Label(law, text="Deduction ratio (Art. 31)", bg=LIGHT).pack(side="left")
+        method_box = ttk.Combobox(law, textvariable=self.vat_ratio_method, values=list(methods.values()), state="readonly", width=34); method_box.pack(side="left", padx=4)
+        method_box.bind("<<ComboboxSelected>>", lambda _e: self.save_vat_ratio_method({v: k for k, v in methods.items()}[self.vat_ratio_method.get()]))
+        tk.Label(law, text="Provisional %", bg=LIGHT).pack(side="left"); tk.Entry(law, textvariable=self.vat_ratio, width=7).pack(side="left", padx=4)
         self.action_button(law, "Save %", self.save_vat_ratio).pack(side="left", padx=(0, 12))
         tk.Label(law, text=f"Refund requested ({vat_currency(self)}, Art. 30)", bg=LIGHT).pack(side="left"); tk.Entry(law, textvariable=self.vat_refund, width=13).pack(side="left", padx=4)
         actions = tk.Frame(page, bg=LIGHT); actions.pack(fill="x", padx=10)
@@ -672,6 +680,12 @@ class FinalFeaturesMixin:
         except Exception as exc: return messagebox.showerror("Deduction ratio", str(exc))
         messagebox.showinfo("Deduction ratio", f"Provisional deduction ratio for {year}: {float(saved) * 100:.2f}%. Q4 always uses the final annual ratio." if saved is not None
                             else f"No provisional ratio for {year}: Q1-Q3 use the year-to-date turnover.")
+        self.load_vat_return()
+
+    def save_vat_ratio_method(self, method):
+        """2.9.83: 'quarter' - each quarter's own turnover, no year-end adjustment; 'annual' - provisional / year-to-date, Q4 adjustment."""
+        try: self.client.save_settings({"vat_ratio_method": method})
+        except Exception as exc: return messagebox.showerror("Deduction ratio", str(exc))
         self.load_vat_return()
 
     def reopen_vat_return(self):

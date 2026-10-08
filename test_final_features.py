@@ -753,6 +753,7 @@ class LebaneseVatLawTest(unittest.TestCase):
                                              [{"description": "P", "quantity": 1, "unit_price": amount, "vat_rate": rate}], self.user)
 
     def test_supply_types_and_partial_deduction(self):
+        self.db.save_settings({"vat_ratio_method": "annual"}, self.user)  # 2.9.83: the provisional ratio belongs to the annual method
         self.sale("10-02-2025", 6000); self.sale("11-02-2025", 2000, "zero_rated", 0); self.sale("12-02-2025", 2000, "exempt", 0)
         self.purchase("15-02-2025", 1000, "mixed"); self.purchase("16-02-2025", 500, "taxable"); self.purchase("17-02-2025", 300, "exempt")
         result = vat_return.build_vat_return(self.db, 2025, 1); usd = result["per_currency"]["USD"]
@@ -767,6 +768,7 @@ class LebaneseVatLawTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "VAT treatment"): self.sale("10-02-2025", 1, "luxury")
 
     def test_q4_final_ratio_adjusts_the_year(self):
+        self.db.save_settings({"vat_ratio_method": "annual"}, self.user)  # 2.9.83: the Q4 adjustment is the annual method (default is now each quarter alone)
         self.db.save_vat_provisional_ratio(2025, "100", self.user)
         self.sale("10-02-2025", 5000); self.purchase("15-02-2025", 1000, "mixed")
         vat_return.save_return(self.db, 2025, 1, self.user)

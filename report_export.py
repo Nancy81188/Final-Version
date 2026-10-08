@@ -87,7 +87,7 @@ def pdf_paragraph(text, style, bold=False):
         from reportlab.lib.styles import ParagraphStyle
         size = style.fontSize * 1.2
         arabic_style = ParagraphStyle(f"ar-{style.name}-{bold}", parent=style, fontName=bold_font if bold else regular, fontSize=size, leading=size * 1.4,
-                                      alignment=2 if not _re.search(r"[A-Za-z]{3}", str(text)) else style.alignment)
+                                      alignment=style.alignment if style.alignment == 1 else 2 if not _re.search(r"[A-Za-z]{3}", str(text)) else style.alignment)  # 2.9.83: centred stays centred
         return Paragraph(_escape(shape_arabic(text)), arabic_style)
     text = _escape(str(text or ""))
     return Paragraph(f"<b>{text}</b>" if bold and text else text, style)
@@ -357,8 +357,15 @@ def tidy_sections(sections):
     return tidy
 
 
+def _accounting_text(value):
+    from decimal import Decimal
+    if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool) and float(value) < 0: return f"({_formatted(abs(value))})"
+    return _cell_text(value)
+
+
 def _looks_numeric(text):
     text = str(text or "").strip()
+    if len(text) > 2 and text[0] == "(" and text[-1] == ")": text = text[1:-1]
     return text == "-" or (bool(text) and text.replace(",", "").replace(".", "").lstrip("-").rstrip("%").isdigit())
 
 
@@ -374,7 +381,114 @@ def _safe_sheet_title(title):
     return cleaned[:31] or "Report"
 
 
+def _financial_sheet_name(heading):
+    heading = str(heading or "")
+    for prefix, name in (("INDEPENDENT AUDITOR", "Auditor's Report"), ("STATEMENT OF FINANCIAL POSITION", "Financial Position"),
+                         ("STATEMENT OF PROFIT", "Profit or Loss"), ("STATEMENT OF CHANGES", "Changes in Equity"),
+                         ("STATEMENT OF CASH", "Cash Flows"), ("PREPARER REVIEW", "Review Points")):
+        if heading.startswith(prefix): return name
+    return "Notes"
+
+
+def export_financial_excel(path, title, meta, sections):
+    """2.9.83: the financial statements pack as a print-ready workbook - a centred cover sheet, one sheet per statement,
+    the notes together, A4 portrait fitted to the page width, accounting number format (negatives in brackets)."""
+    from openpyxl.styles import Border, Side
+    from openpyxl.worksheet.properties import PageSetupProperties
+    meta = list(meta or []); company = meta[0] if meta else ""
+    period = (meta[1] if len(meta) > 1 else "").replace(" - with comparative figures", "")
+    currency = next((m for m in meta if str(m).startswith("Presentation currency")), "")
+    auditor = next((str(m)[len("Auditor: "):] for m in meta if str(m).startswith("Auditor: ")), "")
+    navy = PatternFill("solid", fgColor=NAVY); thin = Side(style="thin", color="071B2E"); double = Side(style="double", color="071B2E")
+    accounting = '#,##0;(#,##0);"-"'; accounting2 = '#,##0.00;(#,##0.00);"-"'
+    wb = Workbook(); sheets = {}
+
+    def setup(ws, widths):
+        ws.sheet_view.showGridLines = False
+        ws.page_setup.orientation = "portrait"; ws.page_setup.paperSize = ws.PAPERSIZE_A4
+        ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True); ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0
+        ws.print_options.horizontalCentered = True
+        ws.page_margins.left = ws.page_margins.right = 0.5; ws.page_margins.top = ws.page_margins.bottom = 0.6
+        ws.oddFooter.left.text = company; ws.oddFooter.right.text = "Page &P of &N"
+        for column, width in enumerate(widths, 1): ws.column_dimensions[get_column_letter(column)].width = width
+
+    def centred(ws, row, text, width, size=11, bold=False, colour="071B2E", height=None):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=width)
+        cell = ws.cell(row, 1, text); cell.font = Font(size=size, bold=bold, color=colour)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        if height: ws.row_dimensions[row].height = height
+
+    # ---- cover
+    cover = wb.active; cover.title = "Cover"; setup(cover, [14, 30, 30, 14])
+    row = 8; centred(cover, row, company.upper(), 4, 20, True, height=34); row += 2
+    centred(cover, row, "FINANCIAL STATEMENTS", 4, 15, True, height=22); row += 1
+    centred(cover, row, "AND INDEPENDENT AUDITOR'S REPORT", 4, 12, True, height=20); row += 2
+    if period: centred(cover, row, period, 4, 12); row += 1
+    if currency: centred(cover, row, currency, 4, 10, colour="5F6B76"); row += 1
+    row += 2; centred(cover, row, "CONTENTS", 4, 11, True); cover.cell(row, 2).border = Border(top=thin); cover.cell(row, 3).border = Border(top=thin)
+    for item in _contents(sections):
+        row += 1; cover.cell(row, 2, item).font = Font(size=10)
+        cover.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+        cover.cell(row, 2).alignment = Alignment(horizontal="center")
+    cover.cell(row, 2).border = Border(bottom=thin); cover.cell(row, 3).border = Border(bottom=thin)
+    if auditor: row += 4; centred(cover, row, auditor, 4, 11, True)
+
+    for section in tidy_sections(sections):
+        name = _financial_sheet_name(section.get("heading"))
+        headers = list(section.get("headers") or []); narrative = bool(section.get("narrative"))
+        if name not in sheets:
+            ws = wb.create_sheet(name)
+            if narrative or name == "Notes": widths = [95] if narrative else [50] + [18] * max(1, len(headers) - 1)
+            elif headers[:2] == ["", "Notes"] or headers[:2] == ["", ""]: widths = [52, 8] + [18] * (len(headers) - 2)
+            else: widths = [44] + [17] * (len(headers) - 1)
+            if name == "Notes": widths = [60, 18, 18, 18]
+            setup(ws, widths); sheets[name] = [ws, 1, len(widths)]
+            centred(ws, 1, company.upper(), sheets[name][2], 13, True, height=22)
+            sheets[name][1] = 3
+        ws, row, width = sheets[name]
+        if section.get("center"): centred(ws, row, section["heading"], width, 12, True, height=32)
+        else: ws.cell(row, 1, section["heading"]).font = Font(size=11, bold=True, color=NAVY)
+        row += 1
+        if narrative:
+            for values in section.get("rows") or []:
+                for paragraph in " — ".join(str(v) for v in values).splitlines() or [""]:
+                    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=width)
+                    cell = ws.cell(row, 1, paragraph)
+                    bold = bool(section.get("center")) and _is_subheading(paragraph)
+                    cell.font = Font(bold=bold, size=10, color="071B2E" if bold else "000000")
+                    cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="justify" if not bold else "left")
+                    chars = int(sum(ws.column_dimensions[get_column_letter(c)].width for c in range(1, width + 1)) * 1.1)
+                    ws.row_dimensions[row].height = max(15, 14 * (len(paragraph) // max(40, chars) + 1))
+                    row += 1
+            sheets[name][1] = row + 1; continue
+        for column, header in enumerate(headers, 1):
+            h = ws.cell(row, column, header); h.font = Font(bold=True, color="FFFFFF", size=10); h.fill = navy
+            h.alignment = Alignment(horizontal="center" if column > 1 else "left", vertical="center", wrap_text=True)
+        ws.row_dimensions[row].height = 28; row += 1
+        totals = set(section.get("total_rows") or [])
+        for index, values in enumerate(section.get("rows") or []):
+            caption = str(values[0]) if values else ""
+            is_heading = len(values) > 1 and all(v in ("", None) for v in values[1:]) and caption
+            grand = index in totals and caption == caption.upper() and any(ch.isalpha() for ch in caption)
+            for column, value in enumerate(values, 1):
+                c = ws.cell(row, column, _plain(value))
+                if isinstance(c.value, (int, float)) and not isinstance(c.value, bool):
+                    c.number_format = accounting2 if isinstance(c.value, float) and abs(c.value - round(c.value)) > 1e-9 else accounting
+                    c.alignment = Alignment(horizontal="right")
+                    if index in totals: c.border = Border(top=thin, bottom=double if grand else None)
+                else:
+                    c.alignment = Alignment(vertical="top", wrap_text=True, horizontal="center" if column == 2 and headers[1:2] == ["Notes"] else None)
+                c.font = Font(size=10, bold=bool(index in totals or is_heading), color=NAVY if is_heading else "000000")
+            row += 1
+        sheets[name][1] = row + 1
+    for ws, _row, _width in sheets.values():
+        ws.print_title_rows = "1:1"
+    wb.save(path)
+
+
 def export_sections_excel(path, title, meta, sections):
+    if str(title).startswith("Financial Statements,"):  # 2.9.83: the audit report pack has its own print-ready layout
+        return export_financial_excel(path, title, meta, sections)
     sections = tidy_sections(sections)
     wb = Workbook(); ws = wb.active; ws.title = _safe_sheet_title(title)
     width = max([len(section["headers"]) for section in sections] + [2])
@@ -455,6 +569,52 @@ def _excel_chart(ws, row, spec):
     return last + 2 + 19
 
 
+def _is_subheading(text):
+    text = str(text or "").strip()
+    return bool(text) and len(text) <= 110 and text == text.upper() and any(ch.isalpha() for ch in text)
+
+
+def _contents(sections):
+    """The statements and notes of the pack, for the cover page."""
+    items = []
+    for section in sections:
+        heading = str(section.get("heading") or "")
+        if heading.startswith("PREPARER REVIEW"): continue
+        if heading.startswith("INDEPENDENT AUDITOR"): items.append("Independent auditor's report")
+        elif heading.startswith("STATEMENT OF"): items.append(heading.split(" as at ")[0].split(" for the ")[0].split(" (")[0].title().replace(" Or ", " or ").replace(" And ", " and ").replace(" Of ", " of ").replace(" In ", " in "))
+        elif heading.startswith("NOTES TO THE FINANCIAL STATEMENTS"):
+            items.append("Notes to the financial statements"); break
+    return items
+
+
+def _financial_cover(doc, styles, regular, bold_font, meta, sections):
+    """2.9.83: front page of the financial statements, centred on the page: company, title, period, currency, contents, auditor."""
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import PageBreak
+    meta = list(meta or [])
+    company = meta[0] if meta else ""; period = meta[1] if len(meta) > 1 else ""
+    currency = next((m for m in meta if str(m).startswith("Presentation currency")), "")
+    auditor = next((str(m)[len("Auditor: "):] for m in meta if str(m).startswith("Auditor: ")), "")
+    centre = lambda name, size, font, colour="#071B2E", space=0: ParagraphStyle(name, parent=styles["Normal"], alignment=1, fontName=font, fontSize=size,
+                                                                                 leading=size * 1.3, textColor=colors.HexColor(colour), spaceAfter=space)
+    story = [Spacer(1, doc.height * 0.22),
+             pdf_paragraph(company.upper(), centre("cover-company", 22, bold_font, space=6*mm), True),
+             pdf_paragraph("FINANCIAL STATEMENTS", centre("cover-title", 16, bold_font, space=2*mm), True),
+             pdf_paragraph("AND INDEPENDENT AUDITOR'S REPORT", centre("cover-sub", 12, bold_font, space=8*mm), True)]
+    if period: story.append(pdf_paragraph(period.replace(" - with comparative figures", ""), centre("cover-period", 12, regular, space=2*mm)))
+    if currency: story.append(pdf_paragraph(currency, centre("cover-currency", 10, regular, "#5F6B76", space=14*mm)))
+    contents = _contents(sections)
+    if contents:
+        rows = [[pdf_paragraph("CONTENTS", centre("cover-contents", 10, bold_font), True)]] + [[pdf_paragraph(item, centre(f"cover-item-{i}", 10, regular))] for i, item in enumerate(contents)]
+        table = Table(rows, colWidths=[doc.width * 0.6], hAlign="CENTER")
+        table.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), .6, colors.HexColor("#071B2E")), ("LINEBELOW", (0, 0), (-1, 0), .3, colors.grey),
+                                   ("LINEBELOW", (0, -1), (-1, -1), .6, colors.HexColor("#071B2E")), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+        story += [table, Spacer(1, 18*mm)]
+    if auditor: story.append(pdf_paragraph(auditor, centre("cover-auditor", 11, bold_font), True))
+    story.append(PageBreak())
+    return story
+
+
 def export_sections_pdf(path, title, meta, sections):
     from reportlab.lib.styles import ParagraphStyle
     sections = tidy_sections(sections)
@@ -471,21 +631,37 @@ def export_sections_pdf(path, title, meta, sections):
     header_style = ParagraphStyle("header", parent=styles["Normal"], fontName=bold_font, fontSize=10 if financial else 8, leading=13 if financial else 10, textColor=colors.white, alignment=1)
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=10 if financial else 8, leading=13 if financial else 10)
     number_style = ParagraphStyle("cell-number", parent=cell_style, alignment=2)  # amounts line up on the right
-    story = [pdf_paragraph(title, styles["Title"], True)]
-    for line in list(meta or []) + [f"Generated: {datetime.now():%d-%m-%Y %H:%M}"]: story.append(pdf_paragraph(line, styles["Normal"]))
-    story.append(Spacer(1, 4*mm))
+    # 2.9.83: totals and headings with the bold font itself (<b> has no effect on the Arabic-capable fonts)
+    cell_bold = ParagraphStyle("cell-bold", parent=cell_style, fontName=bold_font); number_bold = ParagraphStyle("cell-number-bold", parent=number_style, fontName=bold_font)
+    if financial:
+        story = _financial_cover(doc, styles, regular, bold_font, meta, sections)  # 2.9.83: centred front page
+    else:
+        story = [pdf_paragraph(title, styles["Title"], True)]
+        for line in list(meta or []) + [f"Generated: {datetime.now():%d-%m-%Y %H:%M}"]: story.append(pdf_paragraph(line, styles["Normal"]))
+        story.append(Spacer(1, 4*mm))
+    centred = ParagraphStyle("centred-heading", parent=styles["Heading3"], alignment=1)
+    subheading = ParagraphStyle("sub-heading", parent=styles["Normal"], fontName=bold_font, spaceBefore=4)
     # ReportLab frames add 6pt padding on each side of doc.width.
     available = doc.width - 12
     for section in sections:
-        if (financial and (section["heading"].startswith(("Statement of", "Notes: account")) or section["heading"].endswith("DRAFT - Addressee"))) or (section.get("page_break") and story):
+        after_cover = financial and story and type(story[-1]).__name__ == "PageBreak"
+        if not after_cover and ((financial and (section["heading"].startswith(("Statement of", "Notes: account")) or section["heading"].endswith("DRAFT - Addressee"))) or (section.get("page_break") and story)):
             from reportlab.platypus import PageBreak
             story.append(PageBreak())
-        story.append(pdf_paragraph(section["heading"], styles["Heading3"], True))
+        story.append(pdf_paragraph(section["heading"], centred if financial and section.get("center") else styles["Heading3"], True))
         if section.get("narrative"):
+            start = len(story)
             for values in section["rows"]:
                 for paragraph in " — ".join(str(v) for v in values).splitlines():
-                    story.append(pdf_paragraph(paragraph, styles["Normal"]))
+                    # 2.9.83: the sub-titles of the auditor's report (OPINION, BASIS FOR OPINION ...) in bold
+                    heading_line = financial and section.get("center") and _is_subheading(paragraph)
+                    story.append(pdf_paragraph(paragraph, subheading if heading_line else styles["Normal"], bool(heading_line)))
                     story.append(Spacer(1, 2*mm))
+            keep = int(section.get("keep_last") or 0)
+            if financial and keep and len(story) - start > 2 * (keep + 1):
+                # 2.9.83: the signature block stays on the page of the last paragraph of the report
+                from reportlab.platypus import KeepTogether
+                block = story[-2 * (keep + 1):]; del story[-2 * (keep + 1):]; story.append(KeepTogether(block))
             story.append(Spacer(1, 3*mm))
             continue
         if section.get("chart"):  # 2.9.50: 3D bar chart drawn above the table
@@ -496,7 +672,8 @@ def export_sections_pdf(path, title, meta, sections):
         headers = section["headers"]; count = len(headers)
         if not count:
             continue
-        body = [[_cell_text(value) for value in list(values) + [""] * (count - len(values))] for values in section["rows"]]
+        text_of = _accounting_text if financial else _cell_text  # 2.9.83: (1,234) for negative amounts in the financial statements
+        body = [[text_of(value) for value in list(values) + [""] * (count - len(values))] for values in section["rows"]]
         if any(len(row) > count for row in body):
             raise ValueError(f"Section {section['heading']!r} has more values than headers")
         def preferred_width(column):
@@ -508,6 +685,9 @@ def export_sections_pdf(path, title, meta, sections):
         if financial and count == 5:
             weights = [13, 24, 29, 20, 23] if headers[0] == "Account" else [35, 16, 23, 16, 16]
             widths = [weight * available / sum(weights) for weight in weights]
+        if financial and headers[0] == "Description" and count >= 2:
+            # 2.9.83: the account tables of the notes use the whole page width like the statements
+            first = available * (0.55 if count <= 3 else 0.42); widths = [first] + [(available - first) / (count - 1)] * (count - 1)
         if financial and len(headers) >= 3 and headers[0] == "" and headers[1] in ("", "Notes"):
             # 2.9.69: statements - wide caption column, narrow Notes column, equal amount columns
             amounts = count - 2; first = available * (0.55 if amounts <= 2 else 0.42); notes = available * 0.08
@@ -537,15 +717,18 @@ def export_sections_pdf(path, title, meta, sections):
                 story.append(pdf_paragraph(f"Columns {band[1] + 1}–{band[-1] + 1} of {count} (first column repeated)", styles["Normal"]))
             data = [[header_cell(headers[i]) for i in band]]
             bold_rows = set(section.get("total_rows") or [])
+            if financial:  # 2.9.83: caption-only rows (ASSETS, CASH FLOWS FROM ...) are headings
+                bold_rows |= {n for n, r in enumerate(body) if r and r[0] and len(r) > 1 and all(not v for v in r[1:])}
             for number, row in enumerate(body):
-                data.append([pdf_paragraph(row[i], number_style if _looks_numeric(row[i]) else cell_style, number in bold_rows) for i in band])
+                bold = number in bold_rows
+                data.append([pdf_paragraph(row[i], (number_bold if bold else number_style) if _looks_numeric(row[i]) else (cell_bold if bold else cell_style), bold) for i in band])
             table = Table(data, repeatRows=1, splitInRow=1, colWidths=[widths[i] for i in band])
             style = [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#071B2E")),
                      ("GRID", (0, 0), (-1, -1), .25, colors.grey), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                      ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F6F8")]),
                      ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
             for position, column in enumerate(band):
-                if any(value and (value == "-" or value.replace(",", "").replace(".", "").lstrip("-").isdigit()) for value in (row[column] for row in body)):
+                if any(value and _looks_numeric(value) for value in (row[column] for row in body)):
                     style.append(("ALIGN", (position, 1), (position, -1), "RIGHT"))
             for index in section.get("total_rows") or []:
                 if 0 <= index < len(body):

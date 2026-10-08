@@ -1,5 +1,16 @@
 # Saber Accounting MVP
 
+## Version 2.9.83 (audit report pack and VAT Art. 31 by quarter)
+- Financial Statements (audit report pack):
+  - Centred front page: company, "Financial Statements and Independent Auditor's Report", period, currency, contents and audit firm. The auditor's report and the four statements have centred titles; the sub-titles of the report (OPINION, BASIS FOR OPINION ...) are bold; the signature stays on the same page as the last paragraph.
+  - Tables: totals and headings in bold, negative amounts in brackets (1,234), note tables across the whole page.
+  - Excel: a print-ready workbook - Cover, Auditor's Report, Financial Position, Profit or Loss, Changes in Equity, Cash Flows, Notes, Review Points - A4 portrait fitted to the page width, no grid lines, accounting format with brackets, single / double lines under totals, page numbers.
+  - Edit Texts > new tab "Company & Auditor": legal form, commercial register number, date of incorporation, tax number, activities, shareholders, directors, share capital, approval date, audit firm, partner, LACPA licence, address, city and date of the report. Entered once: they go automatically into the notes and the auditor's report (as {legal_form}, {auditor_firm} ...). A field left empty shows as [label] and is listed in the review points.
+  - Information, texts and account mapping are now saved for every fiscal year of the company (each year is its own file): no need to enter them again for the next year. The cash flow / OCI amounts stay with their own year. A year without settings takes them from another year. A text left as the standard one follows the standard text (texts saved unchanged by older versions get the new ones).
+  - New notes: Share capital (under the share capital table), Income tax, Financial risk management, Approval of the financial statements.
+  - Test changed on purpose (owner request): test_financial_statements - the texts saved for one year now apply to the other years too, and the Excel pack has one sheet per statement.
+- VAT, partial deduction (Art. 31) - owner decision: by default each quarter uses the ratio of its own turnover (taxable + zero-rated / all supplies of that quarter), calculated automatically, with no year-end adjustment in Q4 and no provisional %. The earlier method (provisional / year-to-date for Q1-Q3, final annual ratio with the adjustment of Q1-Q3 in Q4) can still be chosen in the VAT tab ("Deduction ratio (Art. 31)" = Annual); the two older VAT tests now choose it explicitly.
+
 ## Version 2.9.82 (stock, payroll and reports for the accountant)
 - Stock:
   - Inventory Reports > "Stock vs Ledger": the stock valuation (Stock Card costs) against the balance of each stock account (31 / 33 / 35 / 37) in the books at a date, with the difference and how to read it.

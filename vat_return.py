@@ -75,6 +75,17 @@ def _vat_setup(db):
     return rate, str(first or "LBP").upper(), str(second or "USD").upper()
 
 
+RATIO_METHODS = ("quarter", "annual")
+
+
+def vat_ratio_method(db):
+    """2.9.83: how the Art. 31 deduction ratio is set - 'quarter' (default: each quarter from its own turnover, no
+    year-end adjustment) or 'annual' (provisional / year-to-date for Q1-Q3, final annual ratio and adjustment in Q4)."""
+    try: value = str(db.settings().get("vat_ratio_method") or "quarter").strip().lower()
+    except Exception: value = "quarter"
+    return value if value in RATIO_METHODS else "quarter"
+
+
 def _documents(db, start, end, currency, include_review):
     statuses = ("posted", "review") if include_review else ("posted",)
     std_rate = _vat_setup(db)[0]
@@ -223,12 +234,19 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
         if key not in rates: rates[key] = db._converted_amount(Decimal("1"), code, vat_currency, day)
         return rates[key]
     to_lbp = lambda amount, code, day: rnd(Decimal(amount) * rate_of(code, day))
-    # ---- partial deduction ratio (Art. 31): provisional for Q1-Q3, final annual ratio in Q4
+    # ---- partial deduction ratio (Art. 31)
+    # 2.9.83 (owner decision): by default each quarter uses the ratio of its own turnover, calculated automatically,
+    # with no year-end adjustment. The earlier method (provisional / year-to-date for Q1-Q3, final annual ratio and
+    # adjustment of Q1-Q3 in Q4) stays available: Settings > VAT ratio method = annual.
+    method = vat_ratio_method(db)
     year_start = f"{int(year)}-01-01"; year_end = f"{int(year)}-12-31"
     ytd_detail = {}
-    ytd_taxable, ytd_exempt = _turnover(db, year_start, end, include_review, rate_of, ytd_detail)
+    ytd_taxable, ytd_exempt = _turnover(db, start if method == "quarter" else year_start, end, include_review, rate_of, ytd_detail)
     provisional = db.vat_provisional_ratio(year)
-    if int(quarter) == 4:
+    final_detail = ytd_detail
+    if method == "quarter":
+        ratio = _ratio(ytd_taxable, ytd_exempt); ratio_source = f"turnover of Q{int(quarter)} {int(year)} only"
+    elif int(quarter) == 4:
         final_detail = {}
         final_taxable, final_exempt = _turnover(db, year_start, year_end, include_review, rate_of, final_detail)
         ratio = _ratio(final_taxable, final_exempt); ratio_source = "final annual ratio"
@@ -277,7 +295,7 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
     totals_lbp = {key: sum((values[key]["vat_lbp"] for values in per_currency.values()), ZERO) for _, key, _ in LINES}
     # ---- Q4: adjust Q1-Q3 to the final annual ratio (Art. 32 adjustment of deductions)
     annual_adjustment = ZERO; adjustment_detail = []
-    if int(quarter) == 4 and not currency:
+    if int(quarter) == 4 and not currency and method == "annual":
         for previous_q in (1, 2, 3):
             previous = build_vat_return(db, year, previous_q, None, include_review, previous_year_db, None, _memo=memo)
             mixed = sum((values["mixed"]["vat_lbp"] for values in previous["per_currency"].values()), ZERO)
@@ -331,7 +349,7 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
               (("net", totals_lbp["net"]), ("payable", payable), ("credit_carried_forward", credit_cf), ("credit_brought_forward", credit_bf))}
     return {"year": int(year), "quarter": int(quarter), "date_from": start, "date_to": end, "due_date": due_date(year, quarter), "currency_filter": currency or "All",
         "include_review": bool(include_review), "per_currency": per_currency, "totals_lbp": totals_lbp,
-        "deduction_ratio": ratio, "ratio_source": ratio_source, "ytd_turnover_lbp": {"taxable": ytd_taxable, "exempt": ytd_exempt}, "ytd_turnover_detail": ytd_detail if int(quarter) != 4 else final_detail, "annual_adjustment_detail": adjustment_detail,
+        "deduction_ratio": ratio, "ratio_source": ratio_source, "ratio_method": method, "ytd_turnover_lbp": {"taxable": ytd_taxable, "exempt": ytd_exempt}, "ytd_turnover_detail": ytd_detail if int(quarter) != 4 else final_detail, "annual_adjustment_detail": adjustment_detail,
         "credit_brought_forward_lbp": credit_bf, "credit_source": source, "net_after_credit_lbp": net_after_credit,
         "payable_lbp": payable, "refund_requested_lbp": refund, "credit_carried_forward_lbp": credit_cf, "documents": documents, "adjustments": adjustments,
         "skipped": skipped, "review_excluded": review_excluded, "warnings": warnings, "saved": saved, "changed_since_saved": changed,

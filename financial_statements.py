@@ -33,14 +33,18 @@ LIABILITIES = ['noncurrent_liabilities','payables','current_liabilities']
 INCOME = ['revenue','other_income']
 EXPENSES = ['materials','services','staff','taxes','finance','depreciation','other_expenses','income_tax']
 NARRATIVES = {
- 'Entity and activities': '{company} (the "Company") is registered in Lebanon{address_text}. [Complete: legal form, commercial register number, date of incorporation, shareholders and principal activities.]',
- 'Basis of preparation': 'The financial statements have been prepared in accordance with International Financial Reporting Standards (IFRS) under the historical cost convention, and are presented in {basis}. Amounts recorded in other currencies are translated at the exchange rates recorded in the books. [Confirm the applicable framework, going concern and the date of authorisation for issue.]',
+ 'Entity and activities': '{company} (the "Company") is a {legal_form} registered in Lebanon{address_text} under commercial register number {cr_number}, incorporated on {incorporation_date}. Its tax (MoF) number is {tax_number}.\nThe principal activities of the Company are: {activities}.\nShareholders / partners: {shareholders}.\nDirectors / managers: {directors}.',
+ 'Basis of preparation': 'The financial statements have been prepared in accordance with International Financial Reporting Standards (IFRS) under the historical cost convention, and are presented in {basis}. Amounts recorded in other currencies are translated at the exchange rates recorded in the books.\nThe financial statements were approved for issue by management on {approval_date}. [Confirm the going concern basis.]',
  'Material accounting policies': 'Revenue is recognised when control of the goods or services passes to the customer, net of discounts and value added tax.\nInventories are measured at the lower of cost and net realisable value; cost is determined using the {inventory_method} method.\nProperty, plant and equipment are stated at cost less accumulated depreciation; depreciation is charged on a straight-line basis over the useful lives of the assets.\nTrade receivables are stated at their invoiced amounts less an allowance for expected credit losses.\nCash and cash equivalents comprise cash on hand and balances with banks.\nTrade payables are stated at the amounts payable for goods and services received.\nTransactions in foreign currencies are recorded at the exchange rates of the transaction dates; monetary balances are translated at the rates recorded at the reporting date.\nValue added tax is accounted for in accordance with Lebanese VAT law; recoverable VAT is presented with receivables and VAT payable with payables.\nIncome tax is provided in accordance with Lebanese tax law.\nProvisions are recognised when the Company has a present obligation that can be measured reliably; end-of-service indemnities follow Lebanese labour law and NSSF regulations.',
  'Judgements and estimates': 'Preparing the financial statements requires management to make judgements and estimates, mainly for the expected credit losses on receivables, the net realisable value of inventories, the useful lives of property and equipment, and provisions. [Complete with entity-specific judgements.]',
+ 'Share capital': 'The share capital of the Company is {share_capital}, fully paid. [Confirm the number and nominal value of the shares and any change during the year.]',
+ 'Income tax': 'Income tax is calculated in accordance with the Lebanese Income Tax Law on the taxable profit for the period, after adding back the expenses that are not deductible for tax purposes. [Insert the reconciliation between the accounting profit and the taxable profit, and the tax rate applied.]',
  'Currency and inflation': 'The functional and presentation currency is {basis}. Balances in other currencies are translated using the rates recorded in the books. [Assess the effect of the Lebanese economic situation, multiple exchange rates and IAS 29 if relevant.]',
+ 'Financial risk management': 'The Company is exposed to credit risk, mainly on trade receivables and bank balances; to liquidity risk; and to currency risk on balances and transactions in currencies other than {basis}, including the effect of the multiple exchange rates in Lebanon. Management monitors these risks regularly. [Complete with the Company\'s policies and the main amounts exposed.]',
  'Related parties and commitments': '[List related parties (shareholders, directors, companies under common control), the transactions and balances with them, commitments and contingent liabilities.]',
  'Events and going concern': '[Describe events after the reporting date (IAS 10) and the going concern assessment.]',
- 'Additional disclosures': '[Add other disclosures: financial risk management, taxation, leases, capital management.]',
+ 'Additional disclosures': '[Add other disclosures where relevant: leases, capital management, comparative figures reclassified.]',
+ 'Approval of the financial statements': 'The financial statements were approved for issue by management on {approval_date}.',
 }
 AUDIT = {
  'Addressee': 'To the Shareholders of {company}',
@@ -51,8 +55,36 @@ AUDIT = {
  'Management and governance responsibilities': 'Management is responsible for the preparation and fair presentation of the financial statements in accordance with IFRS, and for such internal control as management determines is necessary to enable the preparation of financial statements that are free from material misstatement, whether due to fraud or error.\nIn preparing the financial statements, management is responsible for assessing the Company\'s ability to continue as a going concern, disclosing, as applicable, matters related to going concern and using the going concern basis of accounting unless management either intends to liquidate the Company or to cease operations, or has no realistic alternative but to do so.\nThose charged with governance are responsible for overseeing the Company\'s financial reporting process.',
  'Auditor responsibilities': 'Our objectives are to obtain reasonable assurance about whether the financial statements as a whole are free from material misstatement, whether due to fraud or error, and to issue an auditor\'s report that includes our opinion. Reasonable assurance is a high level of assurance, but is not a guarantee that an audit conducted in accordance with ISAs will always detect a material misstatement when it exists. Misstatements can arise from fraud or error and are considered material if, individually or in the aggregate, they could reasonably be expected to influence the economic decisions of users taken on the basis of these financial statements.\nAs part of an audit in accordance with ISAs, we exercise professional judgement and maintain professional scepticism throughout the audit. We identify and assess the risks of material misstatement, obtain an understanding of internal control relevant to the audit, evaluate the appropriateness of accounting policies used and the reasonableness of accounting estimates, conclude on the appropriateness of management\'s use of the going concern basis of accounting, and evaluate the overall presentation, structure and content of the financial statements.\nWe communicate with those charged with governance regarding, among other matters, the planned scope and timing of the audit and significant audit findings, including any significant deficiencies in internal control that we identify during our audit.',
  'Other legal and regulatory requirements': '',
- 'Signature, address and report date': '[Audit firm name]\n[Partner name - License No.]\n[Address]\n[Date]',
+ 'Signature, address and report date': '{auditor_firm}\n{auditor_partner} - Licence No. {auditor_license}\n{auditor_address}\n{report_city}, {report_date}',
 }
+# 2.9.83: the default texts of 2.9.82 and before. A section still holding one of them (saved unchanged) gets the new text,
+# which takes the company and auditor information entered once.
+PREVIOUS_DEFAULTS = {
+ '{company} (the "Company") is registered in Lebanon{address_text}. [Complete: legal form, commercial register number, date of incorporation, shareholders and principal activities.]',
+ 'The financial statements have been prepared in accordance with International Financial Reporting Standards (IFRS) under the historical cost convention, and are presented in {basis}. Amounts recorded in other currencies are translated at the exchange rates recorded in the books. [Confirm the applicable framework, going concern and the date of authorisation for issue.]',
+ '[Add other disclosures: financial risk management, taxation, leases, capital management.]',
+ '[Audit firm name]\n[Partner name - License No.]\n[Address]\n[Date]',
+}
+# 2.9.83: company and auditor information - entered once (Edit Texts > Company & Auditor) and used by every year and every text.
+INFO_FIELDS = {
+ 'legal_form': 'Legal form (e.g. S.A.L., S.A.R.L.)',
+ 'cr_number': 'Commercial register number',
+ 'incorporation_date': 'Date of incorporation',
+ 'tax_number': 'Tax (MoF) number',
+ 'activities': 'Principal activities',
+ 'shareholders': 'Shareholders / partners',
+ 'directors': 'Directors / managers',
+ 'share_capital': 'Share capital (amount)',
+ 'approval_date': 'Date approved for issue',
+ 'auditor_firm': 'Audit firm',
+ 'auditor_partner': 'Signing partner',
+ 'auditor_license': 'Licence number (LACPA)',
+ 'auditor_address': 'Auditor address',
+ 'report_city': 'City of the report',
+ 'report_date': "Date of the auditor's report",
+}
+# Saved once for the company: copied to every fiscal-year file (each year is its own database).
+SHARED_KEYS = ('info', 'notes', 'audit', 'mapping')
 # The placeholders of 2.9.68 and before: a section still holding one of them gets the full text above.
 OLD_DEFAULTS = {
  '[Complete legal form, domicile, registered address, activities and ownership.]',
@@ -99,10 +131,19 @@ def years_from(value):
     if len(years) > 2 or any(y < 2000 or y > 2100 for y in years): raise ValueError('Choose one or two years between 2000 and 2100')
     return years
 
-def config(db):
-    return json.loads(db.settings().get(KEY) or '{}')
+def config(db, others=()):
+    """Report settings of one fiscal-year file. 2.9.83: a shared part (information, texts, mapping) missing in this year
+    is taken from the other years of the company, so what was entered once is never asked again."""
+    cfg = json.loads(db.settings().get(KEY) or '{}')
+    for other in others or ():
+        if other is None or other is db: continue
+        try: theirs = json.loads(other.settings().get(KEY) or '{}')
+        except Exception: continue
+        for key in SHARED_KEYS:
+            if not cfg.get(key) and theirs.get(key): cfg[key] = theirs[key]
+    return cfg
 
-def save_config(db, data, user_id):
+def save_config(db, data, user_id, others=()):
     if not isinstance(data, dict): raise ValueError('Invalid financial report settings')
     if data.get('basis','USD') not in ('USD','LBP'): raise ValueError('Choose USD or LBP')
     for field in ('mapping','supplements'):
@@ -116,11 +157,25 @@ def save_config(db, data, user_id):
     for key, value in data.get('supplements', {}).items():
         if key not in SUPPLEMENTS: raise ValueError('Invalid supplementary amount')
         if value != '': number(value)
+    info = data.get('info', {})
+    if not isinstance(info, dict) or any(k not in INFO_FIELDS or not isinstance(v, str) or len(v) > 2000 for k, v in info.items()):
+        raise ValueError('Invalid company / auditor information')
+    _store(db, data, user_id)
+    # 2.9.83: the information, texts and mapping are the company's: every other fiscal year gets them too
+    # (the cash flow / OCI amounts and the currency stay with their own year).
+    for other in others or ():
+        if other is None or other is db: continue
+        theirs = json.loads(other.settings().get(KEY) or '{}')
+        theirs.update({key: data[key] for key in SHARED_KEYS if key in data})
+        _store(other, theirs, user_id)
+    return data
+
+
+def _store(db, data, user_id):
     text = json.dumps(data, ensure_ascii=False)
     with db.connect() as conn:
         conn.execute('INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (KEY,text))
         conn.execute('INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)', (user_id,'update','financial_statement_draft',text,utcnow()))
-    return data
 
 def default_group(code, amount):
     # Lebanese chart; overrides can be applied to exact accounts or prefixes.
@@ -169,7 +224,7 @@ def _fill(text, values):
 
 def _text(cfg, kind, name, defaults, values):
     saved = (cfg.get(kind, {}) or {}).get(name)
-    if saved is None or not str(saved).strip() or str(saved).strip() in OLD_DEFAULTS: saved = defaults[name]
+    if saved is None or not str(saved).strip() or str(saved).strip() in OLD_DEFAULTS or str(saved).strip() in PREVIOUS_DEFAULTS: saved = defaults[name]
     return _fill(saved, values)
 
 
@@ -208,8 +263,8 @@ def load_period(db, start, end, basis):
     return dict(closing=closing, opening=opening, pnl=pnl, before=before, names=names, count=count)
 
 
-def period_data(db, start, end, basis, label):
-    cfg = config(db); raw = load_period(db, start, end, basis); mapping = cfg.get('mapping', {})
+def period_data(db, start, end, basis, label, cfg=None):
+    cfg = config(db) if cfg is None else cfg; raw = load_period(db, start, end, basis); mapping = cfg.get('mapping', {})
     def group(code, value):
         found = [p for p in mapping if code.startswith(p)]
         return mapping[max(found, key=len)] if found else default_group(code, value)
@@ -257,13 +312,22 @@ def periods_from(options, available_years):
     return [(y, f'{y}-01-01', f'{y}-12-31', f'31-12-{y}') for y in years_from(options.get('years'))]
 
 
-def build(databases, options):
+def info_values(cfg, settings):
+    """2.9.83: the company / auditor information entered once; a field left empty shows as [its label] to complete."""
+    info = dict(cfg.get('info') or {})
+    if not str(info.get('tax_number') or '').strip() and settings.get('company_mof'): info['tax_number'] = settings['company_mof']
+    return {key: (str(info.get(key) or '').strip() or f'[{label}]') for key, label in INFO_FIELDS.items()}
+
+
+def build(databases, options, others=()):
     basis = options.get('basis', 'USD')
     if basis not in ('USD', 'LBP'): raise ValueError('Choose USD or LBP')
     periods = periods_from(options, set(databases))
     missing = [str(y) for y, *_rest in periods if y not in databases]
     if missing: raise ValueError('Fiscal year not found: ' + ', '.join(missing))
-    data = [period_data(databases[y], s, e, basis, label) for y, s, e, label in periods]
+    # 2.9.83: what is shared (information, texts, mapping) comes from any year of the company where it was entered
+    pool = list(databases.values()) + [o for o in (others or ()) if o is not None]
+    data = [period_data(databases[y], s, e, basis, label, config(databases[y], pool)) for y, s, e, label in periods]
     current = data[0]; settings = databases[periods[0][0]].settings(); cfg = current['config']
     company = settings.get('company_name') or '[Company name]'
     full_year = current['start'][5:] == '01-01' and current['end'][5:] == '12-31'
@@ -273,6 +337,7 @@ def build(databases, options):
     values = {'company': company, 'end_text': end_text, 'period_text': period_text, 'basis': basis,
               'address_text': f", {settings['company_address']}" if settings.get('company_address') else '',
               'inventory_method': 'first-in first-out (FIFO)' if settings.get('inventory_method') == 'fifo' else 'weighted average cost'}
+    values.update(info_values(cfg, settings))
     heads = [f"{d['label']} ({basis})" for d in data]
     as_at = [f"{d['end'][8:]}-{d['end'][5:7]}-{d['end'][:4]} ({basis})" for d in data]
     sections = []; warnings = []
@@ -288,7 +353,9 @@ def build(databases, options):
         if not text: continue
         if title: audit_rows.append([title.upper()])
         audit_rows += [[line] for line in text.splitlines() if line.strip()]
-    sections.append(dict(heading="INDEPENDENT AUDITOR'S REPORT", headers=['Text'], rows=audit_rows, total_rows=[], narrative=True, page_break=True))
+    signature = [line for line in _text(cfg, 'audit', 'Signature, address and report date', AUDIT, values).splitlines() if line.strip()]
+    sections.append(dict(heading="INDEPENDENT AUDITOR'S REPORT", headers=['Text'], rows=audit_rows, total_rows=[], narrative=True, page_break=True, center=True,
+                         keep_last=len(signature)))
 
     # ---- note numbers for the statement lines that have amounts
     note_no = {}; next_note = [5]
@@ -325,7 +392,7 @@ def build(databases, options):
     line('TOTAL EQUITY AND LIABILITIES', lambda d: d['equity_close'] - sum((d['close'][g] for g in LIABILITIES), ZERO), True)
     if any(abs(d['close']['unmapped']) >= Decimal('.01') for d in data):
         line(LINE_TITLES['unmapped'] + ' (see review points)', lambda d: d['close']['unmapped'], note=note_for('unmapped'))
-    sections.append(dict(heading=f'STATEMENT OF FINANCIAL POSITION as at {end_text}', headers=['', 'Notes'] + as_at, rows=rows, total_rows=totals, page_break=True, fixed=True))
+    sections.append(dict(heading=f'STATEMENT OF FINANCIAL POSITION as at {end_text}', headers=['', 'Notes'] + as_at, rows=rows, total_rows=totals, page_break=True, fixed=True, center=True))
 
     # ---- Statement of profit or loss
     rows = []; totals = []
@@ -340,7 +407,7 @@ def build(databases, options):
     line('Other comprehensive income', lambda d: d['extra'].get('oci', ZERO))
     line('TOTAL COMPREHENSIVE INCOME', lambda d: d['profit'] + d['extra'].get('oci', ZERO), True)
     sections.append(dict(heading=f"STATEMENT OF PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME {for_period}",
-                         headers=['', 'Notes'] + heads, rows=rows, total_rows=totals, page_break=True, fixed=True))
+                         headers=['', 'Notes'] + heads, rows=rows, total_rows=totals, page_break=True, fixed=True, center=True))
 
     # ---- Statement of changes in equity (oldest period first)
     rows = []; totals = []
@@ -356,7 +423,7 @@ def build(databases, options):
         rows.append([f"Balance at end ({d['end'][8:]}-{d['end'][5:7]}-{d['end'][:4]})"] + [q(close_c[g]) for g in EQUITY] + [q(d['equity_close'])])
         totals.append(len(rows) - 1)
     sections.append(dict(heading=f'STATEMENT OF CHANGES IN EQUITY ({basis})', headers=['', 'Share capital', 'Reserves', 'Retained earnings', 'Total'],
-                         rows=rows, total_rows=totals, page_break=True, fixed=True))
+                         rows=rows, total_rows=totals, page_break=True, fixed=True, center=True))
 
     # ---- Statement of cash flows (indirect method)
     rows = []; totals = []
@@ -379,7 +446,7 @@ def build(databases, options):
     line('NET INCREASE / (DECREASE) IN CASH', lambda d: d['cash']['operating'] + d['cash']['investing'] + d['cash']['financing'] + d['cash'].get('fx', ZERO), True)
     line('Cash and cash equivalents at start', lambda d: d['open']['cash'])
     line('CASH AND CASH EQUIVALENTS AT END', lambda d: d['close']['cash'], True)
-    sections.append(dict(heading=f'STATEMENT OF CASH FLOWS {for_period}', headers=['', ''] + heads, rows=rows, total_rows=totals, page_break=True, fixed=True))
+    sections.append(dict(heading=f'STATEMENT OF CASH FLOWS {for_period}', headers=['', ''] + heads, rows=rows, total_rows=totals, page_break=True, fixed=True, center=True))
 
     # ---- Notes
     notes = [('1. GENERAL INFORMATION', 'Entity and activities'), ('2. BASIS OF PREPARATION', 'Basis of preparation'),
@@ -398,8 +465,13 @@ def build(databases, options):
             rows.append([name or code] + [q(sign(group) * d['accounts'].get(group, {}).get(code, ('', ZERO))[1]) for d in data])
         rows.append(['TOTAL'] + [q(sign(group) * (d['close'][group] if group in ASSETS + EQUITY + LIABILITIES + ['unmapped'] else d['pnl'][group])) for d in data])
         sections.append(dict(heading=f'{number_}. {LINE_TITLES[group].upper()}', headers=['Description'] + heads, rows=rows, total_rows=[len(rows) - 1], fixed=True))
+        if group == 'capital':  # 2.9.83: the share capital details under its account table
+            sections.append(dict(heading='', headers=['Text'], rows=[[p] for p in _text(cfg, 'notes', 'Share capital', NARRATIVES, values).splitlines() if p.strip()],
+                                 total_rows=[], narrative=True))
     n = next_note[0]
-    for name in ('Currency and inflation', 'Related parties and commitments', 'Events and going concern', 'Additional disclosures'):
+    for name in ('Share capital', 'Income tax', 'Currency and inflation', 'Financial risk management', 'Related parties and commitments',
+                 'Events and going concern', 'Additional disclosures', 'Approval of the financial statements'):
+        if name == 'Share capital' and 'capital' in note_no: continue  # already under the share capital note
         text = _text(cfg, 'notes', name, NARRATIVES, values)
         sections.append(dict(heading=f'{n}. {name.upper()}', headers=['Text'], rows=[[p] for p in text.splitlines() if p.strip()], total_rows=[], narrative=True)); n += 1
 
@@ -413,9 +485,14 @@ def build(databases, options):
     if len(data) == 1: warnings.append('Single period: IAS 1 requires comparative figures for the preceding period.')
     warnings.append("The auditor's report is a template: the auditor completes and signs it after the audit. Remove this page before issuing.")
     sections.append(dict(heading='PREPARER REVIEW POINTS (remove before issue)', headers=['Point'], rows=[[w] for w in warnings], total_rows=[], narrative=True, page_break=True))
-    return dict(title='Financial Statements, Notes and Audit Report',
-                meta=[company, ('Year ended ' if full_year else 'Period ended ') + end_text + ' - with comparative figures' * (len(data) > 1), f'Presentation currency: {basis}'],
-                sections=sections)
+    for key, label in INFO_FIELDS.items():
+        if values[key] == f'[{label}]' and key not in ('tax_number',):
+            warnings.insert(0, f'Company & auditor information not entered: {label} (Edit Texts > Company & Auditor).'); break
+    sections[-1]['rows'] = [[w] for w in warnings]
+    meta = [company, ('Year ended ' if full_year else 'Period ended ') + end_text + ' - with comparative figures' * (len(data) > 1), f'Presentation currency: {basis}']
+    firm = str((cfg.get('info') or {}).get('auditor_firm') or '').strip()
+    if firm: meta.append(f'Auditor: {firm}')
+    return dict(title='Financial Statements, Notes and Audit Report', meta=meta, sections=sections)
 
 
 def year_data(db, year, basis):

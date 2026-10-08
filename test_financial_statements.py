@@ -79,7 +79,9 @@ class FinancialStatementsTest(unittest.TestCase):
         xlsx=Path(self.folder.name)/'pack.xlsx';pdf=Path(self.folder.name)/'pack.pdf'
         export_sections_excel(xlsx,pack['title'],pack['meta'],pack['sections'])
         export_sections_pdf(pdf,pack['title'],pack['meta'],pack['sections'])
-        wb=load_workbook(xlsx); self.assertIn('31-12-2025 (USD)',str(list(wb.active.values)));wb.close()
+        # 2.9.83: the pack is a workbook with a cover and one sheet per statement (it was one long sheet)
+        wb=load_workbook(xlsx); self.assertIn('31-12-2025 (USD)',str([list(ws.values) for ws in wb.worksheets]))
+        self.assertEqual(wb.sheetnames[:3],['Cover',"Auditor's Report",'Financial Position']);wb.close()
         text=' '.join(p.extract_text() for p in PdfReader(pdf).pages)
         self.assertIn("INDEPENDENT AUDITOR",text);self.assertIn('2025',text);self.assertIn('STATEMENT OF FINANCIAL POSITION',text)
 
@@ -103,7 +105,8 @@ class FinancialStatementsApiTest(unittest.TestCase):
                 manager.create_year(company['id'],2025,1)
                 cfg={'notes':{'Entity and activities':'Year 2025 only'}}
                 api.save_financial_config(2025,cfg)
-                self.assertEqual(api.financial_config(2024),{})
+                # 2.9.83 (owner decision): texts entered once apply to every year of the company
+                self.assertEqual(api.financial_config(2024),cfg)
                 self.assertEqual(api.financial_config(2025),cfg)
                 pack=api.business_report('financial_statements',{'years':'2024,2025','basis':'USD'})
                 self.assertIn('31-12-2025 (USD)',pack['sections'][1]['headers'])

@@ -188,6 +188,17 @@ class CompanyManager:
             self._cache[path]=database
         return self._cache[path]
 
+    def year_databases(self,company_id):
+        """2.9.83: {year: database} of every fiscal year of a company (for what is entered once for all years)."""
+        companies=self.list_companies(True)
+        company=next((c for c in companies if c["id"]==company_id),None) if company_id else (companies[0] if companies else None)
+        if not company: return {}
+        result={}
+        for fiscal in company.get("years",[]):
+            try: result[int(fiscal["year"])]=self.database(company["id"],int(fiscal["year"]))
+            except Exception: logging.getLogger("saber.company").warning("Fiscal year %s not opened", fiscal.get("year"), exc_info=True)
+        return result
+
     def year_status(self,company_id,year):
         company=self._company(company_id)
         selected=next((item for item in company.get("years",[]) if int(item["year"])==int(year)),None)

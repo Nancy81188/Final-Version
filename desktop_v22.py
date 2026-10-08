@@ -297,7 +297,7 @@ class V22Mixin:
         if result: self.output_sections(result["title"], result["meta"], result["sections"], result["title"].replace(" ", "_").replace("(", "").replace(")", ""), mode)
 
     def edit_financial_report(self):
-        from financial_statements import NARRATIVES, AUDIT, GROUPS, SUPPLEMENTS, years_from
+        from financial_statements import NARRATIVES, AUDIT, GROUPS, SUPPLEMENTS, INFO_FIELDS, OLD_DEFAULTS, PREVIOUS_DEFAULTS, years_from
         from tkinter.scrolledtext import ScrolledText
         try:
             if hasattr(self, "br_fs_mode") and self.br_fs_mode.get().startswith("Period"):
@@ -310,16 +310,24 @@ class V22Mixin:
         ttk.Label(top, text="Edit fiscal year").pack(side="left")
         selected = tk.StringVar(value=str(years[0]))
         selector = ttk.Combobox(top, textvariable=selected, values=[str(y) for y in years], state="readonly", width=8); selector.pack(side="left", padx=8)
-        ttk.Label(top, text="Save each year before switching. Amounts use the selected report currency.").pack(side="left")
+        ttk.Label(top, text="Information, texts and mapping are saved once for every year. Cash flow / OCI amounts stay with their year.").pack(side="left")
         notebook = ttk.Notebook(window); notebook.pack(fill="both", expand=True, padx=10, pady=5)
-        text_fields = {}; entries = {}; state = {}; loaded = [None]
+        text_fields = {}; entries = {}; state = {}; loaded = [None]; info_vars = {}
+        # 2.9.83: company and auditor information entered once - every note and the auditor's report take it automatically
+        page = ttk.Frame(notebook); notebook.add(page, text="Company & Auditor")
+        ttk.Label(page, text="Fill these once: they go automatically into the notes and the auditor's report of every year (a field left empty shows as [label] to complete).",
+                  wraplength=900).grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=8)
+        for index, (key, label) in enumerate(INFO_FIELDS.items()):
+            row, column = 1 + index // 2, (index % 2) * 2
+            ttk.Label(page, text=label).grid(row=row, column=column, sticky="w", padx=(10, 4), pady=4)
+            info_vars[key] = tk.StringVar(); ttk.Entry(page, textvariable=info_vars[key], width=42).grid(row=row, column=column + 1, sticky="w", padx=(0, 14), pady=4)
         for kind, definitions in (("notes",NARRATIVES),("audit",AUDIT)):
             page = ttk.Frame(notebook); notebook.add(page,text="Notes" if kind=="notes" else "Auditor's report")
             inner = ttk.Notebook(page); inner.pack(fill="both", expand=True)
             text_fields[kind] = {}
             for index, (name, default) in enumerate(definitions.items(), 1):
                 tab=ttk.Frame(inner); inner.add(tab,text=f"{'Note' if kind=='notes' else 'Section'} {index}")
-                ttk.Label(tab,text=name+"   (words in {} are filled in: {company}, {end_text}, {period_text}, {basis})",font=("Segoe UI",10,"bold")).pack(anchor="w",padx=8,pady=6)
+                ttk.Label(tab,text=name+"   (words in {} are filled in: {company}, {end_text}, {period_text}, {basis} and the Company & Auditor fields, e.g. {legal_form}, {auditor_firm})",font=("Segoe UI",10,"bold"),wraplength=940).pack(anchor="w",padx=8,pady=6)
                 text=ScrolledText(tab,wrap="word",font=("Segoe UI",11)); text.pack(fill="both",expand=True,padx=6,pady=6)
                 text_fields[kind][name]=(text,default)
         page=ttk.Frame(notebook); notebook.add(page,text="OCI and Cash Flow")
@@ -340,10 +348,10 @@ class V22Mixin:
             loaded[0]=int(selected.get()); state.clear(); state.update(saved)
             for kind,fields in text_fields.items():
                 for name,(widget,default) in fields.items():
-                    from financial_statements import OLD_DEFAULTS
                     value=saved.get(kind,{}).get(name) or default
-                    if str(value).strip() in OLD_DEFAULTS: value=default  # 2.9.69: the old placeholders get the full standard text
+                    if str(value).strip() in OLD_DEFAULTS or str(value).strip() in PREVIOUS_DEFAULTS: value=default  # older standard texts get the current one
                     widget.delete("1.0","end"); widget.insert("1.0",value)
+            for key,var in info_vars.items(): var.set((saved.get("info") or {}).get(key,""))
             saved_basis=saved.get("basis",self.br["basis"].get())
             for key,var in entries.items(): var.set(saved.get("supplements",{}).get(key,"") if saved_basis==self.br["basis"].get() else "")
             mapping.delete("1.0","end"); mapping.insert("1.0","\n".join(f"{k} = {v}" for k,v in saved.get("mapping",{}).items()))
@@ -354,14 +362,16 @@ class V22Mixin:
                 for line in mapping.get("1.0","end").splitlines():
                     if not line.strip(): continue
                     code,category=line.split("=",1); overrides[code.strip()]=category.strip()
-                cfg={kind:{name:widget.get("1.0","end-1c").strip() for name,(widget,_) in fields.items()} for kind,fields in text_fields.items()}
-                cfg.update(mapping=overrides,supplements={k:v.get().strip() for k,v in entries.items()},basis=self.br["basis"].get())
+                # 2.9.83: a text left as the standard one is saved empty, so it keeps following the standard text and the information
+                cfg={kind:{name:(lambda text,default: "" if text==default.strip() else text)(widget.get("1.0","end-1c").strip(),default) for name,(widget,default) in fields.items()} for kind,fields in text_fields.items()}
+                cfg.update(mapping=overrides,supplements={k:v.get().strip() for k,v in entries.items()},basis=self.br["basis"].get(),
+                           info={k:v.get().strip() for k,v in info_vars.items() if v.get().strip()})
                 self.client.save_financial_config(loaded[0],cfg)
                 self.business_result=None
-                messagebox.showinfo("Financial Statements",f"Saved for {loaded[0]}. Journal entries were not changed.",parent=window)
+                messagebox.showinfo("Financial Statements",f"Saved. Information, texts and mapping now apply to every year; cash flow / OCI amounts saved for {loaded[0]}. Journal entries were not changed.",parent=window)
             except Exception as exc: messagebox.showerror("Financial Statements",str(exc),parent=window)
         selector.bind("<<ComboboxSelected>>",lambda _e:load())
-        ttk.Button(window,text="Save this year's report settings",command=save).pack(pady=10)
+        ttk.Button(window,text="Save (information and texts apply to every year)",command=save).pack(pady=10)
         load()
 
     # ------------------------------------------------------------ dashboard charts

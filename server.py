@@ -319,7 +319,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 import financial_statements
                 year = int(self._query(parsed,"year",self.headers.get("X-Fiscal-Year")))
                 target = self.company_manager.database(self.headers.get("X-Company-ID"),year)
-                return self._json(200,financial_statements.config(target))
+                others = list(self.company_manager.year_databases(self.headers.get("X-Company-ID")).values())  # 2.9.83
+                return self._json(200,financial_statements.config(target,others))
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/reports/business":
             try:
@@ -336,7 +337,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                     else:
                         years = financial_statements.years_from(options.get("years"))
                         databases = {year:self.company_manager.database(self.headers.get("X-Company-ID"),year) for year in years}
-                    result = financial_statements.build(databases,options)
+                    others = list(self.company_manager.year_databases(self.headers.get("X-Company-ID")).values())  # 2.9.83
+                    result = financial_statements.build(databases,options,others)
                 else:
                     result=business_reports.build(self.db,report,options)
                 return self._json(200,ledger_reports.json_ready(result))
@@ -613,7 +615,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 import financial_statements
                 target = self.company_manager.database(self.headers.get("X-Company-ID"),int(body["year"]))
-                return self._json(200,financial_statements.save_config(target,body["config"],user["id"]))
+                others = list(self.company_manager.year_databases(self.headers.get("X-Company-ID")).values())  # 2.9.83: entered once for every year
+                return self._json(200,financial_statements.save_config(target,body["config"],user["id"],others))
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/asset-categories":
             try:
