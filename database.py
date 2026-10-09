@@ -69,7 +69,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
                 connection.execute("PRAGMA journal_mode=WAL"); return True
             except sqlite3.OperationalError as exc:
                 text = str(exc).lower()
-                if "disk i/o" not in text and "locked" not in text and "busy" not in text: raise
+                if not any(word in text for word in ("disk i/o", "locked", "busy", "unable to open")): raise  # Windows: a held -shm gives "unable to open database file"
                 logging.getLogger("saber").warning("Data file busy (%s), attempt %s: %s", self.path, attempt + 1, exc)
                 if attempt == 3:
                     try: os.remove(str(self.path) + "-shm")  # fails harmlessly while another program really holds it
