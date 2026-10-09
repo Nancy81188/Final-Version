@@ -9,6 +9,7 @@ import base64
 import json
 import traceback
 import sqlite3
+import threading
 import tempfile
 import hmac
 import logging
@@ -590,7 +591,19 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200,result)
         return self._json(404, {"error": "Not found"})
 
-    def do_POST(self):
+    # 2.9.88: changes are made one at a time (several users at once could get the same invoice / voucher number:
+    # 80 invoices saved by 4 users got 36 numbers). Reading is never blocked; SQLite writes one at a time anyway.
+    _write_lock = threading.RLock()
+
+    def _serialized(self, method):
+        if urlparse(self.path).path in ("/api/login", "/api/logout"): return method()
+        with ApiHandler._write_lock: return method()
+
+    def do_POST(self): return self._serialized(self._do_POST)
+    def do_PUT(self): return self._serialized(self._do_PUT)
+    def do_DELETE(self): return self._serialized(self._do_DELETE)
+
+    def _do_POST(self):
         path = urlparse(self.path).path
         try:
             body = self._body()
@@ -1017,7 +1030,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200, {"imported": len(ids), "ids": ids, "errors": errors, "deleted": replacement["deleted"], "backup": replacement["backup"]})
         return self._json(404, {"error": "Not found"})
 
-    def do_PUT(self):
+    def _do_PUT(self):
         path = urlparse(self.path).path
         user = self._user()
         if not user:
@@ -1081,7 +1094,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(200,{"account":account})
         return self._json(404, {"error": "Not found"})
 
-    def do_DELETE(self):
+    def _do_DELETE(self):
         path=urlparse(self.path).path; user=self._user()
         if not user: return self._json(401,{"error":"Unauthorized"})
         if not self._select_database(): return

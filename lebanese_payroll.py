@@ -2,7 +2,7 @@
 
 Sources checked September 2026: Budget Law 324/2024 (brackets and family deductions), Decree
 12966/2024 (transport LBP 450,000/day private sector), MoF Decision 1195 (tax rounded up to
-LBP 10,000 from 25-11-2024), CNSS Memo 801 (minimum wage LBP 28M from 01-08-2025), Decree 887 of 21-08-2025
+LBP 10,000 from 25-11-2024), CNSS Memo 801 (minimum wage LBP 28M from 01-08-2025), Decree 887 of 14-08-2025 (Official Gazette 21-08-2025, NSSF Memo 805)
 (sickness/maternity ceiling LBP 120M from 01-08-2025), Decrees 12599/12772 (2024 family benefits), Decree 422 /
 Memo 793 (family ceiling LBP 18M and revised benefits from 01-07-2025), and Decree 2923 /
 Memo 831 (family ceiling LBP 28M and revised benefits from 01-05-2026).
