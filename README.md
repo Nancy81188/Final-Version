@@ -1,5 +1,13 @@
 # Saber Accounting MVP
 
+## Version 2.9.96 (payroll: marriage and new child during the year)
+- Employee card > new "Family changes" box: Date of marriage, and Children's birth dates (DD-MM-YYYY, separated by commas).
+- Payroll follows them month by month: the spouse is counted from the month of the marriage, each new child from the month of birth. This changes the salary-tax family deduction (spouse LBP 225M, child LBP 45M a year), the NSSF family allowance paid with the salary, and the retro-salary months (each month uses the family of that month). The payslip notes say it ("Married from ...", "New child born ...: counted from this month").
+- Example (tested): married 15-04-2026, baby born 10-05-2026, one older child: March = single + 1 child, April = married + 1 child, May = married + 2 children.
+- "Children" stays the number today; a child born after the payroll month is not counted yet; a child listed in the dates is always included in Children. A marriage date wins over the Marital Status box for months before it.
+- To confirm with your tax adviser / NSSF office: counting from the month of the event (some apply it from the next month, or from the NSSF registration of the child).
+- Changed files: db_payroll.py, desktop_payroll.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_96.py.
+
 ## Version 2.9.95 (one professional design on every screen, same Saber colours)
 - One design system (desktop_theme.py), applied to every screen and every window when it opens:
   - Buttons by role: gold = the main action of the screen (Save), navy = the other actions, red = Delete / Cancel only; same font, height and spacing everywhere. Sales Invoice: Save is now gold (Return and Import are navy); Purchases, Uploaded Data, Journal Voucher and VAT have one gold button each.

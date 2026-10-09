@@ -142,8 +142,19 @@ class PayrollMixin:
         sex=tk.StringVar(value=data.get("sex") or "")
         tk.Label(form,text="Sex (for official forms)",bg=LIGHT).grid(row=11,column=2,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=sex,values=["male","female"],state="readonly",width=25).grid(row=11,column=3)
         # 2.9.44 register (like the official declaration workbook): unit, recurring allowances, NSSF branches, address.
+        # 2.9.96: family changes during the year - the spouse counts from the marriage month, a new child from the birth month
+        family=tk.LabelFrame(form,text="Family changes | الوضع العائلي",bg=LIGHT,padx=6,pady=4)
+        family.grid(row=12,column=0,columnspan=4,padx=10,pady=(8,0),sticky="ew")
+        family_vars={"marriage_date":tk.StringVar(value=safe_display_date(data.get("marriage_date"))),
+                     "children_birth_dates":tk.StringVar(value=", ".join(safe_display_date(d) for d in str(data.get("children_birth_dates") or "").split(",") if d.strip()))}
+        tk.Label(family,text="Date of marriage | تاريخ الزواج",bg=LIGHT).grid(row=0,column=0,padx=6,pady=3,sticky="w")
+        self.date_entry(family,family_vars["marriage_date"],14).grid(row=0,column=1,padx=6,pady=3,sticky="w")
+        tk.Label(family,text="Children's birth dates | تواريخ ولادة الأولاد",bg=LIGHT).grid(row=0,column=2,padx=6,pady=3,sticky="w")
+        tk.Entry(family,textvariable=family_vars["children_birth_dates"],width=40).grid(row=0,column=3,padx=6,pady=3,sticky="w")
+        tk.Label(family,text="DD-MM-YYYY, separated by commas. Payroll counts the spouse from the month of the marriage and each child from the month of birth (a child listed is counted in Children).",
+                 bg=LIGHT,fg="#5f6b76",wraplength=760,justify="left").grid(row=1,column=0,columnspan=4,padx=6,pady=(0,3),sticky="w")
         register=tk.LabelFrame(form,text="Employee register | سجل المستخدمين",bg=LIGHT,padx=6,pady=4)
-        register.grid(row=12,column=0,columnspan=4,padx=10,pady=8,sticky="ew")
+        register.grid(row=13,column=0,columnspan=4,padx=10,pady=8,sticky="ew")
         register_vars={key:tk.StringVar(value=str(data.get(key) or "")) for key in ("unit_code","unit_name","cost_of_living","extra_indemnity","representation_taxable","representation_exempt",
             "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","leave_reason",
             "eos_paid_before","leave_days_year","leave_carried")}  # 2.9.82
@@ -164,10 +175,11 @@ class PayrollMixin:
         def save():
             payload={key:var.get().strip() for key,var in fields.items()}; payload.update({"id":data.get("id"),"marital_status":marital.get(),"spouse_works":spouse_works.get(),"children":children.get(),"employee_group":employee_group.get(),"currency":currency.get(),"active":active.get(),"sex":sex.get()})
             payload.update({key:var.get().strip() for key,var in register_vars.items()}); payload.update({key:"1" if var.get() else "0" for key,var in flags.items()})
+            payload.update({key:var.get().strip() for key,var in family_vars.items()})  # 2.9.96
             try: saved=self.client.save_employee(payload)
             except Exception as exc: return messagebox.showerror("Employee",str(exc),parent=window)
             window.destroy(); self.load_payroll(); messagebox.showinfo("Employee",f'Employee {saved["employee_number"]} saved successfully')
-        self.action_button(window,"Save Employee",save).pack(pady=8)
+        tk.Button(window,text="Save Employee",command=save,bg=GOLD,fg=NAVY,border=0,padx=18,pady=7,font=("Segoe UI",9,"bold")).pack(pady=8)  # 2.9.96: the main action is gold
 
     def edit_selected_employee(self):
         selected=self.employee_tree.selection()

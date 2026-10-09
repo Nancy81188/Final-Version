@@ -16,7 +16,37 @@ class PayrollStore:
                              "eos_paid_before","leave_carried","leave_days_year")  # 2.9.82: end of service, leave
     EMPLOYEE_FLAG_FIELDS = ("nssf_no_end_service","nssf_no_family","nssf_no_medical")
     EMPLOYEE_REGISTER_FIELDS = ("unit_code","unit_name")+EMPLOYEE_MONEY_FIELDS+EMPLOYEE_FLAG_FIELDS+(
-        "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","pay_type","leave_reason")
+        "addr_governorate","addr_caza","addr_town","addr_district","addr_street","addr_building","addr_floor","phone2","pay_type","leave_reason",
+        "marriage_date","children_birth_dates")  # 2.9.96: family changes during the year
+
+    @staticmethod
+    def parse_birth_dates(text):
+        """'05-03-2026, 10-11-2023' -> ['2023-11-10', '2026-03-05'] (ISO, sorted)."""
+        import re as _re
+        parts=[p.strip() for p in _re.split(r"[,;\n]+",str(text or "")) if p.strip()]
+        return sorted(iso_date(p,"Child birth date") for p in parts)
+
+    @classmethod
+    def family_on(cls,employee,day):
+        """2.9.96: marital status and number of children on a payroll month end, from the marriage date and the
+        children's birth dates. 'Children' on the employee card is the number today; a child born after the month
+        is not counted yet, and the spouse counts from the month of the marriage. Returns (married, children, notes)."""
+        keys=employee.keys() if hasattr(employee,"keys") else []
+        value=lambda name: (employee[name] if name in keys else None) or ""
+        married=str(value("marital_status")).lower() in ("married","spouse"); notes=[]
+        marriage=str(value("marriage_date")).strip()
+        if marriage:
+            married_by_then=iso_date(marriage)<=day
+            if married_by_then and not married: notes.append(f"Married from {display_date(iso_date(marriage))}: spouse counted")
+            if not married_by_then and married: notes.append(f"Married on {display_date(iso_date(marriage))}: not yet in this month")
+            married=married_by_then
+        births=cls.parse_birth_dates(value("children_birth_dates")) if str(value("children_birth_dates")).strip() else []
+        total=max(int(value("children") or 0),len(births))
+        later=[b for b in births if b>day]
+        if later: notes.append(f"{len(later)} child(ren) born after this month not counted yet (born {', '.join(display_date(b) for b in later)})")
+        new=[b for b in births if b<=day and b[:7]==day[:7]]
+        if new: notes.append(f"New child born {', '.join(display_date(b) for b in new)}: counted from this month")
+        return married,total-len(later),notes
 
     def list_employees(self, include_inactive=True):
         with self.connect() as db:
@@ -108,6 +138,10 @@ class PayrollStore:
                     register[key]=str(amount)
             for key in self.EMPLOYEE_FLAG_FIELDS:
                 if key in register: register[key]="1" if register[key].lower() in ("1","true","yes","on") else "0"
+            if register.get("marriage_date"): register["marriage_date"]=iso_date(register["marriage_date"],"Marriage date")  # 2.9.96
+            if register.get("children_birth_dates"):
+                births=self.parse_birth_dates(register["children_birth_dates"]); register["children_birth_dates"]=",".join(births)
+                if len(births)>children: db.execute("UPDATE employees SET children=? WHERE id=?",(len(births),saved_id))  # every child listed is counted
             if register:
                 db.execute(f"UPDATE employees SET {','.join(k+'=?' for k in register)} WHERE id=?",(*register.values(),saved_id))
             if "sex" in item:
@@ -300,7 +334,7 @@ class PayrollStore:
                 allowance_parts=payroll_lines.split(allowances,not_nssf)
                 notes.append(f"Food allowance above the exempt LBP {food_daily:,} x {days} days moved to taxable (Budget Law 2026 Art. 26)")
         exempt_transport_lbp=min(to_lbp(money["transport"]),setting("transport_daily_exempt")*days)
-        children=int(employee["children"] or 0)
+        married,children,family_notes=self.family_on(employee,rules_date); notes.extend(family_notes)  # 2.9.96: as on the month end
         schooling_limit=setting("schooling_annual_exempt") if min(children,int(setting("schooling_max_children","3")))>0 else D("0")
         with self.connect() as db:
             past_schooling=db.execute("""SELECT period_date,currency,exempt_schooling FROM payroll_records
@@ -313,7 +347,7 @@ class PayrollStore:
         if taxable_transport_lbp>0: notes.append(f"Transport above the exempt {int(setting('transport_daily_exempt')):,} LBP x {days} days is taxed")
         if taxable_schooling_lbp>0: notes.append("Schooling above the exempt annual limit is taxed")
         allowance=setting("single_allowance")
-        married=employee["marital_status"] in ("married","spouse"); spouse_works=married and bool(int(employee["spouse_works"] or 0))
+        spouse_works=married and bool(int(employee["spouse_works"] or 0))
         # The personal deduction belongs to each employee. A spouse deduction applies
         # only for a dependent spouse; when both parents work, split only the child deduction.
         dependent_spouse_deduction=setting("spouse_allowance") if married and not spouse_works else D("0")
@@ -341,11 +375,13 @@ class PayrollStore:
             for month in retro_months:
                 month_settings=self.payroll_settings_for(month); month_brackets=month_settings.get("tax_brackets",brackets)
                 month_allowance=D(str(month_settings.get("single_allowance") or 0))
-                if married and not spouse_works:
+                month_married,month_kids,_n=self.family_on(employee,month)  # 2.9.96: the family of THAT month
+                month_spouse_works=month_married and bool(int(employee["spouse_works"] or 0))
+                if month_married and not month_spouse_works:
                     month_allowance+=D(str(month_settings.get("spouse_allowance") or 0))
-                month_children=min(children,int(month_settings.get("max_children_deduction") or 5))
+                month_children=min(month_kids,int(month_settings.get("max_children_deduction") or 5))
                 month_child_allowance=D(str(month_settings.get("child_allowance") or 0))*month_children
-                month_allowance+=month_child_allowance/2 if spouse_works else month_child_allowance
+                month_allowance+=month_child_allowance/2 if month_spouse_works else month_child_allowance
                 monthly=lambda annual: self._progressive_tax(max(D("0"),annual-month_allowance),month_brackets)/12
                 # 2.9.78: the retro is added to what was REALLY paid that month: tax on (pay of the month + retro) less the tax
                 # already withheld that month. Without a saved payroll for that month, this month's pay stands in for it.
@@ -439,7 +475,7 @@ class PayrollStore:
         # NSSF family allowances paid with the salary on behalf of the NSSF (not taxable, offset against NSSF dues).
         allowance_lbp=D("0")
         if setting("family_allowance_cap")>0 or setting("family_allowance_child")>0:
-            if employee["marital_status"] in ("married","spouse") and not int(employee["spouse_works"] or 0): allowance_lbp+=setting("family_allowance_spouse")
+            if married and not int(employee["spouse_works"] or 0): allowance_lbp+=setting("family_allowance_spouse")  # 2.9.96: married by the month end
             allowance_lbp+=setting("family_allowance_child")*min(children,int(setting("family_allowance_max_children","5")))
             if setting("family_allowance_cap")>0: allowance_lbp=min(allowance_lbp,setting("family_allowance_cap"))
         family_allowance=from_lbp(allowance_lbp).quantize(D("0.01"))
