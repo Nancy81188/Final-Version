@@ -86,7 +86,7 @@ class PayrollExtrasTest(_Book):
         payroll_extras.save_leave(self.db, {"employee_id": self.rami["id"], "date_from": "03-03-2025", "date_to": "07-03-2025"}, 1)
         payroll_extras.save_leave(self.db, {"employee_id": self.rami["id"], "date_from": "10-03-2025", "date_to": "10-03-2025", "leave_type": "sick"}, 1)
         rami = next(r for r in payroll_extras.leave_balances(self.db, "30-06-2025")["rows"] if r["employee"] == "Rami")
-        self.assertEqual((rami["carried"], rami["earned"], rami["taken"]), (Decimal("5"), Decimal("7.43"), Decimal("5")))  # sick leave is not annual leave
+        self.assertEqual((rami["carried"], rami["earned"], rami["taken"]), (Decimal("5"), Decimal("7.44"), Decimal("5")))  # sick leave is not annual leave; 2.9.84: 181 / 365 days x 15 (was / 365.25)
         self.assertEqual(rami["value"], (rami["balance"] * Decimal("89500000") / 30).quantize(Decimal("0.01")))
         with self.assertRaisesRegex(ValueError, "before"): payroll_extras.save_leave(self.db, {"employee_id": self.rami["id"], "date_from": "10-03-2025", "date_to": "01-03-2025"}, 1)
 

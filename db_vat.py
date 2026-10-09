@@ -29,7 +29,7 @@ class VatStore:
                 if not row: raise KeyError("Expense not found")
                 date=row["expense_date"]; vat=Decimal(str(row["vat"] or 0)); cost_account=row["expense_account"]; vat_account=row["vat_account"]
                 number=row["reference"] or f"EXP-{document_id}"; currency=row["currency"]; branch_id=None; party_id=None
-        self._assert_period_open(date)
+        self._assert_period_open(date); self._assert_vat_open(date)
         with self.connect() as db:
             table="invoices" if source=="invoice" else "expenses"
             old=db.execute("SELECT id FROM journal_entries WHERE source_type='vat_reclass' AND entry_number=?",(f"VATND-{source[:3].upper()}-{document_id}",)).fetchone()
@@ -70,6 +70,7 @@ class VatStore:
             row = db.execute(f"SELECT * FROM {table} WHERE id=?", (document_id,)).fetchone()
             if not row: raise KeyError("Document not found")
         self._assert_period_open(row["invoice_date"] if table == "invoices" else row["expense_date"])
+        self._assert_vat_open(row["invoice_date"] if table == "invoices" else row["expense_date"])
         kind = row["kind"] if table == "invoices" else "purchase"
         current = {"vat_treatment": row["vat_treatment"] if table == "invoices" else "standard", "vat_use": row["vat_use"]}
         new_treatment, new_use = self._vat_classification({"vat_treatment": treatment or current["vat_treatment"], "vat_use": use or current["vat_use"]}, kind)

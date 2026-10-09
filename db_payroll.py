@@ -553,8 +553,31 @@ class PayrollStore:
             family_account=str(mapping.get("family_allowance") or "").strip() or nssf_account
             if family_account!=nssf_account: db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(family_account,"Family Allocation","asset"))
             lines+=((employer_expense,employer_nssf,Decimal("0")),(payable_account,Decimal("0"),net),(tax_account,Decimal("0"),tax),(nssf_account,Decimal("0"),employee_nssf+employer_nssf),(family_account,family_allowance,Decimal("0")))
+            # 2.9.84: the salary tax is due in LBP. For a USD (or other currency) payslip the tax line carries the exact LBP tax
+            # (income_tax_lbp) as its LBP value, so 4411 in LBP agrees with the tax return; the LBP rounding goes to the salary line.
+            special={}
+            tax_lbp=Decimal(str(record["income_tax_lbp"] or 0)) if "income_tax_lbp" in record.keys() else Decimal("0")
+            if record["currency"]!="LBP" and tax and tax_lbp:
+                try:
+                    rate=self._converted_amount(Decimal("1"),record["currency"],"LBP",record["period_date"])
+                    usd=self._converted_amount(Decimal("1"),record["currency"],"USD",record["period_date"])
+                except ValueError: rate=None
+                if rate:
+                    # the line stays in the payslip currency (each currency of the books balances on its own, as the year close needs)
+                    special[(tax_account,"C")]={"line_currency":record["currency"],"amount":tax,"amount_lbp":tax_lbp,"amount_usd":(tax*usd).quantize(Decimal("0.01"))}
+                    difference=tax_lbp-tax*rate
+                    target=next(((code,d) for code,d,_c in lines if d>0 and code==salary_account),None) or next(((code,d) for code,d,_c in lines if d>0),None)
+                    if difference and target:
+                        special[(target[0],"D")]={"line_currency":record["currency"],"amount":target[1],"amount_lbp":(target[1]*rate+difference).quantize(Decimal("0.01")),
+                                                  "amount_usd":(target[1]*usd).quantize(Decimal("0.01"))}
             for code,debit,credit in lines:
                 if not debit and not credit: continue
+                extra=special.pop((code,"D" if debit else "C"),None)
+                if extra:
+                    db.execute("INSERT INTO journal_lines(entry_id,account_id,description,debit,credit,line_currency,amount,amount_lbp,amount_usd) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (entry_id,self._account_id(db,code),f'Payroll {record["payroll_number"]}',str(debit),str(credit),extra["line_currency"],
+                         str(extra["amount"]),str(extra["amount_lbp"]),str(extra["amount_usd"])))
+                    continue
                 db.execute("INSERT INTO journal_lines(entry_id,account_id,description,debit,credit) VALUES(?,?,?,?,?)",
                     (entry_id,self._account_id(db,code),f'Payroll {record["payroll_number"]}',str(debit),str(credit)))
             db.execute("UPDATE payroll_records SET status='posted',journal_entry_id=? WHERE id=?",(entry_id,record["id"]))

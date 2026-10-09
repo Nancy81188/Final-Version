@@ -51,7 +51,7 @@ class InvoicesStore:
 
     def import_invoice(self, item, user_id):
         # No uniqueness constraint is applied to invoice numbers: duplicates are intentionally retained.
-        self._assert_period_open(item.get("invoice_date"))
+        self._assert_period_open(item.get("invoice_date")); self._assert_vat_open(item.get("invoice_date"))
         defaults=self.default_accounts()  # 2.9.81: Settings > Accounting Settings
         with self.connect() as db:
             entry_type=self._entry_type(item); kind="sale" if entry_type=="sales" else "purchase"
@@ -336,7 +336,7 @@ class InvoicesStore:
             invoice=db.execute("SELECT * FROM invoices WHERE id=?",(int(invoice_id),)).fetchone()
             if not invoice: raise KeyError(invoice_id)
             self._assert_no_active_linked_returns(db,invoice_id,"delete")
-            self._assert_period_open(invoice["invoice_date"])
+            self._assert_period_open(invoice["invoice_date"]); self._assert_vat_open(invoice["invoice_date"])
             details=dict(invoice)
             db.execute("DELETE FROM journal_entries WHERE source_type IN ('invoice','journal_voucher','invoice_payment') AND source_id=?",(int(invoice_id),))
             db.execute("DELETE FROM journal_entries WHERE source_type='vat_reclass' AND entry_number=?",(f"VATND-INV-{int(invoice_id)}",))
@@ -355,7 +355,7 @@ class InvoicesStore:
             if not invoice: raise KeyError(invoice_id)
             if invoice["status"]=="deleted": raise ValueError("Invoice is already deleted")
             self._assert_no_active_linked_returns(db,invoice_id,"delete")
-            self._assert_period_open(invoice["invoice_date"])
+            self._assert_period_open(invoice["invoice_date"]); self._assert_vat_open(invoice["invoice_date"])
             if db.execute("SELECT 1 FROM payment_allocations WHERE invoice_id=? LIMIT 1",(int(invoice_id),)).fetchone():
                 raise ValueError("Invoice has allocated payments. Remove the allocation before deleting it")
             if db.execute("SELECT 1 FROM invoices WHERE linked_invoice_id=? AND status NOT IN ('cancelled','deleted') LIMIT 1",(int(invoice_id),)).fetchone():
@@ -371,6 +371,9 @@ class InvoicesStore:
         return {"deleted":int(invoice_id),"invoice_number":invoice["invoice_number"]}
 
     def update_invoice(self, invoice_id, item, user_id):
+        with self.connect() as db:
+            old=db.execute("SELECT invoice_date FROM invoices WHERE id=?",(int(invoice_id),)).fetchone()
+        self._assert_vat_open(old["invoice_date"] if old else None, item.get("invoice_date"))
         result=self._update_invoice_base(invoice_id, item, user_id)
         with self.connect() as db:
             row=db.execute("SELECT kind,vat_recoverable,status FROM invoices WHERE id=?",(int(invoice_id),)).fetchone()
@@ -484,6 +487,9 @@ class InvoicesStore:
             return dict(row)
 
     def add_invoice_item(self, invoice_id, line, user_id):
+        with self.connect() as db:
+            old=db.execute("SELECT invoice_date FROM invoices WHERE id=?",(int(invoice_id),)).fetchone()
+        if old: self._assert_vat_open(old["invoice_date"])
         description = str(line.get("description") or "").strip()
         if not description:
             raise ValueError("Description is required")
@@ -538,7 +544,7 @@ class InvoicesStore:
             if invoice["status"] in ("cancelled","deleted"):
                 raise ValueError("Cancelled or deleted invoices cannot be cancelled again")
             self._assert_no_active_linked_returns(db,invoice_id,"cancel")
-            self._assert_period_open(invoice["invoice_date"])
+            self._assert_period_open(invoice["invoice_date"]); self._assert_vat_open(invoice["invoice_date"])
             original = db.execute("SELECT * FROM journal_entries WHERE source_type IN ('invoice','journal_voucher') AND source_id=?", (invoice_id,)).fetchone()
             if not original:
                 raise ValueError("Invoice journal entry was not found")
@@ -810,7 +816,7 @@ class InvoicesStore:
             self._assert_no_active_linked_returns(db,invoice_id,"edit")
             files = [dict(r) for r in db.execute("SELECT file_name,mime_type,content FROM invoice_attachments WHERE invoice_id=?", (int(invoice_id),))]
             linked = [r["id"] for r in db.execute("SELECT id FROM invoices WHERE linked_invoice_id=?", (int(invoice_id),))]
-            self._assert_period_open(old["invoice_date"])
+            self._assert_period_open(old["invoice_date"]); self._assert_vat_open(old["invoice_date"], item.get("invoice_date"))
             item = {**item, "invoice_number": item.get("invoice_number") or old["invoice_number"]}
             import inventory
             inventory.remove_invoice_documents(db, invoice_id)

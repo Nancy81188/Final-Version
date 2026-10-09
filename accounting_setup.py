@@ -264,6 +264,20 @@ def year_end_check(db, year, previous_year_db=None):
             (f"{len(to_revalue)} balance(s) to revalue in LBP, e.g. " + ", ".join(f"{c['account']} {c['currency']}" for c in to_revalue[:5])) if to_revalue else "No LBP revaluation needed",
             "Journal Voucher > Automatic DOE at 31-12" if to_revalue else "")
     except Exception as exc: add(WARNING, "Exchange differences (DOE)", f"Could not be checked: {exc}")
+    # 11b. 2.9.84: the same in the main currency of the books when it is not LBP (USD books, EUR books)
+    main = str((db.settings() or {}).get("base_currency") or "USD").upper()
+    if main != "LBP":
+        try:
+            candidates = db.doe_candidates(f"31-12-{year}", main).get("items", [])
+            def difference_main(c):
+                carrying = c.get(f"carrying_{main.lower()}", c.get("carrying"))
+                try: return Decimal(str(c["balance"])) * Decimal(str(c["suggested_rate"])) - Decimal(str(carrying))
+                except Exception: return ZERO
+            to_revalue = [c for c in candidates if abs(difference_main(c)) >= 1]  # under 1 unit is rounding
+            add(WARNING if to_revalue else OK, f"Exchange differences (DOE) in {main} at 31-12",
+                (f"{len(to_revalue)} balance(s) to revalue in {main}, e.g. " + ", ".join(f"{c['account']} {c['currency']}" for c in to_revalue[:5])) if to_revalue else f"No {main} revaluation needed",
+                f"Journal Voucher > Automatic DOE at 31-12 (basis {main})" if to_revalue else "")
+        except Exception as exc: add(WARNING, f"Exchange differences (DOE) in {main}", f"Could not be checked: {exc}")
     # 12. customers in credit / suppliers in debit (information)
     parties = {}
     for r in lines:

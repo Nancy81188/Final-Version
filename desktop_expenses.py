@@ -131,6 +131,8 @@ class ExpensesMixin:
                     f"This PDF suggests {suggestion}, but this form records a PAID Expense.\n"
                     "Confirm it was paid and is not a supplier invoice or a capital asset.\n\nSave as a paid Expense anyway?"):
                 return
+        if not f["id"] and not self.confirm_cash_enough(payload["payment_account"], payload["currency"], payload["expense_date"],
+                (payload["with_vat_subtotal"] or 0) + (payload["without_vat_subtotal"] or 0) + (payload["vat"] or 0), "Expenses"): return
         try:
             expense_id = self.client.update_expense(f["id"], payload) if f["id"] else self.client.add_expense(payload)["expense_id"]
             if f["pdf"]: self.client.upload_expense_attachment(expense_id, Path(f["pdf"]).name, mimetypes.guess_type(f["pdf"])[0] or "application/pdf", Path(f["pdf"]).read_bytes())

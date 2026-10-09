@@ -228,7 +228,7 @@ class V22Mixin:
         tk.Label(bar, text="As of", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.br["to"], 11).pack(side="left", padx=(4, 6))
         self.action_button(bar, "Today", lambda: self.set_business_as_of(0)).pack(side="left", padx=2)
         self.action_button(bar, "+30 days", lambda: self.set_business_as_of(30)).pack(side="left", padx=(2, 6))
-        tk.Label(bar, text="Amounts in", bg=LIGHT).pack(side="left"); ttk.Combobox(bar, textvariable=self.br["basis"], values=["USD", "LBP"], state="readonly", width=5).pack(side="left", padx=(4, 6))
+        tk.Label(bar, text="Amounts in", bg=LIGHT).pack(side="left"); ttk.Combobox(bar, textvariable=self.br["basis"], values=list(dict.fromkeys(["USD", "LBP"] + list(getattr(self, "currency_codes", None) or []))), state="readonly", width=5).pack(side="left", padx=(4, 6))
         tk.Label(bar, text="Only", bg=LIGHT).pack(side="left"); ttk.Combobox(bar, textvariable=self.br["only"], values=["All currencies", "USD", "LBP", "EUR", "AED"], state="readonly", width=12).pack(side="left", padx=4)
         bar2 = tk.Frame(page, bg=LIGHT); bar2.pack(fill="x", padx=8, pady=2)
         tk.Label(bar2, text="Ageing buckets", bg=LIGHT).pack(side="left"); tk.Entry(bar2, textvariable=self.br["buckets"], width=13).pack(side="left", padx=(4, 8))

@@ -217,6 +217,8 @@ class AccountsStore:
             if not invoice: skipped.append(f"#{invoice_id}: not found"); continue
             number = invoice.get("invoice_number") or f"#{invoice_id}"
             if invoice.get("status") in ("cancelled", "deleted"): skipped.append(f"{number}: {invoice['status']}"); continue
+            try: self._assert_vat_open(invoice.get("invoice_date"))  # 2.9.84: the saved VAT return keeps its documents
+            except ValueError as exc: skipped.append(f"{number}: {exc}"); continue
             old_code = str(invoice.get(field) or "").split(" - ", 1)[0].strip()
             if field == "payment_account":  # 2.9.78: only paid invoices have a cash / bank line; without a stored one it is the method's default
                 if not Decimal(str(invoice.get("amount_paid") or 0)): skipped.append(f"{number}: not paid (no cash / bank line)"); continue

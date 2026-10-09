@@ -746,6 +746,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             return messagebox.showwarning("Payment & Receipt", f"{incompatible['number']} requires an {direction}. A credit-note offset needs a separate journal adjustment.")
         allocations = [{"invoice_id": r["invoice_id"], "amount": r["allocate"]} for r in form["alloc_sheet"].ordered() if r["allocate"]]
         if sum(a["amount"] for a in allocations) > payload["amount"] + 0.005: return messagebox.showwarning("Payment & Receipt", "The allocation is more than the amount")
+        if form["kind"] == "supplier_payment" and not form["id"] and not self.confirm_cash_enough(payload["cash_account"], payload["currency"], payload["payment_date"],
+                payload["amount"] + (payload.get("bank_commission") or 0), "Payment & Receipt"): return
         try:
             payment_id = self.client.update_payment(form["id"], payload) if form["id"] else self.client.add_payment(payload)["payment_id"]
             if allocations: self.client.save_allocations(payment_id, allocations)

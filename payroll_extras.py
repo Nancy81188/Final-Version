@@ -122,7 +122,7 @@ def list_leave(db, year=None):
     return [r for r in rows if not year or r["date_from"][:4] == str(year)]
 
 
-def leave_balances(db, as_of, default_days=15):
+def leave_balances(db, as_of, default_days=15, with_ids=False):
     """Per employee: days a year, carried in, earned to date (pro rata from 1 January or the starting date), annual leave
     taken this year, balance and its value (balance x monthly salary / 30, in the salary currency)."""
     as_of = iso_date(as_of); year = as_of[:4]; start_year = f"{year}-01-01"; rows = []
@@ -132,11 +132,13 @@ def leave_balances(db, as_of, default_days=15):
     for e in _employees(db, as_of):
         per_year = _d(e.get("leave_days_year")) or Decimal(str(default_days))
         start = max(start_year, e.get("hire_date") or start_year)
-        months = Decimal((date.fromisoformat(as_of) - date.fromisoformat(start)).days + 1) / Decimal("365.25") * 12
+        # 2.9.84: days of this year (365 or 366): a full year earns exactly the days a year (365.25 gave 14.99 of 15)
+        year_days = (date(int(year), 12, 31) - date(int(year), 1, 1)).days + 1
+        months = min(Decimal(12), Decimal((date.fromisoformat(as_of) - date.fromisoformat(start)).days + 1) / Decimal(year_days) * 12)
         earned = (per_year * months / 12).quantize(Decimal("0.01"))
         carried = _d(e.get("leave_carried")); used = taken.get(e["id"], ZERO); balance = carried + earned - used
         daily = (_d(e["base_salary"]) / 30)
-        rows.append({"employee": e["full_name"], "number": e.get("employee_number") or "", "days_year": per_year, "carried": carried, "earned": earned,
+        rows.append({**({"employee_id": e["id"]} if with_ids else {}), "employee": e["full_name"], "number": e.get("employee_number") or "", "days_year": per_year, "carried": carried, "earned": earned,
                      "taken": used, "balance": balance, "currency": e["currency"], "value": (balance * daily).quantize(Decimal("0.01"))})
     return {"date": as_of, "rows": rows}
 

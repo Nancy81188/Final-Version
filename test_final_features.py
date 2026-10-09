@@ -279,11 +279,12 @@ class QuarterlyVatTest(unittest.TestCase):
         self.assertEqual(q2["credit_brought_forward_lbp"], saved["credit_carried_forward_lbp"])
         # MoF decision 1195: VAT due is rounded up to the nearest LBP 10,000 (from 25-11-2024)
         self.assertEqual(q2["payable_lbp"], 6810000); self.assertEqual(q2["net_after_credit_lbp"], 110 * 89500 - saved["credit_carried_forward_lbp"])
-        self.db.create_manual_invoice({"invoice_date": "28-03-2025", "party_name": "Client", "kind": "sales", "currency": "USD", "status": "posted"},
-                                      [{"description": "After filing", "quantity": 1, "unit_price": 10, "vat_rate": 11}], self.user)
-        self.assertTrue(vat_return.build_vat_return(self.db, 2025, 1)["changed_since_saved"])
+        late = ({"invoice_date": "28-03-2025", "party_name": "Client", "kind": "sales", "currency": "USD", "status": "posted"},
+                [{"description": "After filing", "quantity": 1, "unit_price": 10, "vat_rate": 11}])
+        with self.assertRaisesRegex(ValueError, "Q1 2025 VAT return is saved"): self.db.create_manual_invoice(*late, self.user)  # 2.9.84: refused, not only flagged
         vat_return.reopen_return(self.db, 2025, 1, self.user)
         self.assertEqual(vat_return.build_vat_return(self.db, 2025, 1)["status"], "not saved")
+        self.db.create_manual_invoice(*late, self.user)  # once reopened the late document is accepted
 
     def test_previous_fiscal_year_file_provides_q1_credit(self):
         other = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); previous, user = new_db(other.name, "2024.db")

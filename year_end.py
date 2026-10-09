@@ -18,12 +18,34 @@ ZERO = Decimal("0")
 CENT = Decimal("0.01")
 
 
+def _revaluations(db, date_to):
+    """2.9.83: DOE lines of the USD (or EUR ...) books on balance-sheet accounts: they change only the equivalent in the
+    books' currency (the balance in the account's own currency stays). {(voucher currency, code, account currency):
+    {"entry", "lbp", "usd", "revalue_currency", "revalue"}} - carried into the next year as the same kind of line."""
+    from ledger_reports import _load_lines, _digits
+    result = {}
+    for row in _load_lines(db, {"posting_status": "posted"}):
+        if row["iso_date"] > date_to or _digits(row["code"])[:1] not in "12345": continue
+        if not _is_revaluation(row): continue
+        key = (str(row["currency"] or "USD").upper(), row["code"], row["account_currency"])
+        item = result.setdefault(key, {"entry": ZERO, "lbp": ZERO, "usd": ZERO, "revalue_currency": row.get("revalue_currency"), "revalue": ZERO})
+        item["entry"] += row["signed"]["entry"]; item["lbp"] += row["signed"]["LBP"] or ZERO; item["usd"] += row["signed"]["USD"] or ZERO
+        if row.get("revalue_amount") not in (None, ""): item["revalue"] += Decimal(str(row["revalue_amount"])) * (1 if row["signed"]["entry"] >= 0 else -1)
+    return {k: v for k, v in result.items() if abs(v["entry"]) >= CENT}
+
+
+def _is_revaluation(row):
+    """A line that moves the books' value of an account without moving its own-currency balance (a DOE line)."""
+    return bool(row.get("line_currency")) and row.get("amount") not in (None, "") and Decimal(str(row["amount"])) == 0 and row["signed"]["entry"] != 0
+
+
 def _balances(db, date_to, classes):
     """{(currency, code): {"amount", "lbp", "usd", "name"}} of posted movements up to date_to."""
     from ledger_reports import _load_lines, _digits
     result = {}
     for row in _load_lines(db, {"posting_status": "posted"}):
         if row["iso_date"] > date_to or _digits(row["code"])[:1] not in classes: continue
+        if _digits(row["code"])[:1] in "12345" and _is_revaluation(row): continue  # 2.9.83: carried as a revaluation line
         key = (row["account_currency"], row["code"])
         item = result.setdefault(key, {"amount": ZERO, "lbp": ZERO, "usd": ZERO, "name": row["name_en"]})
         item["amount"] += row["signed"]["account"]; item["lbp"] += row["signed"]["LBP"]; item["usd"] += row["signed"]["USD"]
@@ -32,6 +54,20 @@ def _balances(db, date_to, classes):
 
 def _rate(amount, other):
     return (abs(other) / abs(amount)) if amount else ZERO
+
+
+def _insert_revaluations(db, entry_id, items, description):
+    """2.9.83: the DOE of the previous year on each balance-sheet account, as the same kind of line (no own-currency amount)."""
+    for code, line_currency, item in items:
+        account = db.execute("SELECT id FROM accounts WHERE code=?", (code,)).fetchone()
+        if not account: raise ValueError(f"Account {code} was not found in the chart of accounts")
+        party = db.execute("SELECT id FROM parties WHERE account_number=?", (code,)).fetchone()
+        value = abs(item["entry"]).quantize(CENT)
+        db.execute("""INSERT INTO journal_lines(entry_id,account_id,party_id,description,debit,credit,line_currency,amount,amount_lbp,amount_usd,rate_lbp,rate_usd,revalue_currency,revalue_amount)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (entry_id, account["id"], party["id"] if party else None, description,
+            str(value if item["entry"] > 0 else ZERO), str(value if item["entry"] < 0 else ZERO), line_currency, "0",
+            str(abs(item["lbp"]).quantize(CENT)), str(abs(item["usd"]).quantize(Decimal("0.001"))), "0", "0",
+            item.get("revalue_currency") if item.get("revalue") else None, str(abs(item["revalue"]).quantize(CENT)) if item.get("revalue") else None))
 
 
 def _insert_lines(db, database, entry_id, currency, lines):
@@ -130,7 +166,12 @@ def opening_lines(source, source_year):
         if profit and loss and pnl:  # keep one result line per currency
             merged = [profit[i] + loss[i] for i in range(3)]; accounts.pop(PROFIT_ACCOUNT); accounts.pop(LOSS_ACCOUNT)
             accounts[PROFIT_ACCOUNT if merged[0] < 0 else LOSS_ACCOUNT] = merged
-    return {c: [(code, *v) for code, v in sorted(a.items()) if abs(v[0]) >= CENT or abs(v[1]) >= 1] for c, a in per_currency.items()}
+    # 2.9.83: a DOE of the books' currency (USD ...) moved the result (gain / loss closed to 138 / 139 in that currency)
+    # but not the account's own currency: its line goes into the opening of that currency, so each voucher balances.
+    revaluations = _revaluations(source, end)
+    result = {c: [(code, *v) for code, v in sorted(a.items()) if abs(v[0]) >= CENT or abs(v[1]) >= 1] for c, a in per_currency.items()}
+    result["_revaluations"] = [(voucher_currency, code, line_currency, item) for (voucher_currency, code, line_currency), item in sorted(revaluations.items())]
+    return result
 
 
 def _bring_accounts(source, db, codes):
@@ -158,15 +199,19 @@ def _bring_accounts(source, db, codes):
 def post_opening(source, target, year, user_id):
     """Replace the opening vouchers of `year` in the target database with the balances of year-1."""
     year = int(year); lines = opening_lines(source, year - 1); vouchers = []
+    revaluations = lines.pop("_revaluations", [])
     with target.connect() as db:
-        _bring_accounts(source, db, sorted({code for items in lines.values() for code, *_rest in items}))
+        _bring_accounts(source, db, sorted({code for items in lines.values() for code, *_rest in items} | {code for _c, code, _l, _i in revaluations}))
         for row in db.execute("SELECT id FROM journal_entries WHERE source_type='opening' AND entry_number LIKE ?", (f"OPEN-{year}-%",)).fetchall():
             db.execute("DELETE FROM journal_entries WHERE id=?", (row["id"],))
+        for currency in sorted({c for c, *_rest in revaluations} - set(lines)): lines[currency] = []
         for currency, items in lines.items():
-            if not items: continue
+            doe = [(code, line_currency, item) for c, code, line_currency, item in revaluations if c == currency]
+            if not items and not doe: continue
             number = f"OPEN-{year}-{currency}"
             entry = db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,currency,created_by,created_at,branch_id,voucher_type)
                 VALUES(?,?,?,?,?,?,?,(SELECT id FROM branches ORDER BY id LIMIT 1),'04')""", (number, f"01-01-{year}", f"Opening balances {year} ({currency})", "opening", currency, user_id, utcnow())).lastrowid
             _insert_lines(db, target, entry, currency, [(code, amount, lbp, usd, f"Opening {year}") for code, amount, lbp, usd in items])
+            if doe: _insert_revaluations(db, entry, doe, f"Opening {year} - exchange revaluation of {year - 1}")
             vouchers.append(number)
     return vouchers

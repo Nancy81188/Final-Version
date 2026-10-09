@@ -161,7 +161,7 @@ class PaymentsStore:
                 ORDER BY x.id DESC""")]
 
     def add_expense(self, item, user_id):
-        date=str(item.get("expense_date") or "").strip(); self._assert_period_open(date)
+        date=str(item.get("expense_date") or "").strip(); self._assert_period_open(date); self._assert_vat_open(date)
         description=str(item.get("description") or "").strip()
         if not description: raise ValueError("Expense description is required")
         legacy=Decimal(str(item.get("subtotal") or 0)); with_vat=Decimal(str(item.get("with_vat_subtotal") if item.get("with_vat_subtotal") not in (None,"") else legacy)); without_vat=Decimal(str(item.get("without_vat_subtotal") or 0)); subtotal=with_vat+without_vat
@@ -259,7 +259,7 @@ class PaymentsStore:
         with self.connect() as db:
             row = db.execute("SELECT * FROM expenses WHERE id=?", (int(expense_id),)).fetchone()
             if not row: raise KeyError("Expense not found")
-        self._assert_period_open(row["expense_date"])
+        self._assert_period_open(row["expense_date"]); self._assert_vat_open(row["expense_date"])
         with self.connect() as db:
             self._remove_entries(db, "expense", expense_id, (f"VATND-EXP-{int(expense_id)}",)); db.execute("DELETE FROM expenses WHERE id=?", (int(expense_id),))
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
@@ -274,7 +274,7 @@ class PaymentsStore:
             row = db.execute("SELECT * FROM expenses WHERE id=?", (int(expense_id),)).fetchone()
             if not row: raise KeyError("Expense not found")
             files = [dict(r) for r in db.execute("SELECT file_name,mime_type,content FROM expense_attachments WHERE expense_id=?", (int(expense_id),))]
-        self._assert_period_open(row["expense_date"])
+        self._assert_period_open(row["expense_date"]); self._assert_vat_open(row["expense_date"], item.get("expense_date"))
         self.delete_expense(expense_id, user_id)
         new_id = self.add_expense({**item, "expense_number": row["expense_number"]}, user_id)
         for f in files: self.add_expense_attachment(new_id, f["file_name"], f["mime_type"], f["content"], user_id)

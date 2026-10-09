@@ -508,6 +508,17 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/users":
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             return self._json(200,{"items":self.master_db.list_users()})
+        if path == "/api/cash-check":  # 2.9.84: warn before the cash / bank goes negative
+            try: result=self.db.cash_check(*(self._query(parsed,name,"") for name in ("account","currency","date","amount")))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+            return self._json(200,result)
+        if path == "/api/audit-log":  # 2.9.84: audit trail screen (administrator)
+            if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
+            try:
+                result=self.db.audit_trail(*(self._query(parsed,name,"") for name in ("date_from","date_to","username","entity","action","text")),
+                                           int(self._query(parsed,"limit","5000") or 5000))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+            return self._json(200,result)
         if path == "/api/backups/download":
             try:
                 target=self.db.backup_path(self._query(parsed,"name",""))

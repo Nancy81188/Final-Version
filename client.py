@@ -233,6 +233,8 @@ class ApiClient:
     def cancel_invoice(self, invoice_id, reason): return self.request("POST",f"/api/invoices/{invoice_id}/cancel",{"reason":reason})["invoice"]
     def duplicate_invoice(self, invoice_id): return self.request("POST",f"/api/invoices/{invoice_id}/duplicate",{})["invoice"]
     def invoice_history(self, invoice_id): return self.request("GET",f"/api/invoices/{invoice_id}/history")["items"]
+    def cash_check(self, account, currency, date, amount): return self.request("GET","/api/cash-check?"+urlencode({"account":account,"currency":currency,"date":date,"amount":amount}))  # 2.9.84
+    def audit_log(self, **filters): return self.request("GET","/api/audit-log?"+urlencode({k:v for k,v in filters.items() if v not in (None,"")}))  # 2.9.84
     def attachments(self, invoice_id): return self.request("GET",f"/api/invoices/{invoice_id}/attachments")["items"]
     def upload_attachment(self, invoice_id, file_name, mime_type, content):
         return self.request("POST",f"/api/invoices/{invoice_id}/attachments",{

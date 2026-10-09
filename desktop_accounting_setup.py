@@ -96,6 +96,60 @@ class AccountingSetupMixin:
         self.save_default_accounts()
 
     # ------------------------------------------------------------ Year-End Check
+    # ------------------------------------------------------------ 2.9.84: warn before the cash / bank goes negative
+    def confirm_cash_enough(self, account, currency, date, amount, title="Saber Accounting"):
+        """True to go on. Asks when paying `amount` out of a cash / bank account (class 5) leaves it negative in its currency."""
+        try: check = self.client.cash_check(account, currency, date, amount)
+        except Exception: return True  # the check never blocks a save by itself
+        if not check.get("checked") or not check.get("negative"): return True
+        return messagebox.askyesno(title, f"Account {check['account']} has {check['balance']:,.2f} {check['currency']} on {date}.\n"
+                                          f"After this payment of {float(amount):,.2f} it would be {check['after']:,.2f} {check['currency']} (negative).\n\n"
+                                          "Check the date, the account and the receipts not yet entered. Save anyway?")
+
+    # ------------------------------------------------------------ 2.9.84: Settings > Audit Trail (administrator)
+    def build_audit_trail_page(self, page):
+        year = getattr(self, "current_fiscal_year", "") or ""
+        self.audit_filters = {k: tk.StringVar(value=v) for k, v in (("date_from", f"01-01-{year}" if year else ""), ("date_to", f"31-12-{year}" if year else ""),
+                                                                     ("username", "All"), ("entity", "All"), ("action", "All"), ("text", ""))}
+        bar = tk.Frame(page, bg=LIGHT); bar.pack(fill="x", padx=8, pady=(8, 2))
+        tk.Label(bar, text="From", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.audit_filters["date_from"], 11).pack(side="left", padx=(4, 8))
+        tk.Label(bar, text="To", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.audit_filters["date_to"], 11).pack(side="left", padx=(4, 8))
+        self.audit_boxes = {}
+        for key, label, width in (("username", "User", 12), ("entity", "Record", 16), ("action", "Action", 12)):
+            tk.Label(bar, text=label, bg=LIGHT).pack(side="left")
+            box = ttk.Combobox(bar, textvariable=self.audit_filters[key], values=["All"], state="readonly", width=width); box.pack(side="left", padx=(4, 8)); self.audit_boxes[key] = box
+        tk.Label(bar, text="Contains", bg=LIGHT).pack(side="left"); tk.Entry(bar, textvariable=self.audit_filters["text"], width=16).pack(side="left", padx=(4, 8))
+        tk.Button(bar, text="Show", command=self.load_audit_trail, bg=NAVY, fg="white", border=0, padx=14, pady=4).pack(side="left", padx=4)
+        for label, fmt in (("Excel", "xlsx"), ("PDF", "pdf")):
+            self.action_button(bar, label, lambda f=fmt: self.export_audit_trail(f)).pack(side="left", padx=2)
+        frame = tk.Frame(page, bg=LIGHT); frame.pack(fill="both", expand=True, padx=8, pady=4)
+        self.audit_tree = ttk.Treeview(frame, columns=("when", "user", "action", "entity", "id", "details"), show="headings")
+        for key, label, width in (("when", "Date / time (UTC)", 150), ("user", "User", 100), ("action", "Action", 90), ("entity", "Record", 120), ("id", "No.", 60), ("details", "Details", 600)):
+            self.audit_tree.heading(key, text=label); self.audit_tree.column(key, width=width, anchor="w", stretch=key == "details")
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=self.audit_tree.yview); self.audit_tree.configure(yscrollcommand=scroll.set)
+        self.audit_tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y")
+        self.audit_detail = tk.Label(page, text="Select a line to read its details in full.", bg=LIGHT, fg=NAVY, anchor="w", justify="left", wraplength=1100)
+        self.audit_detail.pack(fill="x", padx=10, pady=(0, 8))
+        self.audit_tree.bind("<<TreeviewSelect>>", lambda _e: self.audit_detail.config(text=str(self.audit_tree.item(self.audit_tree.selection()[0], "values")[-1])) if self.audit_tree.selection() else None)
+        self.audit_rows = []
+
+    def load_audit_trail(self):
+        filters = {k: ("" if v.get() == "All" else v.get().strip()) for k, v in self.audit_filters.items()}
+        try: result = self.client.audit_log(**filters)
+        except Exception as exc: return messagebox.showerror("Audit Trail", str(exc))
+        for key, choices in (("username", "users"), ("entity", "entities"), ("action", "actions")):
+            self.audit_boxes[key].configure(values=["All"] + list(result.get(choices) or []))
+        self.audit_rows = result["items"]; self.audit_tree.delete(*self.audit_tree.get_children())
+        for row in self.audit_rows:
+            self.audit_tree.insert("", "end", values=(str(row["created_at"])[:19].replace("T", " "), row["username"], row["action"], row["entity"], row["entity_id"] or "", row["details"]))
+        return self.audit_rows
+
+    def export_audit_trail(self, fmt):
+        if not self.audit_rows: self.load_audit_trail()
+        rows = [[str(r["created_at"])[:19].replace("T", " "), r["username"], r["action"], r["entity"], r["entity_id"] or "", r["details"]] for r in self.audit_rows]
+        sections = [{"heading": "Audit trail", "headers": ["Date / time (UTC)", "User", "Action", "Record", "No.", "Details"], "rows": rows}]
+        self.save_sections("Audit Trail", [f"{len(rows)} changes"], sections, "Audit_Trail", fmt)
+
     def show_year_end_check(self, before_closing=False):
         """Shows the check; before closing, returns True when the user goes on."""
         year = int(getattr(self, "current_fiscal_year", 0) or 0)

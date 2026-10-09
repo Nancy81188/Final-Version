@@ -275,6 +275,7 @@ class CompanyManager:
         import inventory
         inventory.carry_forward(source,target,year,user_id)
         fixed_assets.carry_forward(source,target,year)
+        self._carry_year_data(source,target,year)  # 2.9.84: employees, rates, asset accounts, departments / projects
         company["years"].append({"year":year,"database":str(path.resolve()),"status":"open"}); company["years"].sort(key=lambda y:int(y["year"]))
         self._write(data); return company
 
@@ -393,6 +394,14 @@ class CompanyManager:
             opening_vouchers=self._opening_balances(source,target,next_year,user_id)
             import inventory
             stock_openings=inventory.carry_forward(source,target,next_year,user_id)
+            # 2.9.84: Close & Open used to leave the new year without employees, fixed-asset register, asset accounts,
+            # exchange rates, departments / projects and the payroll posting accounts
+            import fixed_assets
+            with target.connect() as db: has_assets=db.execute("SELECT 1 FROM fixed_assets LIMIT 1").fetchone()
+            if not has_assets:
+                try: fixed_assets.carry_forward(source,target,next_year)
+                except ValueError: logging.getLogger("saber.company").warning("Fixed assets not carried (depreciation not posted)",exc_info=True)
+            self._carry_year_data(source,target,next_year)
             if not next_record: company["years"].append({"year":next_year,"database":str(path.resolve()),"status":"open"})
             company["years"].sort(key=lambda item:int(item["year"]))
             self._write(data)
@@ -403,6 +412,44 @@ class CompanyManager:
                 with closing(sqlite3.connect(target_backup)) as old,closing(sqlite3.connect(next_path)) as live: old.backup(live)
             raise
         return {**close_result,"company":company,"opening_vouchers":opening_vouchers,"stock_openings":stock_openings}
+
+    def _carry_year_data(self,source,target,year):
+        """2.9.84: what the next fiscal year needs from the previous one besides the accounts and the parties:
+        employees (their leave balance and end-of-service contributions carried), asset accounts, exchange rates,
+        departments, projects and the payroll settings. Rows already in the new year are kept."""
+        import payroll_extras
+        def columns(db,table): return [row["name"] for row in db.execute(f'PRAGMA table_info("{table}")')]
+        import fixed_assets
+        with target.connect() as dst: fixed_assets._migrate_categories(dst)  # the asset accounts table is made when first used
+        with source.connect() as src, target.connect() as dst:
+            for table in ("asset_categories","exchange_rates","exchange_rate_samples","departments","projects","employees"):
+                try: rows=src.execute(f'SELECT * FROM "{table}"').fetchall()
+                except sqlite3.OperationalError: continue
+                if not rows: continue
+                wanted=[c for c in rows[0].keys() if c in set(columns(dst,table))]
+                if not wanted: continue
+                dst.executemany(f'INSERT OR IGNORE INTO "{table}"({",".join(wanted)}) VALUES({",".join("?"*len(wanted))})',[tuple(row[c] for c in wanted) for row in rows])
+            # payroll settings with the company's own posting accounts (the new file starts with the program's)
+            settings=src.execute("SELECT * FROM payroll_settings").fetchall()
+            if settings:
+                wanted=[c for c in settings[0].keys() if c in set(columns(dst,"payroll_settings")) and c!="id"]
+                dst.execute("DELETE FROM payroll_settings")
+                dst.executemany(f'INSERT INTO payroll_settings({",".join(wanted)}) VALUES({",".join("?"*len(wanted))})',[tuple(row[c] for c in wanted) for row in settings])
+        # end-of-service contributions and leave carried into the employee files of the new year
+        try:
+            paid={}
+            with source.connect() as src:
+                for row in src.execute("SELECT employee_id,currency,period_date,employer_end_service FROM payroll_records WHERE status='posted'"):
+                    paid[row["employee_id"]]=paid.get(row["employee_id"],0)+payroll_extras._lbp(source,row["employer_end_service"],row["currency"],row["period_date"])
+            balances={r["employee_id"]:r["balance"] for r in payroll_extras.leave_balances(source,f"31-12-{int(year)-1}",with_ids=True)["rows"]}
+            with source.connect() as src: before={r["id"]:r["eos_paid_before"] for r in src.execute("SELECT id,eos_paid_before FROM employees")}
+            with target.connect() as dst:
+                for employee_id,amount in paid.items():
+                    total=payroll_extras._d(before.get(employee_id))+amount
+                    dst.execute("UPDATE employees SET eos_paid_before=? WHERE id=?",(str(total.quantize(payroll_extras.Decimal("1"))),employee_id))
+                for employee_id,balance in balances.items():
+                    dst.execute("UPDATE employees SET leave_carried=? WHERE id=?",(str(balance),employee_id))
+        except Exception: logging.getLogger("saber.company").warning("End-of-service / leave balances not carried",exc_info=True)
 
     def _copy_master_data(self,source,target):
         with source.connect() as src, target.connect() as dst:

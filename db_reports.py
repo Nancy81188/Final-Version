@@ -135,7 +135,7 @@ class ReportsStore:
             WHEN i.invoice_date GLOB '??-??-????'
                 THEN substr(i.invoice_date,7,4)||'-'||substr(i.invoice_date,4,2)||'-'||substr(i.invoice_date,1,2)
             ELSE i.invoice_date END"""
-        filters = ["i.party_id=?"]
+        filters = ["i.party_id=?", "i.status='posted'"]  # 2.9.84: cancelled / deleted / review documents are not owed
         parameters = [party_id]
         if currency:
             filters.append("i.currency=?"); parameters.append(currency)
@@ -148,8 +148,19 @@ class ReportsStore:
             if not party:
                 raise KeyError(party_id)
             rows = [dict(row) for row in db.execute(f"""SELECT i.id,i.invoice_number,i.invoice_date,i.kind,
-                i.currency,i.total,i.branch_id FROM invoices i WHERE {' AND '.join(filters)}
+                i.currency,i.total,i.branch_id,i.doc_subtype FROM invoices i WHERE {' AND '.join(filters)}
                 ORDER BY {normalized_date},i.id""", parameters)]
+            # 2.9.84: receipts and payments are on the statement too (they were missing, so it showed invoices only)
+            if not branch_id:
+                pay_filters = ["x.party_id=?"]; pay_parameters = [party_id]
+                if currency: pay_filters.append("x.currency=?"); pay_parameters.append(currency)
+                for pay in db.execute(f"""SELECT x.id,x.payment_number,x.payment_date,x.kind,x.currency,
+                        CAST(x.amount AS REAL)+CAST(COALESCE(x.exchange_difference,'0') AS REAL) total FROM payments x WHERE {' AND '.join(pay_filters)}""", pay_parameters):
+                    day = _soft_iso(pay["payment_date"])
+                    if to_date and day > to_date: continue
+                    rows.append({"id": pay["id"], "invoice_number": pay["payment_number"], "invoice_date": day, "kind": pay["kind"], "currency": pay["currency"],
+                                 "total": pay["total"], "branch_id": None, "doc_subtype": "payment"})
+                rows.sort(key=lambda r: (_soft_iso(r["invoice_date"]) or "", r["doc_subtype"] == "payment"))
         opening = {}
         items = []
         for row in rows:
@@ -161,14 +172,17 @@ class ReportsStore:
             amount = Decimal(str(row["total"] or 0))
             output_currency=(display_currency or row["currency"]).upper()
             amount=self._converted_amount(amount,row["currency"],output_currency,normalized)
-            debit = amount if row["kind"] == "sale" else Decimal("0")
-            credit = amount if row["kind"] == "purchase" else Decimal("0")
+            owed_by_party = row["kind"] in ("sale", "supplier_payment")  # a sale or a payment to the party: debit
+            if row.get("doc_subtype") == "credit_note": owed_by_party = not owed_by_party
+            debit = amount if owed_by_party else Decimal("0")
+            credit = amount if not owed_by_party else Decimal("0")
             if from_date and normalized < from_date:
                 if include_opening:
                     opening[output_currency] = opening.get(output_currency, Decimal("0")) + debit - credit
                 continue
             items.append({**row, "source_currency":row["currency"],"currency":output_currency,
-                          "description": f"{row['kind'].title()} invoice {row['invoice_number']}",
+                          "description": ({"customer_receipt": "Receipt", "supplier_payment": "Payment"}.get(row["kind"]) or
+                                          ("Credit note" if row.get("doc_subtype") == "credit_note" else f"{row['kind'].title()} invoice")) + f" {row['invoice_number']}",
                           "debit": float(debit), "credit": float(credit)})
         balances = dict(opening)
         for row in items:

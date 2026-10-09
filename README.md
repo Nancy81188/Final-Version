@@ -1,5 +1,22 @@
 # Saber Accounting MVP
 
+## Version 2.9.84 (fixes from a full-year audit of the program)
+A full year of a test company (sales in USD / EUR / LBP, exempt and zero-rated sales, stock, payroll, assets, VAT, DOE, closing) was audited like a client file. Every finding is fixed:
+- Year close after a DOE (important): after a DOE in the USD books (or EUR ...) on a foreign-currency balance, "Close & Open next year" stopped with "OPEN-<year>-USD is not balanced" (nothing was saved). The revaluation is now carried into the next year's opening as the same kind of line, so every opening voucher balances and the next DOE starts from the revalued amount.
+- Close & Open now carries into the new year: employees (with their end-of-service contributions of the year added to "contributions before Saber" and their leave balance at 31-12 as "leave carried in"), the fixed-asset register and asset accounts, exchange rates, departments, projects and the payroll settings / posting accounts. Creating a year also carries them.
+- VAT: a document dated in a quarter whose VAT return is saved can no longer be added, changed, cancelled or deleted (it used to be accepted and only flagged "changed after saving"). Sales / purchase invoices, credit notes, expenses, VAT classification and deductibility, and account changes on uploaded invoices all say "The Qn YYYY VAT return is saved; an administrator must reopen it". Reopen the return, correct, save it again.
+- Fixed assets bought before Saber: new field "Booked before Saber up to" (Asset Data Entry). The months up to that date count as already depreciated (their depreciation is in the opening balance), so the monthly table shows the old depreciation and the net value, and the first month in Saber posts without "post the earlier months first".
+- Cash flow statement: the movement of the provisions (15, e.g. the end-of-service provision) is now an operating adjustment ("movement in provisions"), no longer under financing; depreciation is the movement of the accumulated depreciation (28 / 29). The net change in cash is unchanged.
+- Settings > new tab "Audit Trail" (administrator): every change recorded by the program - who, when, what record, the details - with filters (dates, user, record, action, text) and Excel / PDF.
+- Supplier payments and expenses: before saving, a warning when the payment would make the cash / bank account (class 5) negative in its currency on that date (Save anyway or go back).
+- Payroll in USD: the salary tax line now carries the exact LBP tax of the payslip as its LBP value, so 4411 in LBP agrees with the tax due (the rounding of the USD tax was left on 4411); the LBP rounding goes to the salary expense line.
+- Statement of account (/api/statement): now shows receipts and payments, credit notes on the right side, and leaves out cancelled / deleted / review documents.
+- Financial statements: can be prepared in any currency of the company (EUR ...), each line translated through its USD value at the entry date.
+- Year-End Check: also checks the DOE in the main currency of the books when it is not LBP (USD books, EUR books).
+- Annual leave earned now uses the days of the year (365 / 366): a full year earns exactly 15 days (365.25 gave 14.99).
+- Tests changed on purpose: test_final_features (QuarterlyVatTest) - an invoice added after the Q1 return is saved is now refused until the return is reopened (it used to be accepted and flagged); test_v2_9_82 (leave) - earned leave at 30-06 is 7.44 days (181 / 365 x 15) instead of 7.43.
+- Changed files: year_end.py, company_manager.py, database.py, db_invoices.py, db_payments.py, db_vat.py, db_accounts.py, db_payroll.py, db_reports.py, fixed_assets.py, financial_statements.py, accounting_setup.py, payroll_extras.py, server.py, client.py, desktop_asset_register.py, desktop_settings.py, desktop_accounting_setup.py, desktop_expenses.py, desktop_stage3.py, desktop_v22.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_84.py.
+
 ## Version 2.9.83 (audit report pack and VAT Art. 31 by quarter)
 - Financial Statements (audit report pack):
   - Centred front page: company, "Financial Statements and Independent Auditor's Report", period, currency, contents and audit firm. The auditor's report and the four statements have centred titles; the sub-titles of the report (OPINION, BASIS FOR OPINION ...) are bold; the signature stays on the same page as the last paragraph.

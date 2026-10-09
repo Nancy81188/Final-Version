@@ -31,6 +31,9 @@ def migrate(db):
     """)
     if "annual_rate" not in {row[1] for row in db.execute("PRAGMA table_info(fixed_assets)")}:
         db.execute("ALTER TABLE fixed_assets ADD COLUMN annual_rate TEXT")
+    if "opening_date" not in {row[1] for row in db.execute("PRAGMA table_info(fixed_assets)")}:
+        # 2.9.84: an asset bought before Saber - depreciation already booked (in the opening balance) up to this date
+        db.execute("ALTER TABLE fixed_assets ADD COLUMN opening_date TEXT")
 
 
 def _iso(value):
@@ -117,6 +120,10 @@ def save_asset(database, payload, asset_id=None, user_id=None):
         monthly=cost*annual_rate/Decimal(1200)
         months=int(((cost-residual)/monthly).to_integral_value(rounding=ROUND_CEILING))
         if months>1200: raise ValueError("Annual rate is too small to amortise the asset within 100 years")
+    opening_date=None
+    if str(payload.get("opening_date") or "").strip():
+        opening_date=_iso(payload.get("opening_date"))
+        if opening_date<start: raise ValueError("'Depreciation booked before Saber up to' cannot be before the depreciation start")
     currency=str(payload.get("currency") or "USD").upper(); frequency=str(payload.get("frequency") or "monthly").lower()
     if currency not in ("USD","LBP","EUR","AED") or frequency not in ("monthly","yearly"):
         raise ValueError("Choose a supported currency and monthly or yearly posting")
@@ -137,6 +144,9 @@ def save_asset(database, payload, asset_id=None, user_id=None):
         action="update" if asset_id else "create"
         if asset_id:
             if not db.execute("SELECT 1 FROM fixed_assets WHERE id=? AND status='active'",(asset_id,)).fetchone(): raise KeyError(asset_id)
+            old=db.execute("SELECT opening_date FROM fixed_assets WHERE id=?",(asset_id,)).fetchone()
+            if old["opening_date"]:  # the periods booked before Saber are rebuilt from the new data
+                db.execute("DELETE FROM fixed_asset_postings WHERE asset_id=? AND entry_id IS NULL AND period_end<=?",(asset_id,old["opening_date"]))
             if db.execute("SELECT 1 FROM fixed_asset_postings WHERE asset_id=?",(asset_id,)).fetchone():
                 raise ValueError("This asset has posted depreciation; reverse those vouchers before changing the schedule")
             db.execute("""UPDATE fixed_assets SET asset_code=?,name=?,acquired_on=?,start_on=?,currency=?,cost=?,residual=?,useful_months=?,frequency=?,
@@ -145,8 +155,15 @@ def save_asset(database, payload, asset_id=None, user_id=None):
             db.execute("""INSERT INTO fixed_assets(asset_code,name,acquired_on,start_on,currency,cost,residual,useful_months,frequency,
                 asset_account,depreciation_account,accumulated_account,invoice_id,annual_rate,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",values)
             asset_id=db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        db.execute("UPDATE fixed_assets SET opening_date=? WHERE id=?",(opening_date,asset_id))
+        if opening_date:
+            asset=dict(db.execute("SELECT * FROM fixed_assets WHERE id=?",(asset_id,)).fetchone())
+            for row in _schedule_rows(asset,{}):
+                if row["period_end"]<=opening_date:
+                    db.execute("INSERT OR IGNORE INTO fixed_asset_postings(asset_id,period_end,amount,entry_id) VALUES(?,?,?,NULL)",
+                               (asset_id,row["period_end"],row["amount"]))
         db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,datetime('now'))",
-                   (user_id,action,"fixed_asset",asset_id,json.dumps({"code":code,"name":name})))
+                   (user_id,action,"fixed_asset",asset_id,json.dumps({"code":code,"name":name,"opening_date":opening_date})))
         return dict(db.execute("SELECT * FROM fixed_assets WHERE id=?",(asset_id,)).fetchone())
 
 
@@ -290,6 +307,7 @@ def carry_forward(source, target, target_year):
                     asset["depreciation_account"],asset["accumulated_account"],None,asset["annual_rate"],asset["created_at"])
             new_id=db.execute("""INSERT INTO fixed_assets(asset_code,name,acquired_on,start_on,currency,cost,residual,useful_months,frequency,
                 asset_account,depreciation_account,accumulated_account,invoice_id,annual_rate,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",values).lastrowid
+            db.execute("UPDATE fixed_assets SET opening_date=? WHERE id=?",(asset.get("opening_date"),new_id))
             for attachment in attachments:
                 db.execute("""INSERT OR IGNORE INTO fixed_asset_attachments
                     (asset_id,file_name,mime_type,content,sha256,uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?,?)""",

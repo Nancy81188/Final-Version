@@ -731,6 +731,25 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         if row and row["status"] == "closed":
             raise ValueError(f"Fiscal year {year} is closed; entries cannot be added or changed")
 
+    def _assert_vat_open(self, *values):
+        """2.9.84: a document dated in a quarter whose VAT return is saved cannot be added, changed or deleted
+        (the filed return would no longer agree with the books). An administrator reopens the return first."""
+        for value in values:
+            text = str(value or "").strip()
+            if not text: continue
+            parsed = None
+            for pattern in ("%d-%m-%Y", "%d%m%Y", "%Y-%m-%d", "%Y%m%d"):
+                try: parsed = datetime.strptime(text[:10], pattern); break
+                except ValueError: pass
+            if not parsed: continue
+            quarter = (parsed.month - 1) // 3 + 1
+            with self.connect() as db:
+                try: saved = db.execute("SELECT 1 FROM vat_returns WHERE year=? AND quarter=?", (parsed.year, quarter)).fetchone()
+                except Exception: saved = None
+            if saved:
+                raise ValueError(f"The Q{quarter} {parsed.year} VAT return is saved; an administrator must reopen it "
+                                 "(VAT > Reopen) before documents of that quarter can be added, changed or deleted")
+
     backup_folder = None   # set by CompanyManager: backups/<company>/<year>
     backup_label = None    # "<company>_<year>"
 
@@ -886,6 +905,52 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
 
     def currency_codes(self):
         return {item["code"] for item in self.currencies()}
+
+    def cash_check(self, account, currency, date, amount):
+        """2.9.84: balance of a cash / bank account (class 5) in its own currency on `date`, and after paying `amount` out of it.
+        Lets the screens warn before a payment or an expense makes the cash or the bank negative."""
+        code = str(account or "").split(" - ", 1)[0].strip(); currency = str(currency or "").upper()
+        try: amount = Decimal(str(amount or 0).replace(",", ""))
+        except Exception as exc: raise ValueError("Amount must be a number") from exc
+        day = iso_date(date)
+        if not code.startswith("5"): return {"account": code, "checked": False}
+        balance = Decimal("0")
+        with self.connect() as db:
+            for row in db.execute("""SELECT j.debit,j.credit,j.line_currency,j.amount,e.currency,e.entry_date FROM journal_lines j
+                    JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
+                    LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
+                    WHERE a.code=? AND (e.source_type!='invoice' OR i.status IN ('posted','cancelled') OR i.status IS NULL)""", (code,)):
+                try:
+                    if iso_date(row["entry_date"]) > day: continue
+                except ValueError: continue
+                signed = Decimal(str(row["debit"] or 0)) - Decimal(str(row["credit"] or 0))
+                own = (row["line_currency"] or row["currency"] or "").upper()
+                if own != currency: continue
+                if row["line_currency"] and row["amount"] not in (None, ""): signed = Decimal(str(row["amount"])) * (1 if signed >= 0 else -1)
+                balance += signed
+        after = balance - amount
+        return {"account": code, "currency": currency, "checked": True, "balance": float(balance.quantize(Decimal("0.01"))),
+                "after": float(after.quantize(Decimal("0.01"))), "negative": after < 0}
+
+    def audit_trail(self,date_from=None, date_to=None, username=None, entity=None, action=None, text=None, limit=5000):
+        """2.9.84: the audit trail of this company-year (who added, changed, posted, deleted what and when), newest first.
+        Dates DD-MM-YYYY or YYYY-MM-DD (the day of the change, UTC); username / entity / action exact; text searched in the details."""
+        conditions, values = [], []
+        for value, sign in ((date_from, ">="), (date_to, "<=")):
+            if str(value or "").strip():
+                day = iso_date(value); conditions.append(f"substr(l.created_at,1,10){sign}?"); values.append(day)
+        for value, column in ((username, "u.username"), (entity, "l.entity"), (action, "l.action")):
+            if str(value or "").strip(): conditions.append(f"{column}=?"); values.append(str(value).strip())
+        if str(text or "").strip(): conditions.append("COALESCE(l.details,'') LIKE ?"); values.append(f"%{str(text).strip()}%")
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        with self.connect() as db:
+            rows = [dict(r) for r in db.execute(f"""SELECT l.id,l.created_at,COALESCE(u.username,CASE WHEN l.user_id IS NULL THEN 'system' ELSE '#'||l.user_id END) username,
+                l.action,l.entity,l.entity_id,COALESCE(l.details,'') details FROM audit_log l LEFT JOIN users u ON u.id=l.user_id{where}
+                ORDER BY l.id DESC LIMIT ?""", values + [max(1, min(int(limit or 5000), 50000))])]
+            choices = {"users": sorted({r[0] for r in db.execute("SELECT DISTINCT COALESCE(u.username,'system') FROM audit_log l LEFT JOIN users u ON u.id=l.user_id")}),
+                       "entities": sorted({r[0] for r in db.execute("SELECT DISTINCT entity FROM audit_log")}),
+                       "actions": sorted({r[0] for r in db.execute("SELECT DISTINCT action FROM audit_log")})}
+        return {"items": rows, **choices}
 
     def save_currency(self, code, name, user_id):
         code=str(code or "").strip().upper(); name=str(name or "").strip()

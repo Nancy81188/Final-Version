@@ -145,7 +145,7 @@ def config(db, others=()):
 
 def save_config(db, data, user_id, others=()):
     if not isinstance(data, dict): raise ValueError('Invalid financial report settings')
-    if data.get('basis','USD') not in ('USD','LBP'): raise ValueError('Choose USD or LBP')
+    if str(data.get('basis','USD')).upper() not in db.currency_codes(): raise ValueError('Choose a currency of the company')
     for field in ('mapping','supplements'):
         if not isinstance(data.get(field,{}),dict): raise ValueError('Invalid '+field)
     for code, group in data.get('mapping', {}).items():
@@ -246,9 +246,11 @@ def load_period(db, start, end, basis):
         code = row['code']; names[code] = row['name_en']
         value = number(row['debit']) - number(row['credit'])
         if row['line_currency'] and row['amount'] not in (None, ''):
-            raw = row['amount_usd'] if basis == 'USD' else row['amount_lbp']
-            if raw in (None, ''): raise ValueError(f'Missing {basis} equivalent for account {code}, {day}')
+            stored = basis if basis in ('USD', 'LBP') else 'USD'
+            raw = row['amount_usd'] if stored == 'USD' else row['amount_lbp']
+            if raw in (None, ''): raise ValueError(f'Missing {stored} equivalent for account {code}, {day}')
             value = number(raw) * (1 if value >= 0 else -1)
+            if stored != basis: value = db._converted_amount(value, 'USD', basis, day)
         elif row['currency'] != basis:
             value = db._converted_amount(value, row['currency'], basis, day)
         is_opening = day < fy_start or row['source_type'] == 'opening' or row['voucher_type'] == '04'
@@ -277,15 +279,21 @@ def period_data(db, start, end, basis, label, cfg=None):
         g = group(code, raw['pnl'][code]); pnl_g[g] += raw['pnl'][code]
         if raw['pnl'][code]: accounts[g][code] = (raw['names'][code], raw['pnl'][code])
     profit = -sum(raw['pnl'].values(), ZERO); profit_before = -sum(raw['before'].values(), ZERO)
-    depreciation = pnl_g['depreciation']
     def delta(groups): return sum((close_g[g] - open_g[g] for g in groups), ZERO)
+    # 2.9.84: the non-cash adjustment is the movement of the accumulated depreciation / amortisation (28, 29) and of the
+    # provisions (15, e.g. end-of-service): they stay in operating activities instead of investing / financing.
+    def moved(prefixes, groups):
+        return sum((raw['closing'][c] - raw['opening'][c] for c in set(raw['closing']) | set(raw['opening'])
+                    if c.startswith(prefixes) and group(c, raw['closing'][c]) in groups), ZERO)
+    accumulated = moved(('28', '29'), INVESTING); provisions = moved(('15',), FINANCING)
+    depreciation = -(accumulated + provisions)
     supplements = cfg.get('supplements', {}) if cfg.get('basis', basis) == basis else {}
     extra = {k: number(v) for k, v in supplements.items() if v != ''}
-    cash_flow = {'profit': profit, 'depreciation': depreciation,
+    cash_flow = {'profit': profit, 'depreciation': depreciation, 'depreciation_only': -accumulated, 'provisions': -provisions,
                  'working': {g: -(close_g[g] - open_g[g]) for g in WORKING},
                  'operating': profit + depreciation - delta(WORKING),
-                 'investing': -(delta(INVESTING) + depreciation),
-                 'financing': -delta(FINANCING)}
+                 'investing': -(delta(INVESTING) - accumulated),
+                 'financing': -(delta(FINANCING) - provisions)}
     reviewed = all(k in extra for k in ('cf_operating', 'cf_investing', 'cf_financing'))
     if reviewed:
         cash_flow.update(operating=extra['cf_operating'], investing=extra['cf_investing'], financing=extra['cf_financing'], fx=extra.get('cf_fx', ZERO))
@@ -320,8 +328,10 @@ def info_values(cfg, settings):
 
 
 def build(databases, options, others=()):
-    basis = options.get('basis', 'USD')
-    if basis not in ('USD', 'LBP'): raise ValueError('Choose USD or LBP')
+    basis = str(options.get('basis') or 'USD').upper()
+    # 2.9.84: any currency of the company (EUR books...): lines are translated through their USD value at the entry date
+    if basis not in ('USD', 'LBP') and not any(basis in d.currency_codes() for d in databases.values()):
+        raise ValueError(f'{basis} is not a currency of the company')
     periods = periods_from(options, set(databases))
     missing = [str(y) for y, *_rest in periods if y not in databases]
     if missing: raise ValueError('Fiscal year not found: ' + ', '.join(missing))
@@ -429,7 +439,9 @@ def build(databases, options, others=()):
     rows = []; totals = []
     heading('CASH FLOWS FROM OPERATING ACTIVITIES')
     line('Profit / (loss) for the period', lambda d: d['cash']['profit'])
-    line('Adjustment: depreciation and provisions', lambda d: d['cash']['depreciation'])
+    line('Adjustment: depreciation and amortisation', lambda d: d['cash']['depreciation_only'])
+    if any(d['cash']['provisions'] for d in data):
+        line('Adjustment: movement in provisions (end of service and others)', lambda d: d['cash']['provisions'])
     for g in WORKING:
         if any(d['cash']['working'][g] for d in data):
             label = {'inventory': '(Increase) / decrease in inventories', 'receivables': '(Increase) / decrease in trade and other receivables',

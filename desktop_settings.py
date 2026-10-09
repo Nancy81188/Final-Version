@@ -102,6 +102,8 @@ class SettingsMixin:
         if not is_viewer: nested.add(backups,text="Backup & Restore" if is_admin else "My Backups")
         nested.add(rates,text="Exchange Rates"); nested.add(branches,text="Branches"); nested.add(general,text="General Settings"); self.build_dimensions_pages(nested)
         setup_page=tk.Frame(nested,bg=LIGHT); nested.add(setup_page,text="Accounting Settings"); self.build_accounting_setup_page(setup_page)  # 2.9.81
+        if is_admin:  # 2.9.84: who added, changed, posted or deleted what, and when
+            audit_page=tk.Frame(nested,bg=LIGHT); nested.add(audit_page,text="Audit Trail"); self.build_audit_trail_page(audit_page)
         if is_admin: self.build_users_page(users)
         if not is_viewer:
             backup_controls=tk.Frame(backups,bg=LIGHT); backup_controls.pack(fill="x",padx=10,pady=10)

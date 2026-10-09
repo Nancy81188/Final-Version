@@ -13,13 +13,13 @@ class AssetRegisterMixin:
         self.asset_edit_id=None
         defaults={"asset_code":"","name":"","acquired_on":self.fiscal_today(),"start_on":self.fiscal_today(),
                   "currency":"USD","cost":"","residual":"0","useful_months":"60","frequency":"monthly",
-                  "asset_account":"","depreciation_account":"","accumulated_account":"","invoice_id":""}
+                  "asset_account":"","depreciation_account":"","accumulated_account":"","invoice_id":"","opening_date":""}
         self.asset_fields={key:tk.StringVar(value=value) for key,value in defaults.items()}
         self.asset_rate=tk.StringVar(value="")
         form=tk.LabelFrame(page,text="Asset",bg=LIGHT,padx=10,pady=6); form.pack(fill="x",padx=8,pady=(6,0))
         layout=[[("Asset code","asset_code",14),("Description","name",34),("Currency","currency",8)],
                 [("Purchase date","acquired_on",12),("Purchase value","cost",16),("Residual value","residual",12)],
-                [("Depreciation start","start_on",12),("Purchase invoice No./ID","invoice_id",16),("","",0)]]
+                [("Depreciation start","start_on",12),("Purchase invoice No./ID","invoice_id",16),("Booked before Saber up to","opening_date",12)]]
         for row,items in enumerate(layout):
             for index,(label,key,width) in enumerate(items):
                 if not key: continue
@@ -244,7 +244,7 @@ class AssetRegisterMixin:
         self.asset_edit_id=int(selected[0]); asset=next(row for row in self.asset_rows if row["id"]==self.asset_edit_id)
         for key,var in self.asset_fields.items():
             value=asset.get(key) or ""
-            var.set(_dd(value) if key in ("acquired_on","start_on") and value else str(value))
+            var.set(_dd(value) if key in ("acquired_on","start_on","opening_date") and value else str(value))
         self.asset_rate.set(str(asset.get("annual_rate") or ""))
         tree=getattr(self,"asset_schedule_tree",None)
         if tree is None or not tree.winfo_exists(): return
