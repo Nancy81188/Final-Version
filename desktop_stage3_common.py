@@ -64,11 +64,47 @@ def notify_new_items(app, title="Inventory"):
     try: app._new_items = []
     except Exception: pass
     if not new: return []
+    if isinstance(app, tk.Misc) and hasattr(app, "account_search_box"):
+        choose_new_item_accounts(app, new, title); return new  # 2.9.90: the accounts of the new items are chosen at once
     names = "\n".join(f'{i.get("sku", "")} - {i.get("name", "")} ({i.get("unit") or "unit"})' for i in new[:25])
     more = f"\n... and {len(new) - 25} more" if len(new) > 25 else ""
     messagebox.showinfo(title, f"{len(new)} new item(s) did not exist and were created in Inventory:\n\n{names}{more}\n\n"
                                "Check their category, unit and stock account in Inventory > Items.")
     return new
+
+
+def choose_new_item_accounts(app, items, title="New items"):
+    """2.9.90 (owner): right after an upload creates items, choose for all of them (or the selected ones) the cost account
+    (class 6, used on purchases) and the sales account (class 7, used on sales invoices)."""
+    from desktop_common import account_label
+    try: defaults = {d["key"]: d["account"] for d in app.client.accounting_setup().get("defaults", [])}  # Settings > Accounting Settings
+    except Exception: defaults = {}
+    cost = tk.StringVar(master=app, value=account_label(app, (defaults or {}).get("purchases") or "601100000"))
+    sales = tk.StringVar(master=app, value=account_label(app, (defaults or {}).get("sales_goods") or "701100001"))
+    window = tk.Toplevel(app); window.title(f"{title} - accounts of the new items"); window.configure(bg=LIGHT); window.transient(app)
+    tk.Label(window, text=f"{len(items)} new item(s) were created in Inventory. Choose their accounts:", bg=LIGHT, fg=NAVY,
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(10, 4))
+    frame = tk.Frame(window, bg=LIGHT); frame.pack(fill="both", expand=True, padx=12)
+    tree = ttk.Treeview(frame, columns=("sku", "name", "unit"), show="headings", height=min(12, max(3, len(items))), selectmode="extended")
+    for key, label, width in (("sku", "Code", 100), ("name", "Item", 330), ("unit", "Unit", 70)): tree.heading(key, text=label); tree.column(key, width=width, anchor="w")
+    for item in items: tree.insert("", "end", iid=str(item["id"]), values=(item.get("sku"), item.get("name"), item.get("unit")))
+    tree.pack(side="left", fill="both", expand=True)
+    form = tk.Frame(window, bg=LIGHT); form.pack(fill="x", padx=12, pady=8)
+    for row, (label, var) in enumerate((("Cost account (purchases, class 6)", cost), ("Sales account (sales, class 7)", sales))):
+        tk.Label(form, text=label, bg=LIGHT).grid(row=row, column=0, sticky="w", pady=3)
+        app.account_search_box(form, var, 36).grid(row=row, column=1, sticky="w", padx=6, pady=3)
+    tk.Label(window, text="Applies to the selected items, or to all of them when none is selected. You can change one item later in Inventory > Items.",
+             bg=LIGHT, fg=MUTED, wraplength=520, justify="left").pack(anchor="w", padx=12)
+    def apply():
+        ids = list(tree.selection()) or [str(i["id"]) for i in items]
+        try: app.client.set_item_accounts(ids, cost.get(), sales.get())
+        except Exception as exc: return messagebox.showerror(title, str(exc), parent=window)
+        for iid in ids: tree.delete(iid)
+        if not tree.get_children(): window.destroy()
+    buttons = tk.Frame(window, bg=LIGHT); buttons.pack(fill="x", padx=12, pady=10)
+    tk.Button(buttons, text="Apply", command=apply, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="right", padx=3)
+    tk.Button(buttons, text="Later", command=window.destroy, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="right", padx=3)
+    window.grab_set(); app.wait_window(window)
 
 
 def resolve_item(app, name, unit="unit", code=None, supplier_id=None):

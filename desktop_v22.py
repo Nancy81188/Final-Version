@@ -148,7 +148,7 @@ class V22Mixin:
         path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf")])
         if not path: return
         from desktop_stage3_common import prepare_pdf_reading; prepare_pdf_reading(self)  # 2.9.87: our name is the seller, the party is the customer
-        data = read_invoice_pdf(path); self.new_sales_invoice(confirm=False)
+        data = read_invoice_pdf(path); self.new_sales_invoice(confirm=False); self.sales_pdf_path = path  # attached when the invoice is saved
         if data.get("invoice_date"): self.sales_date.set(data["invoice_date"])
         if data.get("invoice_number"): self.sales_no.set(str(data["invoice_number"]).strip())
         if data.get("party_name"): self.sales_party.set(data["party_name"])

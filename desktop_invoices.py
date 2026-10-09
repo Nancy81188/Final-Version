@@ -1,5 +1,6 @@
 """Invoices and sales invoice screens. (moved out of desktop.py in 2.9.41, unchanged)."""
 from __future__ import annotations
+from pathlib import Path
 
 from desktop_common import *  # noqa: F401,F403
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
@@ -933,7 +934,7 @@ class InvoicesMixin:
 
     def new_sales_invoice(self,confirm=True):
         if confirm and self.sales_items and not messagebox.askyesno("Sales Invoice","Start a new invoice? Lines that are not saved will be cleared."): return
-        self.sales_edit_id=None; self.sales_items=[]; self.sales_sheet.delete(*self.sales_sheet.get_children())
+        self.sales_edit_id=None; self.sales_items=[]; self.sales_pdf_path=None; self.sales_sheet.delete(*self.sales_sheet.get_children())
         self._sales_loaded_state=None
         self.sales_party.set(""); self.sales_supplier_account.set(""); self.sales_amount_paid.set("0"); getattr(self,"sales_cash_account",tk.StringVar()).set(""); self.sales_due_date.set(""); self.sales_open_choice.set("")
         self.sales_doc_type.set("Invoice"); self.sales_category.set("Services"); self.sales_currency.set(main_currency(self, 1))  # 2.9.71
@@ -1237,7 +1238,13 @@ class InvoicesMixin:
             if not messagebox.askyesno("Sales Invoice",f"Save the changes to invoice {invoice['invoice_number']}? Its journal entry will be replaced with the new figures."): return
         try:
             if self.sales_edit_id: self.client.replace_invoice(self.sales_edit_id,invoice,lines)
-            else: self.client.create_manual_invoice(invoice,lines)
+            else:
+                created=self.client.create_manual_invoice(invoice,lines)
+                pdf=getattr(self,"sales_pdf_path",None)  # 2.9.90: the PDF the invoice was read from stays attached to it
+                if pdf and created.get("invoice_id"):
+                    try: self.client.upload_attachment(created["invoice_id"],Path(pdf).name,"application/pdf",Path(pdf).read_bytes())
+                    except Exception as exc: messagebox.showwarning("Sales Invoice",f"The invoice is saved, but its PDF was not attached: {exc}. Use Attach on the invoice.")
+                self.sales_pdf_path=None
         except Exception as exc: return messagebox.showerror("Sales Invoice",str(exc))
         number=invoice["invoice_number"]
         messagebox.showinfo("Sales Invoice",f'Invoice {number} saved as {"Posted" if post else "Draft"}.')

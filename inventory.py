@@ -102,6 +102,7 @@ def migrate(db):
     if "default_vat" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN default_vat TEXT NOT NULL DEFAULT '11'")
     if "cost_account" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN cost_account TEXT")
     if "stock_account" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN stock_account TEXT")  # 2.9.79
+    if "sales_account" not in item_columns: db.execute("ALTER TABLE inventory_items ADD COLUMN sales_account TEXT")  # 2.9.90: the item's revenue account
     # 2.9.65: production - recipe (bill of materials) of a finished product, and the extra cost of a production order
     db.execute("""CREATE TABLE IF NOT EXISTS bom_headers (id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL UNIQUE, output_qty TEXT NOT NULL DEFAULT '1',
         overhead_per_unit TEXT NOT NULL DEFAULT '0', notes TEXT, active INTEGER NOT NULL DEFAULT 1, updated_by INTEGER, updated_at TEXT)""")
@@ -196,6 +197,10 @@ def save_item(database, item, user_id):
         else:
             saved = db.execute("INSERT INTO inventory_items(sku,name,unit,category,reorder_level,sales_price,active,notes,barcode,subcategory,supplier_id,location,default_vat,cost_account,created_at,brand) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values + (utcnow(), brand)).lastrowid
         db.execute("UPDATE inventory_items SET stock_account=? WHERE id=?", (stock_account, saved))
+        if "sales_account" in item:  # 2.9.90
+            sales_account = str(item.get("sales_account") or "").split(" - ", 1)[0].strip() or None
+            if sales_account and not sales_account.startswith("7"): raise ValueError("The sales account must be a class 7 account (for example 7011 sales of goods)")
+            db.execute("UPDATE inventory_items SET sales_account=? WHERE id=?", (sales_account, saved))
         db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "save", "inventory_item", saved, json.dumps({"sku": sku}), utcnow()))
     return next(i for i in list_items(database) if i["id"] == saved)
 
@@ -1196,6 +1201,24 @@ def similar_items(database, name, limit=3, threshold=0.82):
         if score < 1.0 and (key in other or other in key) and min(len(key), len(other)) >= 4: score = max(score, 0.86)
         if score >= threshold: found.append({**row, "score": round(score, 3)})
     return sorted(found, key=lambda r: (-r["score"], r["sku"]))[:limit]
+
+
+def set_item_accounts(database, item_ids, cost_account=None, sales_account=None, user_id=None):
+    """2.9.90 (owner): the cost account (class 6) and the sales account (class 7) of several items at once - asked right
+    after an upload creates new items. An empty value leaves that account as it is."""
+    cost = str(cost_account or "").split(" - ", 1)[0].strip(); sales = str(sales_account or "").split(" - ", 1)[0].strip()
+    if cost and not cost.startswith("6"): raise ValueError("The cost account must be a class 6 account (for example 601100000 purchases)")
+    if sales and not sales.startswith("7"): raise ValueError("The sales account must be a class 7 account (for example 7011 sales of goods)")
+    ids = [int(i) for i in item_ids or []]
+    with database.connect() as db:
+        for code in [c for c in (cost, sales) if c]:
+            if not db.execute("SELECT 1 FROM accounts WHERE code=?", (code,)).fetchone(): raise ValueError(f"Account {code} was not found in the chart of accounts")
+        for item_id in ids:
+            if cost: db.execute("UPDATE inventory_items SET cost_account=? WHERE id=?", (cost, item_id))
+            if sales: db.execute("UPDATE inventory_items SET sales_account=? WHERE id=?", (sales, item_id))
+        db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
+                   (user_id, "update", "inventory_item_accounts", json.dumps({"items": ids, "cost_account": cost, "sales_account": sales}), utcnow()))
+    return {"updated": len(ids)}
 
 
 def find_or_create_item(database, name, unit="unit", code=None, user_id=None, supplier_id=None):

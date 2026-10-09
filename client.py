@@ -432,6 +432,7 @@ class ApiClient:
     def production_order(self,order_id): return self.request("GET",f"/api/production/orders/{order_id}")
     def save_production_order(self,header,lines,order_id=None): return self.request("POST","/api/production/orders",{"header":header,"lines":lines,"id":order_id})
     def production_report(self,date_from,date_to): return self.request("GET","/api/production/report?"+urlencode({"from":date_from,"to":date_to}))
+    def set_item_accounts(self,item_ids,cost_account=None,sales_account=None): return self.request("POST","/api/inventory/item-accounts",{"item_ids":list(item_ids),"cost_account":cost_account,"sales_account":sales_account})  # 2.9.90
     def find_or_create_item(self,name,unit="unit",sku=None,supplier_id=None): return self.request("POST","/api/inventory/find-or-create",{"name":name,"unit":unit,"sku":sku,"supplier_id":supplier_id})["item"]
     def delete_fiscal_year(self,year): return self.request("POST","/api/fiscal-years/delete",{"year":year})
     def download_backup(self,name):

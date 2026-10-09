@@ -121,8 +121,11 @@ class InvoicesStore:
             entry = db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,branch_id,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                 (entry_number, item.get("invoice_date"), f"{entry_type.replace('_',' ').title()} {item['invoice_number']}", "invoice", invoice_id, item.get("currency", "USD"),branch_id, user_id, utcnow()))
             if kind == "sale":
-                lines = [self._line_for_side(supplier_account,total,self._side(item.get("supplier_side"),"D")),
-                         self._line_for_side(expense_account,subtotal,self._side(item.get("expense_side"),"C")),
+                revenue=[(str(a).strip(),Decimal(str(v))) for a,v in (item.get("revenue_splits") or [])]
+                if revenue and abs(sum(v for _a,v in revenue)-Decimal(str(subtotal)))<Decimal("0.01"):  # 2.9.90
+                    revenue_lines=[self._line_for_side(a,v,self._side(item.get("expense_side"),"C")) for a,v in revenue if v]
+                else: revenue_lines=[self._line_for_side(expense_account,subtotal,self._side(item.get("expense_side"),"C"))]
+                lines = [self._line_for_side(supplier_account,total,self._side(item.get("supplier_side"),"D"))]+revenue_lines+[
                          self._line_for_side(vat_account,vat,self._side(item.get("vat_side"),"C"))]
             else:
                 splits=item.get("expense_splits")
@@ -226,6 +229,11 @@ class InvoicesStore:
                 with self.connect() as db:
                     item_cost_accounts = {str(r["sku"]).upper(): r["cost_account"] for r in db.execute("SELECT sku,cost_account FROM inventory_items WHERE COALESCE(cost_account,'')<>''")}
             except Exception: item_cost_accounts = {}
+        elif self._entry_type(item) == "sales" and any(line.get("item_code") for line in line_items):  # 2.9.90: the item's sales account
+            try:
+                with self.connect() as db:
+                    item_cost_accounts = {str(r["sku"]).upper(): r["sales_account"] for r in db.execute("SELECT sku,sales_account FROM inventory_items WHERE COALESCE(sales_account,'')<>''")}
+            except Exception: item_cost_accounts = {}
         deductible_total = Decimal("0"); non_deductible_total=Decimal("0")
         vat_total = Decimal("0"); expense_splits={}
         for index, line in enumerate(line_items, start=1):
@@ -277,6 +285,11 @@ class InvoicesStore:
             if remainder>Decimal("0.005") or remainder<Decimal("-0.005"):
                 splits.append((default_account,remainder))
             invoice["expense_splits"]=[(acct,str(amount)) for acct,amount in splits if amount]
+        elif expense_splits:  # 2.9.90: sales lines of items with their own sales account
+            default_account=str(invoice.get("expense_account") or defaults.get("sales") or "").strip()
+            routed=sum(expense_splits.values()); remainder=deductible_total+non_deductible_total-routed
+            splits=list(expense_splits.items())+([(default_account,remainder)] if abs(remainder)>Decimal("0.005") else [])
+            invoice["revenue_splits"]=[(acct,str(amount)) for acct,amount in splits if amount]
         if self._entry_type(invoice)!="sales":
             raw_lines=[self._line_for_side(invoice.get("expense_account") or defaults["purchases"],deductible_total,self._side(invoice.get("expense_side"),"D")),
                 self._line_for_side(invoice.get("expense_no_vat_account") or defaults["purchases_no_vat"],non_deductible_total,self._side(invoice.get("expense_no_vat_side"),"D")),

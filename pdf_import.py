@@ -368,6 +368,9 @@ def _vat_amount_after(text, invoice_currency=""):
             continue
         if re.search(r"رقم\s*(?:التسجيل\s*)?الضريبة", line):
             continue
+        # 2.9.90: the amount in words on the same line ("... Seventeen and 94/100 USD") gave a VAT of 100
+        line = re.sub(r"(?i)\b(?:[a-z]+\s+)*(?:thousand|hundred|million)\b[^\d]*(?:\d+\s*/\s*100)?[^\d]*", " ", line)
+        line = re.sub(r"\d+\s*/\s*100\b", " ", line)
         for keyword in ("vat amount", "vat 11%", "vat", "tva", "tax", *ARABIC_VAT):
             end = _keyword_end(line, keyword)
             if end is None:

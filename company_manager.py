@@ -226,7 +226,9 @@ class CompanyManager:
         company_id=f"{company_id}-{uuid.uuid4().hex[:6]}"
         path=self.year_file({"id":company_id,"name":name},year,data); path.parent.mkdir(parents=True,exist_ok=True)
         target=Database(path); target.initialize(secrets.token_urlsafe(24))
-        self._copy_master_data(master_db,target)
+        # 2.9.90 (owner): a new company starts with the standard chart only - the accounts, customers / suppliers,
+        # branches and settings of the other companies (kept in the main file) are not copied; the users are.
+        self._copy_master_data(master_db,target,tables=("users",))
         with target.connect() as db:
             for code in main+vat_pair: db.execute("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",(code,code))
         settings={"base_currency":main[0],"second_currency":main[1],"vat_rate":str(vat_rate),"vat_currency":vat_pair[0],"vat_second_currency":vat_pair[1],"company_name":name,"company_address":item.get("address","").strip(),"company_phone":item.get("phone","").strip(),
@@ -452,9 +454,9 @@ class CompanyManager:
                     dst.execute("UPDATE employees SET leave_carried=? WHERE id=?",(str(balance),employee_id))
         except Exception: logging.getLogger("saber.company").warning("End-of-service / leave balances not carried",exc_info=True)
 
-    def _copy_master_data(self,source,target):
+    def _copy_master_data(self,source,target,tables=("users","accounts","parties","branches","app_settings")):
         with source.connect() as src, target.connect() as dst:
-            for table in ("users","accounts","parties","branches","app_settings"):
+            for table in tables:
                 rows=src.execute(f"SELECT * FROM {table}").fetchall()
                 if not rows: continue
                 columns=list(rows[0].keys())

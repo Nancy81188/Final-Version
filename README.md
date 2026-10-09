@@ -1,5 +1,13 @@
 # Saber Accounting MVP
 
+## Version 2.9.90 (owner requests: totals, item accounts, new company, attachments)
+- PDF totals: the amount in words on the VAT line ("Eighty One Thousand ... and 94/100 USD") gave a VAT of 100 and a wrong subtotal; it is now ignored (Diwan SJ20251714: 78,948.89 + VAT 2,269.05 = 81,217.94).
+- Purchases > new button "Auto Calculate": taxable / exempt from the item lines (VAT Yes / No), VAT = (taxable - discount) x VAT %, and the total. A PDF whose item lines do not make its total (a page missing from the file) keeps the invoice amounts and says so; its lines are not added.
+- New items: right after an upload creates items, a window asks their cost account (class 6, purchases) and sales account (class 7, sales) - for all of them or the selected ones. Items now have a sales account: a sales invoice line of that item is posted to it (other lines keep the invoice's account).
+- New company: starts with the standard chart only; the accounts, customers / suppliers, branches and settings of other companies are no longer copied (the users are).
+- Attachments: a sales invoice read from a PDF keeps the PDF attached when it is saved (purchases, expenses, assets and Uploaded Data already did); open them with "Attachments" on each screen.
+- Changed files: pdf_import.py, desktop_purchases.py, desktop_stage3_common.py, inventory.py, db_invoices.py, server.py, client.py, company_manager.py, desktop_invoices.py, desktop_v22.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_90.py.
+
 ## Version 2.9.89 (scanned PDFs much faster, Auto Calculate Totals)
 - Scanned PDFs: the OCR engine used every core of the computer for each page and lost most of its time waiting (OpenMP); it now uses one core per engine and several pages are read side by side on a multi-core PC. An 8-page scanned bundle went from 84 seconds to 17 seconds on one core and 11 seconds on two; the 79-page BCC file is read in a few minutes instead of about 15.
 - Uploaded Data > "Auto Calculate Totals" (selected rows, or all): Total = Subtotal + VAT; a missing amount is worked out from the other two; with the subtotal only, VAT at the company's rate (11%); with the total only, subtotal and VAT are taken out of it. Each changed row says so in Check.

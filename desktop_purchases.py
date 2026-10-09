@@ -116,6 +116,7 @@ class PurchasesMixin:
         r5 = tk.Frame(actions, bg=LIGHT); r5.pack(anchor="e", pady=(3, 0))
         f["pdf_label"] = tk.Label(r5, text="No PDF", bg=LIGHT, fg=MUTED)
         self.action_button(r4, "New", self.new_purchase).pack(side="left", padx=(0, 3))
+        tk.Button(r4, text="Auto Calculate", command=self.purchase_auto_calculate, bg=NAVY, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)  # 2.9.90
         tk.Button(r4, text="Save Purchase", command=self.save_purchase, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         tk.Button(r4, text="Delete", command=self.delete_purchase, bg=RED, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)
         tk.Button(r4, text="Return (goods back)", command=self.return_open_purchase, bg=GOLD, fg=NAVY, border=0, padx=10, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
@@ -178,6 +179,18 @@ class PurchasesMixin:
             if any(r.get("vat_flag") == "No" for r in rows):  # 2.9.87: lines without VAT make the exempt amount
                 f["vars"]["exempt"].set(f'{sum(r["total"] for r in rows if r.get("vat_flag") == "No"):.2f}')
             self.purchase_amounts_changed("taxable")
+
+    def purchase_auto_calculate(self):
+        """2.9.90 (owner): the amounts worked out again - taxable / exempt from the item lines (VAT Yes / No), then
+        VAT = (taxable - discount) x VAT %, and the total TTC. Use it when a PDF total was read wrongly."""
+        f = self.purchase_form; v = f["vars"]
+        self.purchase_items_changed()
+        taxable = _num(v["taxable"].get()) or 0; rate = _num(v["rate"].get()) or 0
+        try: discount = self.purchase_discount(taxable)
+        except ValueError as exc: return messagebox.showwarning("Purchases", str(exc))
+        v["vat"].set(f"{(taxable - discount) * rate / 100:.2f}"); f["vat_typed"] = False; f["pdf_vat_review"] = False
+        self.purchase_amounts_changed("none")
+        return float(v["vat"].get())
 
     def purchase_discount_changed(self, mode):
         self.purchase_form["discount_mode"] = mode
@@ -377,6 +390,12 @@ class PurchasesMixin:
         if f["items_sheet"].ordered():
             return "existing item lines kept; review them before Save"
         items = data.get("items") or []
+        subtotal = data.get("subtotal")
+        line_total = lambda i: float(i.get("total") if i.get("total") not in (None, "") else float(i.get("quantity") or 0) * float(i.get("unit_price") or 0))
+        if items and subtotal and abs(sum(line_total(i) for i in items) - float(subtotal)) > max(0.05, float(subtotal) * 0.01):
+            # 2.9.90: the lines read do not make the invoice (a page missing from the file): the invoice amounts are kept
+            return (f"item lines not added: the {len(items)} line(s) read total {sum(line_total(i) for i in items):,.2f} but the invoice says "
+                    f"{float(subtotal):,.2f} before VAT (a page may be missing from the PDF) - add the lines by hand or use Auto Calculate")
         if not items and auto_upload_on(self):
             return "no item line read from the PDF; the invoice is posted on its amount (add item lines and Save to move stock)"
         if not items:

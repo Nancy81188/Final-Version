@@ -701,6 +701,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if path == "/api/inventory/monthly-variation": return self._json(200,inventory.post_monthly_stock_variation(self.db,body.get("month_end"),user["id"]))  # 2.9.82
                 if path == "/api/inventory/categories": return self._json(200,inventory.save_category(self.db,body,user["id"]))
                 if path == "/api/inventory/counts": return self._json(201,inventory.save_count(self.db,body.get("header",{}),body.get("lines",[]),user["id"],body.get("id"),bool(body.get("post"))))
+                if path == "/api/inventory/item-accounts": return self._json(200,inventory.set_item_accounts(self.db,body.get("item_ids"),body.get("cost_account"),body.get("sales_account"),user["id"]))  # 2.9.90
                 if path == "/api/inventory/find-or-create": return self._json(200,{"item":inventory.find_or_create_item(self.db,body.get("name"),body.get("unit"),body.get("sku"),user["id"],body.get("supplier_id"))})
             except KeyError as exc: return self._json(404,{"error":str(exc).strip("'")})
             except Exception as exc: return self._json(400,{"error":str(exc)})
