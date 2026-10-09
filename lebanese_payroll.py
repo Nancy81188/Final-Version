@@ -14,6 +14,10 @@ from __future__ import annotations
 
 BRACKETS_2024 = [[360000000, .02], [900000000, .04], [1800000000, .07], [3600000000, .11], [7200000000, .15], [13500000000, .20], [None, .25]]
 
+# 2.9.92: Budget Law 2026 (Law 40, Official Gazette 10-02-2026) Art. 26: food allowance LBP 300,000 a working day.
+# Read here as the exempt limit of "Food - not taxable" (the part above it is moved to "Food - taxable"); to confirm with the tax adviser.
+FOOD_DAILY_EXEMPT = ("2026-02-10", 300000)
+
 BASE = {"tax_brackets": BRACKETS_2024, "single_allowance": "450000000", "spouse_allowance": "225000000", "child_allowance": "45000000", "max_children_deduction": "5",
         "employee_nssf_rate": "0.03", "medical_rate": "0.08", "family_rate": "0.06", "end_service_rate": "0.085", "end_service_ceiling": "0",
         "transport_daily_exempt": "450000", "default_transport_days": "26", "schooling_annual_exempt": "6000000", "schooling_max_children": "3",

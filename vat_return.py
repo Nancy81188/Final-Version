@@ -169,6 +169,25 @@ def due_date(year, quarter):
     return (end + timedelta(days=20)).isoformat()
 
 
+# 2.9.92: Budget Law 2026 (Law 40, Official Gazette 10-02-2026), Art. 30: no input VAT on utilities; on passenger cars
+# the input VAT is deductible on a cost up to USD 30,000 only. To confirm with the tax adviser; dates and cap are here.
+BUDGET_2026_FROM = "2026-02-10"
+PASSENGER_CAR_CAP_USD = Decimal("30000")
+
+
+def _restricted_share(db, doc):
+    """Part of the input VAT of this document that the 2026 rules make non-deductible (0 to 1)."""
+    use = doc.get("use")
+    if doc.get("category") == "sales" or doc.get("date", "") < BUDGET_2026_FROM: return ZERO
+    if use == "utilities": return Decimal("1")
+    if use == "passenger_car":
+        try: base_usd = db._converted_amount(doc["base"] + doc["exempt"], doc["currency"], "USD", doc["date"])
+        except Exception: return ZERO
+        if base_usd <= PASSENGER_CAR_CAP_USD or base_usd <= 0: return ZERO
+        return ((base_usd - PASSENGER_CAR_CAP_USD) / base_usd).quantize(Decimal("0.000001"))
+    return ZERO
+
+
 def _classify(doc):
     """Where a document goes on the return, and how much of its VAT is output, fully / partially deductible or blocked."""
     base = doc["base"]; exempt = doc["exempt"]; vat = doc["vat"]
@@ -183,7 +202,14 @@ def _classify(doc):
         vat = vat if vat else ((base + exempt) * Decimal(str(doc.get("std_rate", RATE)))).quantize(CENT, rounding=ROUND_HALF_UP)
         result["reverse_output"] = vat
     if not doc["recoverable"] or doc["use"] == "exempt": result["blocked"] = vat
-    else: result[doc["category"]] = vat; result["mixed" if doc["use"] == "mixed" else "full"] = vat  # "export" and "taxable" uses are fully deductible
+    else:
+        share = Decimal(str(doc.get("restricted_share") or 0))
+        restricted = (vat * share).quantize(CENT, rounding=ROUND_HALF_UP) if share else ZERO
+        if restricted: result["blocked"] = restricted; result["restricted"] = restricted  # booked in 442x, moved to cost by the settlement
+        rest = vat - restricted
+        if rest or not restricted:
+            result[doc["category"]] = rest
+            result["mixed" if doc["use"] in ("mixed", "utilities", "passenger_car") else "full"] = rest  # "export" and "taxable" uses are fully deductible
     return result
 
 
@@ -258,10 +284,11 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
     else: ratio = _ratio(ytd_taxable, ytd_exempt); ratio_source = "year-to-date turnover"
     per_currency = {}; warnings = []
     def bucket(code):
-        keys = [key for _, key, _ in LINES] + ["blocked", "mixed", "full"]
+        keys = [key for _, key, _ in LINES] + ["blocked", "mixed", "full", "restricted"]
         return per_currency.setdefault(code, {key: {"base": ZERO, "vat": ZERO, "vat_lbp": ZERO, "count": 0} for key in keys})
     for doc in documents:
         doc["lbp_rate"] = rate_of(doc["currency"], doc["date"]); doc["vat_lbp"] = to_lbp(doc["vat"], doc["currency"], doc["date"])
+        doc["restricted_share"] = _restricted_share(db, doc)
         parts = _classify(doc); values = bucket(doc["currency"])
         if doc["category"] == "sales":
             if doc["treatment"] in ("zero_rated", "exempt") and doc["vat"]: warnings.append(f"{doc['number']}: {doc['treatment'].replace('_', ' ')} sale shows VAT {doc['vat']:,.2f}")
@@ -274,7 +301,9 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
         for key, value in parts.items():
             line = values[key]; line["vat"] += value; line["vat_lbp"] += to_lbp(value, doc["currency"], doc["date"]); line["count"] += 1
             if key in ("purchases", "assets", "expenses", "customs", "reverse_output", "blocked"): line["base"] += base
-        doc["deductible_share"] = "0%" if "blocked" in parts else (f"{ratio * 100:.2f}%" if doc["use"] == "mixed" else "100%")
+        doc["deductible_share"] = ("0%" if "blocked" in parts and "restricted" not in parts else
+                                   f"{(1 - doc['restricted_share']) * 100:.2f}% (2026 rule)" if "restricted" in parts else
+                                   f"{ratio * 100:.2f}%" if doc["use"] == "mixed" else "100%")
     if vat_currency != "LBP":
         warnings.append(f"VAT return in {vat_currency} at {(std_rate * 100).normalize():f}%: the Lebanese MoF forms (Q11-2, recoverable-rate sheet) apply to LBP returns only - use the summary in {vat_currency}.")
     elif any(doc["currency"] != "LBP" for doc in documents):
@@ -297,6 +326,8 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
         values["total_output"]["base"] = values["sales"]["base"]
         values["total_input"]["base"] = sum((values[k]["base"] for k in ("purchases", "assets", "expenses", "customs")), ZERO)
     totals_lbp = {key: sum((values[key]["vat_lbp"] for values in per_currency.values()), ZERO) for _, key, _ in LINES}
+    restricted_lbp = sum((values["restricted"]["vat_lbp"] for values in per_currency.values()), ZERO)
+    if restricted_lbp: totals_lbp["restricted"] = restricted_lbp  # 2.9.92
     # ---- Q4: adjust Q1-Q3 to the final annual ratio (Art. 32 adjustment of deductions)
     annual_adjustment = ZERO; adjustment_detail = []
     if int(quarter) == 4 and not currency and method == "annual":
@@ -552,6 +583,8 @@ def settlement_lines(db, result, payable_account=None, credit_account=None, non_
     totals = result["totals_lbp"]
     blocked = -(totals.get("prorata", ZERO) + totals.get("annual_adjustment", ZERO))  # prorata is negative: VAT that is not deductible
     if blocked: add(non_deductible_account, blocked, "VAT not deductible (Art. 31)")
+    restricted = totals.get("restricted", ZERO)
+    if restricted: add(non_deductible_account, restricted, "VAT not deductible: utilities / passenger cars (Budget Law 2026 Art. 30)")  # 2.9.92
     net = sum((Decimal(line["amount"]) * (1 if line["side"] == "D" else -1) for line in lines), ZERO)  # debit left to balance = VAT owed (+) / credit (-)
     credit_bf = rnd(result.get("credit_brought_forward_lbp") or ZERO)
     if net > 0:
@@ -749,10 +782,10 @@ def official_form(result, company):
             key = (doc.get("party") or "-", doc.get("party_mof") or ""); customers[key] = customers.get(key, ZERO) + base + exempt
             continue
         only, never, mixed = groups.get(doc["category"], groups["purchases"])
-        blocked = not doc.get("recoverable", True) or doc.get("use") == "exempt"
-        line = never if blocked else (mixed if doc.get("use") == "mixed" else only)
+        blocked = not doc.get("recoverable", True) or doc.get("use") == "exempt" or Decimal(str(doc.get("restricted_share") or 0)) >= 1
+        line = never if blocked else (mixed if doc.get("use") in ("mixed", "utilities", "passenger_car") else only)
         annex[line][0] += base + exempt
-        if not blocked: annex[line][1] += vat * (ratio if line == mixed else 1)
+        if not blocked: annex[line][1] += vat * (1 - Decimal(str(doc.get("restricted_share") or 0))) * (ratio if line == mixed else 1)
         if doc.get("source") == "invoice":
             key = (doc.get("party") or "-", doc.get("party_mof") or ""); suppliers[key] = suppliers.get(key, ZERO) + base + exempt
     for total, parts in ((630, (600, 610, 620)), (670, (460, 560, 660)), (710, (680, 690, 700))):
@@ -861,7 +894,8 @@ def recoverable_rate_sheet(result, company):
         if doc.get("treatment") == "reverse_charge" and not D(doc["vat"]):
             vat = ((D(doc["base"]) + D(doc["exempt"])) * D(doc.get("std_rate", RATE))).quantize(CENT, rounding=ROUND_HALF_UP) * rate
         blocked = not doc.get("recoverable", True) or doc.get("use") == "exempt"
-        share = ZERO if blocked else (ratio if doc.get("use") == "mixed" else Decimal("1"))
+        share = ZERO if blocked else (ratio if doc.get("use") in ("mixed", "utilities", "passenger_car") else Decimal("1"))
+        share *= 1 - Decimal(str(doc.get("restricted_share") or 0))  # 2.9.92
         lines[index][0] += vat; lines[index][1] += vat * share; lines[index][2] += vat * (1 - share)
     labels = (("TVA SUR ACQUISITION IMMOBILISATIONS", "ضريبة على شراء أصول ثابتة"), ("TVA SUR ACHATS MARCHANDISES", "ضريبة على شراء البضائع"),
               ("TVA SUR ACHATS EMBALLAGES", "ضريبة على شراء التوضيب"), ("TVA SUR FRAIS GENERAUX", "ضريبة على المصاريف العامة"))

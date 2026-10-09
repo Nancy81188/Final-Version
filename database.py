@@ -642,7 +642,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
     def user_can(self, user, module):
         if not user: return False
         if user["role"]=="admin": return True
-        return parse_permissions(user["permissions"] if "permissions" in user.keys() else "{}").get(module, True)
+        return parse_permissions(user["permissions"] if "permissions" in user.keys() else "{}").get(module, module != "approve")
 
     def list_users(self):
         today=datetime.now().date()

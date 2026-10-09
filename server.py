@@ -600,6 +600,25 @@ class ApiHandler(BaseHTTPRequestHandler):
         with ApiHandler._write_lock: return method()
 
     def do_POST(self): return self._serialized(self._do_POST)
+
+    # 2.9.93: approval (Accounting Settings > "Documents need approval"): an invoice prepared by a user without the
+    # "approve" permission is saved as a draft (review); only a user with it posts it, and never the one who prepared it.
+    def _approval_required(self):
+        try: return str(self.db.settings().get("approval_required") or "0") == "1"
+        except Exception: return False
+
+    def _approval_gate(self, user, invoice, invoice_id=None):
+        if not self._approval_required() or not isinstance(invoice, dict): return None
+        wants_post = str(invoice.get("status") or "posted").lower() == "posted"
+        if not wants_post: return None
+        if not self.master_db.user_can(user, "approve"):
+            invoice["status"] = "review"; return "saved as a draft for approval"
+        if invoice_id and user["role"] != "admin":
+            with self.db.connect() as db:
+                row = db.execute("SELECT created_by,status FROM invoices WHERE id=?", (int(invoice_id),)).fetchone()
+            if row and row["status"] == "review" and row["created_by"] == user["id"]:
+                raise PermissionError("A document must be approved by another user than the one who prepared it")
+        return None
     def do_PUT(self): return self._serialized(self._do_PUT)
     def do_DELETE(self): return self._serialized(self._do_DELETE)
 
@@ -671,7 +690,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             except KeyError: return self._json(404,{"error":"Expense not found"})
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path.startswith("/api/invoices/") and path.endswith("/replace"):
-            try: return self._json(200,{"invoice_id":self.db.replace_manual_invoice(int(path.split("/")[-2]),body.get("invoice",{}),body.get("items",[]),user["id"])})
+            try:
+                self._approval_gate(user, body.get("invoice",{}), int(path.split("/")[-2]))
+                return self._json(200,{"invoice_id":self.db.replace_manual_invoice(int(path.split("/")[-2]),body.get("invoice",{}),body.get("items",[]),user["id"])})
             except KeyError: return self._json(404,{"error":"Invoice not found"})
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path.startswith("/api/invoices/") and path.endswith("/returns"):
@@ -973,6 +994,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                 result=self.company_manager.refresh_opening(company_id,body.get("source_year"),user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)
+        if path == "/api/invoices/approve":  # 2.9.93: post the selected drafts (approval)
+            if not self.master_db.user_can(user, "approve"): return self._json(403,{"error":"You do not have permission to approve documents. Ask the administrator."})
+            try: return self._json(200,self.db.approve_invoices(body.get("ids",[]),user, require_other=user["role"]!="admin"))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/invoices/duplicates":
             try: return self._json(200, {"items": self.db.find_invoice_duplicates(body.get("items") or [])})
             except Exception as exc: return self._json(400, {"error": str(exc)})
@@ -989,14 +1014,18 @@ class ApiHandler(BaseHTTPRequestHandler):
             if missing:
                 return self._json(400, {"error": "Missing fields: " + ", ".join(missing)})
             try:
+                note = self._approval_gate(user, invoice)
                 invoice_id = self.db.create_manual_invoice(invoice, items, user["id"])
             except Exception as exc:
                 return self._json(400, {"error": str(exc)})
-            return self._json(201, {"invoice_id": invoice_id})
+            return self._json(201, {"invoice_id": invoice_id, **({"approval": note} if note else {})})
         if path == "/api/invoices/import":
             items = body.get("items", [])
             if not isinstance(items, list) or len(items) > 5000:
                 return self._json(400, {"error": "Invalid import batch"})
+            for entry in items:
+                if isinstance(entry, dict) and "status" not in entry: entry["status"] = "posted"
+                self._approval_gate(user, entry)  # 2.9.93
             if body.get("replace_existing", False) and not self.master_db.user_can(user, "delete"):
                 return self._json(403,{"error":"You do not have permission to replace all invoices. Ask the administrator."})
             if body.get("replace_existing", False):
@@ -1080,6 +1109,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 invoice = body.get("invoice", {})
                 if not isinstance(invoice, dict):
                     raise ValueError("Invalid invoice details")
+                self._approval_gate(user, invoice, invoice_id)
                 updated = self.db.update_invoice(invoice_id, invoice, user["id"])
             except KeyError:
                 return self._json(404, {"error": "Invoice not found"})

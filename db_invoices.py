@@ -383,7 +383,48 @@ class InvoicesStore:
                        (user_id,"mark_deleted","invoice",int(invoice_id),json.dumps({"invoice_number":invoice["invoice_number"]}),utcnow()))
         return {"deleted":int(invoice_id),"invoice_number":invoice["invoice_number"]}
 
+    def approve_invoices(self, invoice_ids, user, require_other=True):
+        """2.9.93: approval - the selected drafts (review) are posted by a user with the "approve" permission; a draft is
+        never approved by the user who prepared it (administrators excepted). Each approval is in the audit trail."""
+        approved, skipped = [], []
+        for invoice_id in [int(i) for i in invoice_ids or []]:
+            with self.connect() as db:
+                row = db.execute("SELECT id,invoice_number,invoice_date,status,created_by FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            if not row: skipped.append(f"#{invoice_id}: not found"); continue
+            if row["status"] != "review": skipped.append(f"{row['invoice_number']}: not a draft ({row['status']})"); continue
+            if require_other and row["created_by"] == user["id"]: skipped.append(f"{row['invoice_number']}: prepared by you - another user must approve it"); continue
+            try: self._assert_period_open(row["invoice_date"]); self._assert_vat_open(row["invoice_date"])
+            except ValueError as exc: skipped.append(f"{row['invoice_number']}: {exc}"); continue
+            with self.connect() as db:
+                db.execute("UPDATE invoices SET status='posted' WHERE id=? AND status='review'", (invoice_id,))
+                db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
+                           (user["id"], "approve", "invoice", invoice_id, json.dumps({"invoice_number": row["invoice_number"], "prepared_by": row["created_by"], "before": "review", "after": "posted"}), utcnow()))
+            approved.append(row["invoice_number"])
+        return {"approved": approved, "skipped": skipped}
+
+    SNAPSHOT_FIELDS = ("invoice_number", "invoice_date", "party_id", "currency", "subtotal", "vat", "total", "status", "expense_account", "vat_account", "supplier_account", "due_date", "amount_paid")
+
+    def _invoice_snapshot(self, invoice_id):
+        with self.connect() as db:
+            row = db.execute(f"SELECT {','.join(self.SNAPSHOT_FIELDS)} FROM invoices WHERE id=?", (int(invoice_id),)).fetchone()
+        return {k: row[k] for k in self.SNAPSHOT_FIELDS} if row else {}
+
+    def _log_change(self, user_id, invoice_id, before, after, entity_id=None):
+        """2.9.93: the audit trail keeps what each field was before and after a change."""
+        changed = {k: {"before": before.get(k), "after": after.get(k)} for k in self.SNAPSHOT_FIELDS if str(before.get(k)) != str(after.get(k))}
+        if not changed: return
+        with self.connect() as db:
+            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
+                       (user_id, "change", "invoice", int(entity_id or invoice_id), json.dumps({"invoice_number": after.get("invoice_number") or before.get("invoice_number"), "changes": changed}), utcnow()))
+
     def update_invoice(self, invoice_id, item, user_id):
+        before = self._invoice_snapshot(invoice_id)
+        result = self._update_invoice_with_vat(invoice_id, item, user_id)
+        try: self._log_change(user_id, invoice_id, before, self._invoice_snapshot(invoice_id))
+        except Exception: pass
+        return result
+
+    def _update_invoice_with_vat(self, invoice_id, item, user_id):
         with self.connect() as db:
             old=db.execute("SELECT invoice_date FROM invoices WHERE id=?",(int(invoice_id),)).fetchone()
         self._assert_vat_open(old["invoice_date"] if old else None, item.get("invoice_date"))
@@ -842,7 +883,10 @@ class InvoicesStore:
             # exempt-use automatic blocking into a newly taxable-use invoice.
             if not old["vat_recoverable"] and old["vat_use"] != "exempt" and item.get("vat_use") != "exempt":
                 self.set_vat_recoverable("invoice", new_id, False, user_id)
+            before = {k: old[k] for k in self.SNAPSHOT_FIELDS}
             self.delete_invoice(invoice_id, user_id)
+            try: self._log_change(user_id, invoice_id, before, self._invoice_snapshot(new_id), new_id)  # 2.9.93
+            except Exception: pass
             return new_id
 
     def add_landed_cost(self, purchase_id, item, user_id):

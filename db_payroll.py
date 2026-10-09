@@ -290,6 +290,15 @@ class PayrollStore:
         try: days=int(D(str(item.get("transport_days") if item.get("transport_days") not in (None,"") else setting("default_transport_days","26"))))
         except Exception as exc: raise ValueError("Transport days must be a whole number") from exc
         if days<0 or days>31: raise ValueError("Transport days must be between 0 and 31")
+        import lebanese_payroll
+        food_from,food_daily=lebanese_payroll.FOOD_DAILY_EXEMPT  # 2.9.92: Budget Law 2026 Art. 26
+        if rules_date>=food_from and allowances.get("food_exempt"):
+            limit=from_lbp(D(food_daily)*days).quantize(D("0.01"))
+            if allowances["food_exempt"]>limit:
+                excess=allowances["food_exempt"]-limit
+                allowances["food_exempt"]=limit; allowances["food_taxable"]=allowances.get("food_taxable",D("0"))+excess
+                allowance_parts=payroll_lines.split(allowances,not_nssf)
+                notes.append(f"Food allowance above the exempt LBP {food_daily:,} x {days} days moved to taxable (Budget Law 2026 Art. 26)")
         exempt_transport_lbp=min(to_lbp(money["transport"]),setting("transport_daily_exempt")*days)
         children=int(employee["children"] or 0)
         schooling_limit=setting("schooling_annual_exempt") if min(children,int(setting("schooling_max_children","3")))>0 else D("0")

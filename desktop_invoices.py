@@ -50,6 +50,7 @@ class InvoicesMixin:
         self.action_button(lifecycle,"Attach PDF / Image",self.attach_to_selected_invoice).pack(side="left",padx=4)
         self.action_button(lifecycle,"Attachments",self.show_selected_attachments).pack(side="left",padx=4)
         self.action_button(lifecycle,"History",self.show_invoice_history).pack(side="left",padx=4)
+        self.action_button(lifecycle,"Approve Selected",self.approve_selected_invoices).pack(side="left",padx=4)  # 2.9.93
         self.action_button(lifecycle,"Branded Invoice PDF",self.export_selected_invoice_pdf).pack(side="left",padx=4)
         self.action_button(lifecycle,"VAT Deductible / Non-Deductible",self.toggle_selected_invoice_vat).pack(side="left",padx=4)
         self.action_button(lifecycle,"VAT Treatment",self.vat_classification_dialog).pack(side="left",padx=4)
@@ -497,6 +498,16 @@ class InvoicesMixin:
         buttons=tk.Frame(window,bg=LIGHT); buttons.pack(pady=10)
         tk.Button(buttons,text="Post Return / Credit Note",command=save_return,bg=NAVY,fg="white",border=0,padx=16,pady=7).pack(side="left",padx=4)
         tk.Button(buttons,text="Cancel",command=window.destroy,bg="#5f6b76",fg="white",border=0,padx=16,pady=7).pack(side="left",padx=4)
+
+    def approve_selected_invoices(self):
+        """2.9.93: post the selected drafts (approval). The program refuses drafts you prepared yourself."""
+        ids=[int(i) for i in self.invoice_tree.selection() if str(i).isdigit()]
+        if not ids: return messagebox.showwarning("Approve","Select the draft invoices to approve")
+        try: result=self.client.approve_invoices(ids)
+        except Exception as exc: return messagebox.showerror("Approve",str(exc))
+        text=f"{len(result['approved'])} invoice(s) approved and posted."
+        if result["skipped"]: text+="\n\nNot approved:\n"+"\n".join(result["skipped"][:15])
+        messagebox.showinfo("Approve",text); self.load_invoices(); self.load_journal(); self.load_trial()
 
     def attach_to_selected_invoice(self):
         invoice_id=self.selected_invoice_id()
@@ -1251,7 +1262,8 @@ class InvoicesMixin:
                 self.sales_pdf_path=None
         except Exception as exc: return messagebox.showerror("Sales Invoice",str(exc))
         number=invoice["invoice_number"]
-        messagebox.showinfo("Sales Invoice",f'Invoice {number} saved as {"Posted" if post else "Draft"}.')
+        waiting=bool(locals().get("created") and isinstance(locals().get("created"),dict) and locals()["created"].get("approval"))  # 2.9.93
+        messagebox.showinfo("Sales Invoice",f'Invoice {number} saved as a draft: it waits for approval by another user.' if waiting else f'Invoice {number} saved as {"Posted" if post else "Draft"}.')
         self.new_sales_invoice(confirm=False)
         self.load_dashboard(); self.load_invoices(); self.load_journal(); self.load_trial()
 

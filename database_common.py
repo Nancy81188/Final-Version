@@ -24,7 +24,7 @@ VAT_ACCOUNT_9 = "44210"  # VAT on purchases (was 442660000)
 EXPENSE_NO_VAT_ACCOUNT_9 = "601100001"
 SESSION_HOURS = 24
 USER_VALIDITY_DAYS = 365
-PERMISSION_MODULES = ("payroll", "vat", "delete")  # 2.9.52: "delete" = delete / cancel posted documents, replace all invoices
+PERMISSION_MODULES = ("payroll", "vat", "delete", "approve")  # 2.9.93: "approve" = approve and post documents others prepared  # 2.9.52: "delete" = delete / cancel posted documents, replace all invoices
 
 SCHEMA = """
 PRAGMA foreign_keys=ON;
@@ -303,7 +303,7 @@ def display_date(value):
 def parse_permissions(value):
     try: data = json.loads(value or "{}") if isinstance(value, str) else dict(value or {})
     except (TypeError, ValueError): data = {}
-    return {module: bool(data.get(module, True)) for module in PERMISSION_MODULES}
+    return {module: bool(data.get(module, module != "approve")) for module in PERMISSION_MODULES}  # approve: off unless given
 
 def parse_vat_rate(value):
     """2.9.72: a VAT rate in % ("11", "5%", "15.0") -> Decimal 11 / 5 / 15; between 0 and 100."""

@@ -1,5 +1,18 @@
 # Saber Accounting MVP
 
+## Version 2.9.93 (approval step: one person prepares, another approves; before/after audit trail)
+- Accounting Setup > "Approval (internal control)": tick "Invoices need approval before posting". Then an invoice saved, imported or edited by a user without the new "Can approve" permission (Users screen) is kept as a draft (status review): it is not in the journal, the trial balance or VAT until approved.
+- Sales Invoices > "Approve Selected": a user with "Can approve" posts the selected drafts. Nobody can approve a draft he prepared himself (the administrator can, for a one-person office). Period lock and filed VAT quarters are checked again at approval.
+- Audit trail: each approval records who prepared and who approved; each edit of an invoice records the fields that changed with their value before and after (date, party, total, VAT, status, lines...).
+- Off by default: companies that do not tick the box work exactly as before.
+- Changed files: database_common.py, database.py, server.py, db_invoices.py, accounting_setup.py, desktop_accounting_setup.py, desktop_final.py, desktop_invoices.py, client.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_93.py.
+
+## Version 2.9.92 (Budget Law 2026 items)
+- VAT: two new purchase uses. "Utilities" (electricity, water, telephone, internet): from 10-02-2026 their VAT is no longer recovered (Budget Law 2026, Art. 30). "Passenger car": VAT recovered only on the first USD 30,000 of the car's price; the VAT on the part above is not recovered. The non-recovered VAT goes to the VAT-not-deductible account in the VAT settlement and is shown in the annex and worksheet. Invoices dated before 10-02-2026 are not affected.
+- Payroll: from 10-02-2026 "Food - not taxable" is exempt up to LBP 300,000 a working day (Art. 26); the part above is moved to "Food - taxable" with a note on the payslip.
+- To confirm with your tax adviser before filing (the program uses these values; all can be changed in Payroll Rules): salary-tax brackets 2%-25% and family deductions (Law 324/2024); salary tax rounded up to LBP 10,000; schooling allowance limits; NSSF sickness ceiling LBP 120M from 01-08-2025 (Decree 887; an earlier Memo 801 said 140M); transport LBP 450,000 a day exempt; the reading of Art. 26 (food) and Art. 30 (utilities / cars) above. Announced but not law at the time of this version: VAT 12% and a transport allowance of LBP 500,000-800,000 - not applied.
+- Changed files: vat_return.py, db_vat.py, desktop_stage3_common.py, lebanese_payroll.py, db_payroll.py, README.md. New test: test_v2_9_92.py.
+
 ## Version 2.9.91 (faster with large books; full company re-checked)
 - Measured with a company of 3,000 invoices and 750 receipts (about 25,000 journal lines), then made faster:
   - Dates are read once (one screen read 300,000 dates one by one): every report, list and sort is quicker.

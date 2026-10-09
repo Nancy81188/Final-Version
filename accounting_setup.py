@@ -130,6 +130,8 @@ def save_setup(db, item, user_id):
         except ValueError: raise ValueError("The budget alert % must be a number, for example 10")
         if not 0 < percent <= 1000: raise ValueError("The budget alert % must be between 0 and 1000")
         changes["budget_alert_percent"] = f"{percent:g}"
+    if "approval_required" in item:  # 2.9.93: documents prepared by users without "approve" wait for approval
+        changes["approval_required"] = "1" if str(item.get("approval_required")).lower() in ("1", "true", "yes", "on") else "0"
     if "defaults" in item:
         current = default_accounts(db); chosen = {}
         for key, value in (item.get("defaults") or {}).items():
@@ -149,12 +151,19 @@ def save_setup(db, item, user_id):
     return setup(db)
 
 
+def _setting(db, key, default=""):
+    with db.connect() as connection:
+        row = connection.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
 def setup(db, master_db=None, user_id=None):
     with db.connect() as connection:
         row = connection.execute("SELECT value FROM app_settings WHERE key='budget_alert_percent'").fetchone()
     return {"budget_alert_percent": row["value"] if row else "10", "hidden": company_hidden(db), "user_hidden": user_hidden(master_db, user_id) if master_db is not None and user_id else [],
             "modules": [{"key": key, "label": spec[0]} for key, spec in MODULES.items()], "reports": list(REPORTS),
-            "defaults": default_accounts_listing(db), "payroll_note": PAYROLL_NOTE}
+            "defaults": default_accounts_listing(db), "payroll_note": PAYROLL_NOTE,
+            "approval_required": _setting(db, "approval_required", "0") == "1"}
 
 
 # ---------------------------------------------------------------- Year-End Check

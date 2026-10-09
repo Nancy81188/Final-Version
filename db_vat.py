@@ -49,7 +49,7 @@ class VatStore:
     # ---------------------------------------------------------------- Lebanese VAT classification
     SALE_TREATMENTS = ("standard", "zero_rated", "exempt", "out_of_scope")
     PURCHASE_TREATMENTS = ("standard", "reverse_charge")
-    VAT_USES = ("taxable", "mixed", "exempt", "export")
+    VAT_USES = ("taxable", "mixed", "exempt", "export", "utilities", "passenger_car")  # 2.9.92: Budget Law 2026 Art. 30
 
     def _vat_classification(self, item, kind):
         """VAT treatment of a sale (standard 11% / zero-rated / exempt / out of scope) or purchase (standard / reverse charge),
@@ -59,7 +59,7 @@ class VatStore:
         allowed = self.SALE_TREATMENTS if kind in ("sale", "sales") else self.PURCHASE_TREATMENTS
         if treatment not in allowed: raise ValueError("VAT treatment must be one of: " + ", ".join(t.replace("_", " ") for t in allowed))
         use = str(item.get("vat_use") or "mixed").lower()
-        if use not in self.VAT_USES: raise ValueError("VAT use must be taxable, mixed, exempt or export")
+        if use not in self.VAT_USES: raise ValueError("VAT use must be taxable, mixed, exempt, export, utilities or passenger car")
         return treatment, use
 
     def set_vat_classification(self, source, document_id, treatment=None, use=None, user_id=None):

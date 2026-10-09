@@ -19,7 +19,8 @@ from report_export import export_excel, export_pdf
 from desktop_common import bulk_action  # 2.9.72: several purchases / expenses / payments deleted at once (was "bulk_action is not defined")
 
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
-PURCHASE_USES = {"Mixed (partial deduction)": "mixed", "Taxable sales only (100%)": "taxable", "Exempt sales only (0%)": "exempt"}
+PURCHASE_USES = {"Mixed (partial deduction)": "mixed", "Taxable sales only (100%)": "taxable", "Exempt sales only (0%)": "exempt",
+                 "Utilities (no VAT recovery from 10-02-2026)": "utilities", "Passenger car (VAT recovered up to USD 30,000)": "passenger_car"}  # 2.9.92
 RED, MUTED = "#8B1E1E", "#5f6b76"
 TYPES = {"Purchases": ("purchase", "purchases"), "Sales": ("sale", "sales"), "Expenses": ("purchase", "expenses"), "Assets": ("purchase", "assets")}
 METHODS = ["Cash", "Cheque", "Bank Transfer", "Card", "Other"]

@@ -50,6 +50,11 @@ class AccountingSetupMixin:
             bar = tk.Frame(accounts, bg=LIGHT); bar.grid(row=len(self.setup_default_vars) + 1, column=0, columnspan=3, sticky="w", pady=(6, 0))
             tk.Button(bar, text="Save Default Accounts", command=self.save_default_accounts, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
             self.action_button(bar, "Program Defaults", self.restore_default_accounts).pack(side="left", padx=3)
+        approval = tk.LabelFrame(page, text="Approval (internal control)", bg=LIGHT, padx=8, pady=6); approval.pack(fill="x", padx=8, pady=6)  # 2.9.93
+        self.setup_approval = tk.BooleanVar(value=bool(values.get("approval_required")))
+        tk.Checkbutton(approval, text="Invoices need approval: users without 'Can approve' save them as drafts; another user with 'Can approve' posts them (Invoices > Approve Selected)",
+                       variable=self.setup_approval, bg=LIGHT, state="normal" if is_admin else "disabled", wraplength=900, justify="left").pack(side="left")
+        if is_admin: self.action_button(approval, "Save", self.save_approval_setting).pack(side="left", padx=8)
         alerts = tk.LabelFrame(page, text="Dashboard", bg=LIGHT, padx=8, pady=6); alerts.pack(fill="x", padx=8, pady=6)  # 2.9.82
         self.setup_alert_percent = tk.StringVar(value=str(values.get("budget_alert_percent") or "10"))
         tk.Label(alerts, text="Show the accounts off budget (costs above / revenue below) by more than", bg=LIGHT).pack(side="left")
@@ -84,6 +89,11 @@ class AccountingSetupMixin:
         except Exception as exc: return messagebox.showerror("Accounting Settings", str(exc))
         accounting_setup(self, refresh=True)
         messagebox.showinfo("Accounting Settings", "Default accounts saved. New documents use them from now on; documents already saved are not changed.")
+
+    def save_approval_setting(self):
+        try: self.client.save_accounting_setup({"approval_required": bool(self.setup_approval.get())})
+        except Exception as exc: return messagebox.showerror("Accounting Settings", str(exc))
+        messagebox.showinfo("Accounting Settings", "Approval is " + ("ON: invoices of users without 'Can approve' wait for approval." if self.setup_approval.get() else "OFF."))
 
     def save_alert_percent(self):
         try: self.client.save_accounting_setup({"budget_alert_percent": self.setup_alert_percent.get()})
