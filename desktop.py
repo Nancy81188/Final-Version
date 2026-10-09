@@ -21,7 +21,7 @@ from desktop_production import ProductionMixin
 from desktop_account_tools import AccountToolsMixin
 from desktop_v22 import V22Mixin
 from desktop_invoices import InvoicesMixin
-from desktop_theme import STRIPE, apply_theme, restripe  # 2.9.94
+from desktop_theme import STRIPE, apply_theme, restripe, polish, page_title_bar  # 2.9.94 / 2.9.95
 from desktop_parties import PartiesMixin
 from desktop_payroll import PayrollMixin
 from desktop_reports import ReportsMixin
@@ -140,6 +140,12 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
 
     def _style(self):
         apply_theme(self)  # 2.9.94: one place for the look of every screen (desktop_theme.py)
+        def dialog_shown(event):  # 2.9.95: windows (dialogs) follow the same design once they are filled
+            window=event.widget
+            if isinstance(window,tk.Toplevel) and not getattr(window,"_saber_polished",False):
+                window._saber_polished=True
+                window.after_idle(lambda: window.winfo_exists() and polish(window))
+        self.bind_class("Toplevel","<Map>",dialog_shown,add="+")
 
     # ------------------------------------------------------------ mouse wheel scrolling
     def install_mouse_wheel(self):
@@ -618,9 +624,12 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         self.after_idle(size_navigation)
         notebook.bind("<<NotebookTabChanged>>",lambda _event:self.highlight_main_tab())
         self.highlight_main_tab()
-        tk.Label(filter_bar,text="Show currency:",bg=LIGHT,font=("Segoe UI",10,"bold")).pack(side="left")
+        # 2.9.95: page title (SECTION > Screen) on the left, the currency filter on the right
+        self.page_title=page_title_bar(filter_bar); self.page_title.pack(side="left",fill="x",expand=True)
         currency_filter=ttk.Combobox(filter_bar,textvariable=self.view_currency,values=["All Currencies"]+self.currency_codes,state="readonly",width=16)
-        currency_filter.pack(side="left",padx=8); currency_filter.bind("<<ComboboxSelected>>",lambda _event:self.currency_changed())
+        currency_filter.pack(side="right",padx=(8,2))
+        tk.Label(filter_bar,text="Show currency",bg=LIGHT,fg="#5f6b76",font=("Segoe UI",9,"bold")).pack(side="right")
+        self.highlight_main_tab(); currency_filter.bind("<<ComboboxSelected>>",lambda _event:self.currency_changed())
         builders=[self.build_dashboard,self.build_invoices,self.build_sales_invoice,self.build_manual,self.build_import,self.build_parties,self.build_transactions,self.build_purchases_expenses,self.build_inventory]
         if self.can_use("payroll"): builders.append(self.build_payroll)
         if self.can_use("vat"): builders.append(self.build_vat_return)
@@ -651,6 +660,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         self.__dict__["_building_depth"]=self.__dict__.get("_building_depth",0)+1
         try:
             build()
+            try: polish(getattr(self,"main_notebook",self))  # 2.9.95: same buttons, cards and inputs on every screen
+            except Exception: log.debug("Design pass skipped", exc_info=True)
             # Bind newly created controls while missing widgets cannot trigger eager loading.
             self.setup_context_f2()
             self.apply_hidden_tabs()  # 2.9.81
@@ -809,6 +820,14 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         if selected:
             page=next((item for item in getattr(self,"main_tab_pages",[]) if str(item)==selected),None)
             if page is not None: self._ensure_main_tab(page)
+        try:  # 2.9.95: the title above the screen
+            import desktop_layout
+            index=[str(p) for p in self.main_tab_pages].index(selected)
+            attribute=self._page_attributes[index]
+            group=next((g for g,members in desktop_layout.MENU_GROUPS if attribute in members),"")
+            self.page_title._section.configure(text=(group.upper()+"  ›") if group else "")
+            self.page_title._title.configure(text=self.tab_names[index])
+        except (AttributeError,ValueError,IndexError,tk.TclError): pass
         side=getattr(self,"side_menu_mode",False)
         for page,button in zip(getattr(self,"main_tab_pages",[]),getattr(self,"tab_buttons",[])):
             if side:

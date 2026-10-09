@@ -1,5 +1,14 @@
 # Saber Accounting MVP
 
+## Version 2.9.95 (one professional design on every screen, same Saber colours)
+- One design system (desktop_theme.py), applied to every screen and every window when it opens:
+  - Buttons by role: gold = the main action of the screen (Save), navy = the other actions, red = Delete / Cancel only; same font, height and spacing everywhere. Sales Invoice: Save is now gold (Return and Import are navy); Purchases, Uploaded Data, Journal Voucher and VAT have one gold button each.
+  - Content in white cards with a thin border on the light page; inputs flat with a thin border that turns gold while typing.
+  - Every screen has a title above it: SECTION › Screen (e.g. PURCHASES & CASH › Purchases & Expenses); the currency filter moved to the right of that line.
+- Fits a laptop screen (1366 x 768): rows of buttons or fields that are too wide wrap onto a second line, long notes wrap, wide tables scroll sideways inside their box (they made the whole screen wider). Sales Invoice: "Find invoice" is a slim row above the form; Purchases: the invoice buttons on one row, the PDF buttons on the next; Journal Voucher: the toolbar wraps and the totals show.
+- No change in calculations; the design pass takes about 0.03 s.
+- Changed files: desktop_theme.py, desktop.py, desktop_sales_invoice.py, desktop_purchases.py, desktop_invoices.py, desktop_brains.py, desktop_final.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_95.py.
+
 ## Version 2.9.94 (office network tested, easier screens, code split)
 - Office network (2-3 PCs): tested as it is really used. The server runs in its own program on the network with an office certificate (HTTPS), and three PCs (three separate programs) work on the same company at the same time with approval on: 45 invoices, 45 different numbers, the 15 drafts approved from another PC, the trial balance balanced. Then the server is stopped and started again: nothing is lost and the PCs sign in again. A PC without the office certificate, plain HTTP and a wrong password are all refused. This test also runs on Windows on every push.
 - New: making the office certificate is one command on the server PC: `python run_server.py --make-certificate OFFICE-PC,192.168.1.10`. Copy `server-cert.pem` (never the key) to each PC's Saber data folder as `office-server-cert.pem`, and the program trusts that server. Nothing leaves the office.

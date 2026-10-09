@@ -21,9 +21,11 @@ class SalesInvoiceMixin:
         self.sales_supplier_side=tk.StringVar(value="D - Debit"); self.sales_vat_side=tk.StringVar(value="C - Credit"); self.sales_expense_side=tk.StringVar(value="C - Credit"); self.sales_expense_no_vat_side=tk.StringVar(value="C - Credit")
         self.sales_due_date=tk.StringVar(); self.sales_payment_method=tk.StringVar(value="On Account (Not Cash)"); self.sales_amount_paid=tk.StringVar(value="0"); self.sales_branch=tk.StringVar(value="Head Office")
         self.sales_open_choice=tk.StringVar(); self.sales_doc_type=tk.StringVar(value="Invoice"); self.sales_category=tk.StringVar(value="Services")
+        # 2.9.95: "Find invoice" is a slim row above the form (beside it, it made the screen wider than a laptop)
+        nav=tk.Frame(header,bg=LIGHT); nav.pack(fill="x",pady=(0,4))
+        tk.Label(nav,text="Find invoice",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,6))
         tabs_row=tk.Frame(header,bg=LIGHT); tabs_row.pack(fill="x")
-        nav=tk.LabelFrame(tabs_row,text="Find Invoice",bg=LIGHT,padx=4,pady=1); nav.pack(side="right",padx=(6,0))
-        self.sales_open_box=ttk.Combobox(nav,textvariable=self.sales_open_choice,width=17); self.sales_open_box.pack(side="left",padx=(0,4))
+        self.sales_open_box=ttk.Combobox(nav,textvariable=self.sales_open_choice,width=34); self.sales_open_box.pack(side="left",padx=(0,4))
         self.sales_open_box.bind("<<ComboboxSelected>>",lambda _event:self.open_sales_invoice()); self.sales_open_box.bind("<KeyRelease>",self.search_open_sales)
         self.sales_open_box.bind("<Return>",lambda _event:self.open_sales_by_number())
         self.sales_previous=tk.Button(nav,text="◀ Previous",command=lambda:self.navigate_sales_invoice(-1),bg=NAVY,fg="white",border=0,padx=7,pady=3)
@@ -88,16 +90,17 @@ class SalesInvoiceMixin:
         self.action_button(toolbar,"New",self.new_sales_invoice).pack(side="left",padx=2)
         self.action_button(toolbar,"Add Line",self.add_sales_item).pack(side="left",padx=2)
         tk.Button(toolbar,text="Delete Line",command=self.remove_sales_item,bg="#8B1E1E",fg="white",border=0,padx=10,pady=4).pack(side="left",padx=2)
-        tk.Button(toolbar,text="Save",command=lambda:self.save_sales_invoice(True),bg=NAVY,fg="white",font=("Segoe UI",10,"bold"),border=0,padx=14,pady=4).pack(side="left",padx=(8,2))
+        tk.Button(toolbar,text="Save",command=lambda:self.save_sales_invoice(True),bg=GOLD,fg=NAVY,font=("Segoe UI",10,"bold"),border=0,padx=14,pady=4).pack(side="left",padx=(8,2))
         tk.Button(toolbar,text="Delete",command=self.delete_sales_invoice,bg="#8B1E1E",fg="white",border=0,padx=12,pady=4).pack(side="left",padx=2)
-        tk.Button(toolbar,text="Return (goods back)",command=self.return_open_sales_invoice,bg=GOLD,fg=NAVY,font=("Segoe UI",9,"bold"),border=0,padx=10,pady=4).pack(side="left",padx=2)
+        tk.Button(toolbar,text="Return (goods back)",command=self.return_open_sales_invoice,bg=NAVY,fg="white",font=("Segoe UI",9,"bold"),border=0,padx=10,pady=4).pack(side="left",padx=2)
         self.action_button(toolbar,"Duplicate",self.duplicate_sales_invoice).pack(side="left",padx=(8,2))
         for text,command in (("Print Preview",lambda:self.sales_invoice_pdf("preview")),("PDF",lambda:self.sales_invoice_pdf("pdf")),("Print",lambda:self.sales_invoice_pdf("print")),
                              ("Excel",lambda:self.sales_entry_report("xlsx"))):
             tk.Button(toolbar,text=text,command=command,bg=NAVY,fg="white",border=0,padx=10,pady=4).pack(side="left",padx=2)
         for text,command in (("Import Excel",self.import_sales_excel),("Import PDF",self.import_sales_pdf)):
-            tk.Button(toolbar,text=text,command=command,bg=GOLD,fg=NAVY,border=0,padx=10,pady=4).pack(side="left",padx=(8 if text=="Import Excel" else 2,2))
+            tk.Button(toolbar,text=text,command=command,bg=NAVY,fg="white",border=0,padx=10,pady=4).pack(side="left",padx=(8 if text=="Import Excel" else 2,2))
         self.action_button(toolbar,"Free PDF Read",self.ai_read_sales_pdf).pack(side="left",padx=2)
+        flow_toolbar(toolbar)  # 2.9.95: wraps onto a second line on a narrow screen instead of being cut off
         # Totals bar is pinned to the very bottom of the tab FIRST, so it can never be pushed off-screen by the table
         bottom=tk.Frame(self.sales_tab,bg=LIGHT); bottom.pack(side="bottom",fill="x",padx=10,pady=(0,4))
         body=tk.Frame(self.sales_tab,bg=LIGHT); body.pack(side="top",fill="both",expand=True,padx=10,pady=(2,4))

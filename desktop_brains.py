@@ -37,6 +37,8 @@ class EditableSheet:
         self.tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
         self.tree.grid(row=0, column=0, sticky="nsew"); yscroll.grid(row=0, column=1, sticky="ns"); xscroll.grid(row=1, column=0, sticky="ew")
         frame.grid_rowconfigure(0, weight=1); frame.grid_columnconfigure(0, weight=1)
+        # 2.9.95: a wide sheet scrolls sideways inside its frame instead of making the whole screen wider than a laptop
+        frame.configure(width=min(760, sum(int(c[2]) for c in columns) + 20), height=int(height) * 27 + 52); frame.grid_propagate(False)
         self.tree.tag_configure("odd", background="#fbf3e4")
         self.tree.bind("<Double-1>", self._clicked); self.tree.bind("<Return>", lambda _e: self.edit(self.tree.focus(), self.editable[0]))
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self.on_select(self.selected()) if self.on_select else None)
@@ -197,11 +199,11 @@ class BrainsScreensMixin(BalanceReportsMixin):
         bar = tk.Frame(page, bg=NAVY); bar.pack(fill="x", padx=10, pady=(8, 0))
         tk.Label(bar, text="General Voucher", bg=NAVY, fg="white", font=("Segoe UI", 11, "bold")).pack(side="left", padx=10, pady=5)
         for text, step in (("|<", "first"), ("<", "previous"), (">", "next"), (">|", "last")):
-            tk.Button(bar, text=text, command=lambda s=step: self.navigate_voucher(s), bg=GOLD, fg=NAVY, border=0, width=3, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
+            tk.Button(bar, text=text, command=lambda s=step: self.navigate_voucher(s), bg="#1E4268", fg="white", activebackground="#2E5277", activeforeground="white", border=0, width=3, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="New", command=self.new_manual_voucher, bg="white", fg=NAVY, border=0, padx=12).pack(side="left", padx=(12, 2), pady=4)
         tk.Button(bar, text="Edit...", command=self.choose_voucher_to_edit, bg="white", fg=NAVY, border=0, padx=12, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="Save", command=self.save_manual_invoice, bg=GOLD, fg=NAVY, border=0, padx=14, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
-        tk.Button(bar, text="Automatic DOE", command=self.show_doe_page, bg=GOLD, fg=NAVY, border=0, padx=8).pack(side="left", padx=2, pady=4)
+        tk.Button(bar, text="Automatic DOE", command=self.show_doe_page, bg="white", fg=NAVY, border=0, padx=10).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="Delete", command=self.delete_current_voucher, bg=RED, fg="white", border=0, padx=12).pack(side="left", padx=2, pady=4)
         self.action_button(bar,"Add Line",self.add_manual_item).pack(side="left",padx=(14,2),pady=4)
         self.action_button(bar,"New Account",self.create_voucher_account).pack(side="left",padx=2,pady=4)
@@ -210,6 +212,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
         self.action_button(bar,"Show Rates",self.toggle_voucher_rates).pack(side="left",padx=(8,2),pady=4)
         for text, fmt in (("Excel", "xlsx"), ("PDF", "pdf"), ("Print", "print")):
             tk.Button(bar, text=text, command=lambda f=fmt: self.manual_entry_report(f), bg="white", fg=NAVY, border=0, padx=10).pack(side="right", padx=2, pady=4)
+        from desktop_common import flow_toolbar
+        flow_toolbar(bar)  # 2.9.95: wraps onto a second line on a laptop screen instead of being cut off
         header = tk.Frame(page, bg=LIGHT); header.pack(fill="x", padx=10, pady=6)
         self.manual_type = tk.StringVar(value=VOUCHER_TYPES[0]); self.manual_no = tk.StringVar(); self.manual_date = tk.StringVar(value=self.fiscal_today())
         self.manual_currency = tk.StringVar(value="USD"); self.manual_find = tk.StringVar()

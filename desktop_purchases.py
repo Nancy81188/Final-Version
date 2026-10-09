@@ -113,14 +113,14 @@ class PurchasesMixin:
             ["item_code", "name", "quantity", "unit", "unit_cost", "discount_percent", "vat_flag"], self.purchase_item_changed, height=8)  # 2.9.87: VAT Yes / No per line; 2.9.94: 8 rows so the totals show on a laptop screen
         f["items_sheet"].tree.bind("<F2>", lambda _e: self.purchase_item_lookup())
         f["items_sheet"].tree.master.pack_configure(expand=True,fill="both")
-        r4 = tk.Frame(actions, bg=LIGHT); r4.pack(side="left", pady=(2, 0))
-        r5 = tk.Frame(actions, bg=LIGHT); r5.pack(side="left", padx=(18, 0), pady=(2, 0))
+        r4 = tk.Frame(actions, bg=LIGHT); r4.pack(side="top", anchor="w", pady=(2, 0))
+        r5 = tk.Frame(actions, bg=LIGHT); r5.pack(side="top", anchor="w", pady=(6, 0))  # 2.9.95: row 1 the invoice, row 2 the PDF
         f["pdf_label"] = tk.Label(r5, text="No PDF", bg=LIGHT, fg=MUTED)
         self.action_button(r4, "New", self.new_purchase).pack(side="left", padx=(0, 3))
         tk.Button(r4, text="Auto Calculate", command=self.purchase_auto_calculate, bg=NAVY, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)  # 2.9.90
         tk.Button(r4, text="Save Purchase", command=self.save_purchase, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         tk.Button(r4, text="Delete", command=self.delete_purchase, bg=RED, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)
-        tk.Button(r4, text="Return (goods back)", command=self.return_open_purchase, bg=GOLD, fg=NAVY, border=0, padx=10, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Button(r4, text="Return (goods back)", command=self.return_open_purchase, bg=NAVY, fg="white", border=0, padx=10, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(r5, "Upload PDF", self.choose_purchase_pdf).pack(side="left", padx=3)
         self.action_button(r5, "Free PDF Read", self.ai_read_purchase_pdf).pack(side="left", padx=3)
         self.action_button(r5, "Attachments", lambda: self.purchase_attachments()).pack(side="left", padx=3)

@@ -53,7 +53,7 @@ class InvoicesMixin(SalesInvoiceMixin):
         self.action_button(accounts,"Check Sales Accounts...",self.check_sales_accounts).pack(side="left",padx=4)
         self.action_button(accounts,"VAT Deductible / Non-Deductible",self.toggle_selected_invoice_vat).pack(side="left",padx=4)
         self.action_button(accounts,"VAT Treatment",self.vat_classification_dialog).pack(side="left",padx=4)
-        tk.Button(accounts,text="Create Missing Payment Entries",command=self.create_missing_payment_entries,bg=GOLD,fg=NAVY,
+        tk.Button(accounts,text="Create Missing Payment Entries",command=self.create_missing_payment_entries,bg=NAVY,fg="white",
                   font=("Segoe UI",9,"bold"),border=0,padx=14,pady=7).pack(side="left",padx=4)
         documents=group("DOCUMENTS")
         self.action_button(documents,"Save Data",self.confirm_invoice_data_saved).pack(side="left",padx=4)

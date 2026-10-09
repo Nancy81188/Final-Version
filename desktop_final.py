@@ -204,6 +204,7 @@ class FinalFeaturesMixin:
         tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
         tree.grid(row=0, column=0, sticky="nsew"); yscroll.grid(row=0, column=1, sticky="ns"); xscroll.grid(row=1, column=0, sticky="ew")
         frame.grid_rowconfigure(0, weight=1); frame.grid_columnconfigure(0, weight=1)
+        frame.configure(width=700, height=360); frame.grid_propagate(False)  # 2.9.95: scrolls sideways inside; the screen keeps its width
         add_search_bar(tree)  # 2.9.78: Search in every report too (section titles and totals stay)
         return tree
 
@@ -459,13 +460,15 @@ class FinalFeaturesMixin:
         self.action_button(actions, "Filing Worksheet PDF", lambda: self.export_vat_filing_worksheet("pdf")).pack(side="left", padx=3)
         self.action_button(actions, "Open / Fill VAT PDF", self.edit_vat_filing_worksheet).pack(side="left", padx=3)
         self.action_button(actions, "Filing Worksheet Excel", lambda: self.export_vat_filing_worksheet("xlsx")).pack(side="left", padx=3)
-        tk.Button(actions, text="Official Form Q1-2 (PDF)", command=lambda: self.export_vat_official_form("pdf"), bg=GOLD, fg=NAVY, border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Button(actions, text="Official Form Q1-2 (PDF)", command=lambda: self.export_vat_official_form("pdf"), bg=NAVY, fg="white", border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(actions, "Official Form Excel", lambda: self.export_vat_official_form("xlsx")).pack(side="left", padx=3)
         actions2 = tk.Frame(page, bg=LIGHT); actions2.pack(fill="x", padx=10, pady=(3, 0))
-        tk.Button(actions2, text="Taux Récupérable (PDF)", command=lambda: self.export_vat_recoverable_rate("pdf"), bg=GOLD, fg=NAVY, border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Button(actions2, text="Taux Récupérable (PDF)", command=lambda: self.export_vat_recoverable_rate("pdf"), bg=NAVY, fg="white", border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(actions2, "Taux Récupérable Excel", lambda: self.export_vat_recoverable_rate("xlsx")).pack(side="left", padx=3)
         tk.Button(actions2, text="VAT Settlement Entry...", command=self.vat_settlement_dialog, bg=NAVY, fg="white", border=0, padx=12, pady=7).pack(side="left", padx=(12, 3))
         tk.Label(actions2, text="Calcul du taux récupérable (Art. 31): revenues taxable / exempt, recoverable and non-recoverable VAT, VAT payable.", bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
+        from desktop_common import flow_toolbars
+        flow_toolbars(controls, law, actions, actions2)  # 2.9.95: rows wrap on a laptop screen
         self.vat_headline = tk.Label(page, text="Choose the year and quarter, then press Generate.", bg=LIGHT, fg=NAVY, font=("Segoe UI", 11, "bold"), anchor="w", justify="left")
         self.vat_headline.pack(fill="x", padx=12, pady=(8, 0))
         self.vat_note = tk.Label(page, text="", bg=LIGHT, fg=MUTED, anchor="w", justify="left"); self.vat_note.pack(fill="x", padx=12)
