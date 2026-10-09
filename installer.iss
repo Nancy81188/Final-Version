@@ -1,5 +1,5 @@
 #define MyAppName "Saber Accounting"
-#define MyAppVersion "2.9.86"
+#define MyAppVersion "2.9.87"
 #define MyAppPublisher "Saber for Audit"
 
 [Setup]
@@ -49,4 +49,24 @@ Name: "{autodesktop}\Saber Accounting"; Filename: "{app}\SaberAccounting.exe"; I
 Name: "{commonstartup}\Saber Accounting Backups"; Filename: "{app}\SaberAccountingBackup.exe"; WorkingDir: "{app}"; Tasks: autobackup; Check: FileExists(ExpandConstant('{app}\SaberAccountingBackup.exe'))
 
 [Run]
+; 2.9.87: the background backup starts again with the new version (it was stopped before the files were replaced)
+Filename: "{app}\SaberAccountingBackup.exe"; WorkingDir: "{app}"; Flags: nowait runhidden skipifdoesntexist; Tasks: autobackup
 Filename: "{app}\SaberAccounting.exe"; Description: "Open Saber Accounting"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM SaberAccountingBackup.exe"; Flags: runhidden; RunOnceId: "StopBackup"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM SaberAccounting.exe"; Flags: runhidden; RunOnceId: "StopSaber"
+
+[Code]
+// 2.9.87: the background backup program (started with Windows) kept SaberAccountingBackup.exe and the data files
+// in use, so the setup could not replace it ("file in use" / the setup stuck). Both programs are stopped first;
+// the company data is never touched.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM SaberAccountingBackup.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM SaberAccounting.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Sleep(1500);
+  Result := '';
+end;

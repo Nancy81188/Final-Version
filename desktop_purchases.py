@@ -108,8 +108,8 @@ class PurchasesMixin:
         tk.Button(wh, text="Delete Line", command=lambda: (f["items_sheet"].delete_selected(), self.purchase_items_changed()), bg="#8B1E1E", fg="white", border=0, padx=10, pady=5).pack(side="left", padx=2)
         from desktop_brains import EditableSheet
         f["items_sheet"] = EditableSheet(self, items, [("line", "#", 35, "center"), ("item_code", "Item", 125, "w"), ("name", "Description", 410, "w"), ("quantity", "Qty", 70, "e"),
-            ("unit", "Unit", 60, "center"), ("unit_cost", "Unit Price", 95, "e"), ("discount_percent", "Discount %", 85, "e"), ("total", "Net", 105, "e")],
-            ["item_code", "name", "quantity", "unit", "unit_cost", "discount_percent"], self.purchase_item_changed, height=12)
+            ("unit", "Unit", 60, "center"), ("unit_cost", "Unit Price", 95, "e"), ("discount_percent", "Discount %", 85, "e"), ("vat_flag", "VAT", 50, "center"), ("total", "Net", 105, "e")],
+            ["item_code", "name", "quantity", "unit", "unit_cost", "discount_percent", "vat_flag"], self.purchase_item_changed, height=12)  # 2.9.87: VAT Yes / No per line
         f["items_sheet"].tree.bind("<F2>", lambda _e: self.purchase_item_lookup())
         f["items_sheet"].tree.master.pack_configure(expand=True,fill="both")
         r4 = tk.Frame(actions, bg=LIGHT); r4.pack(anchor="e", pady=(2, 0))
@@ -147,12 +147,14 @@ class PurchasesMixin:
 
     def purchase_item_line(self, row=None):
         f = self.purchase_form; row = row or {"item_code": "", "name": "", "quantity": 1, "unit": "", "unit_cost": 0, "discount_percent": 0}
+        row.setdefault("vat_flag", "Yes")
         self.purchase_item_total(row); iid = f["items_sheet"].insert(row); f["items_sheet"].tree.selection_set(iid); f["items_sheet"].tree.focus(iid); return iid
 
     def purchase_item_total(self, row):
         qty = _num(row.get("quantity")) or 0; cost = _num(row.get("unit_cost")) or 0; percent = _num(row.get("discount_percent")) or 0
         row["total"] = round(qty * cost * (1 - percent / 100), 2)
-        row["_display"] = {"quantity": f"{qty:g}", "unit_cost": f"{cost:,.4f}", "discount_percent": f"{percent:g}" if percent else "", "total": f'{row["total"]:,.2f}'}
+        row["_display"] = {"quantity": f"{qty:g}", "unit_cost": f"{cost:,.4f}", "discount_percent": f"{percent:g}" if percent else "", "total": f'{row["total"]:,.2f}',
+                           "vat_flag": row.get("vat_flag") or "Yes"}
 
     def purchase_item_changed(self, iid, key, text):
         row = self.purchase_form["items_sheet"].rows[iid]
@@ -162,6 +164,7 @@ class PurchasesMixin:
             elif key == "item_code" and text: messagebox.showwarning("Purchases", f"Item {text} was not found. Type the item name instead: a new item is created on saving."); return False
             else: row[key] = text.strip()
         elif key == "unit": row["unit"] = text.strip()
+        elif key == "vat_flag": row["vat_flag"] = "No" if text.strip().casefold() in ("no", "n", "0", "0%", "exempt", "x", "-") else "Yes"
         else:
             value = _num(text, None)
             if value is None or value < 0: messagebox.showwarning("Purchases", "Enter a positive number"); return False
@@ -170,7 +173,11 @@ class PurchasesMixin:
 
     def purchase_items_changed(self):
         f = self.purchase_form; rows = [r for r in f["items_sheet"].ordered() if (r.get("item_code") or r.get("name")) and _num(r.get("quantity"))]
-        if rows: f["vars"]["taxable"].set(f'{sum(r["total"] for r in rows):.2f}'); self.purchase_amounts_changed("taxable")
+        if rows:
+            f["vars"]["taxable"].set(f'{sum(r["total"] for r in rows if r.get("vat_flag", "Yes") != "No"):.2f}')
+            if any(r.get("vat_flag") == "No" for r in rows):  # 2.9.87: lines without VAT make the exempt amount
+                f["vars"]["exempt"].set(f'{sum(r["total"] for r in rows if r.get("vat_flag") == "No"):.2f}')
+            self.purchase_amounts_changed("taxable")
 
     def purchase_discount_changed(self, mode):
         self.purchase_form["discount_mode"] = mode
@@ -392,6 +399,7 @@ class PurchasesMixin:
             self.purchase_item_line({
                 "item_code": item["sku"], "name": item["name"], "quantity": row["quantity"],
                 "unit": item["unit"], "unit_cost": row["unit_price"], "discount_percent": 0,
+                "vat_flag": "No" if row.get("vat") == 0 else "Yes",  # 2.9.87: the VAT column of the PDF row
             })
             created += 1
         if created:
@@ -501,6 +509,8 @@ class PurchasesMixin:
                            cash_account=f["paid_account"].get().split(" - ", 1)[0].strip())
         else: invoice.update(payment_method=PAID_BY[0], amount_paid="0")
         stock = [r for r in f["items_sheet"].ordered() if (r.get("item_code") or r.get("name")) and _num(r.get("quantity"))]
+        exempt_rows = sum(round((_num(r["unit_cost"]) or 0) * (_num(r["quantity"]) or 0) * (1 - (_num(r.get("discount_percent")) or 0) / 100), 2) for r in stock if r.get("vat_flag") == "No")
+        taxable_rows = [r for r in stock if r.get("vat_flag") != "No"]
         if stock:
             lines = []; warehouse = (f["warehouse"].get() or "MAIN").split(" - ", 1)[0]
             for r in stock:
@@ -508,22 +518,26 @@ class PurchasesMixin:
                 if not code:
                     item = resolve_item(self, r["name"], r.get("unit") or "unit", None, party["id"] if party else None); code = item["sku"]
                 cost = (_num(r["unit_cost"]) or 0) * (1 - (_num(r.get("discount_percent")) or 0) / 100)
-                cost *= net_taxable/taxable if taxable else 1
+                if r.get("vat_flag") != "No": cost *= net_taxable/taxable if taxable else 1
                 item_row = next((i for i in getattr(self, "inventory_rows", []) if i.get("sku") == code), None)
                 line = {"item_code": code, "description": r.get("name") or code, "quantity": _num(r["quantity"]), "unit": r.get("unit") or "", "unit_price": round(cost, 6),
                               "discount_percent": _num(r.get("discount_percent")) or 0, "vat_rate": rate, "warehouse": warehouse}
                 if item_row and item_row.get("cost_account") and v["type"].get() != "Assets": line["expense_account"] = item_row["cost_account"]
+                if r.get("vat_flag") == "No":  # 2.9.87: a line without VAT
+                    line.update(vat_rate=0, vat=0, deductible_subtotal=0, non_deductible_subtotal=round(line["quantity"] * line["unit_price"], 2))
                 lines.append(line)
+            taxed = [line for line in lines if line.get("vat_rate") != 0 or "non_deductible_subtotal" not in line]
             remaining_subtotal=net_taxable; remaining_vat=vat
-            for index,line in enumerate(lines):
-                subtotal=(round(line["quantity"]*line["unit_price"],2) if index<len(lines)-1 else remaining_subtotal)
+            for index,line in enumerate(taxed):
+                subtotal=(round(line["quantity"]*line["unit_price"],2) if index<len(taxed)-1 else remaining_subtotal)
                 line["deductible_subtotal"]=subtotal
-                line_vat=(round(subtotal*rate/100,2) if index<len(lines)-1 else remaining_vat)
+                line_vat=(round(subtotal*rate/100,2) if index<len(taxed)-1 else remaining_vat)
                 line["vat"]=line_vat
                 remaining_subtotal=round(remaining_subtotal-subtotal,2); remaining_vat=round(remaining_vat-line_vat,2)
-            if any(line["deductible_subtotal"]<0 or line["vat"]<0 for line in lines):
+            if any(line["deductible_subtotal"]<0 or line["vat"]<0 for line in lines) or (vat and not taxed):
                 raise ValueError("Item totals do not match the purchase amount and VAT. Check the item lines")
-            if exempt: lines.append({"description": "Exempt part", "quantity": 1, "unit_price": exempt, "deductible_subtotal": 0, "non_deductible_subtotal": exempt, "vat_rate": 0, "vat": 0})
+            extra_exempt = round(exempt - exempt_rows, 2)
+            if extra_exempt > 0.004: lines.append({"description": "Exempt part", "quantity": 1, "unit_price": extra_exempt, "deductible_subtotal": 0, "non_deductible_subtotal": extra_exempt, "vat_rate": 0, "vat": 0})
             return invoice, lines
         line = {"description": f"Supplier invoice {invoice['invoice_number']}".strip(), "quantity": 1, "unit_price": net_taxable, "deductible_subtotal": net_taxable,
                 "non_deductible_subtotal": exempt, "vat_rate": rate, "vat": vat}

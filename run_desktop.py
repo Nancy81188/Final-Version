@@ -58,20 +58,50 @@ def start_local_server(database=None):
     def serve():
         try:
             run_server(host="127.0.0.1", port=0, database=str(database), admin_password=initial_password, local_key=key, on_ready=on_ready)
-        except Exception:
+        except Exception as exc:
             log.exception("The data service stopped")
+            chosen["error"] = f"{type(exc).__name__}: {exc}"
             ready.set()
 
     thread = threading.Thread(target=serve, name="SaberLocalDataService", daemon=True)
     thread.start()
-    if not ready.wait(60) or "port" not in chosen:
-        raise RuntimeError("Saber Accounting could not start its local data service. See the log file in the SaberAccounting\\logs folder.")
+    _wait_for_service(ready, thread)
+    if "port" not in chosen:
+        reason = chosen.get("error") or "the data service did not answer"
+        hint = ("\n\nAnother Saber program is using the data (the background backup or a second window): restart the computer, "
+                "or end 'SaberAccountingBackup' in the Task Manager, then open Saber Accounting again.") if "locked" in reason.lower() else ""
+        raise RuntimeError(f"Saber Accounting could not start its local data service ({reason}).{hint}")
     app_runtime.LOCAL_URL = f"http://127.0.0.1:{chosen['port']}"; app_runtime.LOCAL_KEY = key
     if initial_password:
         from backup_service import backup_all
         try: backup_all(database)
         except Exception: log.exception("First backup failed")
     return True
+
+
+def _wait_for_service(ready, thread, limit=1800):
+    """2.9.87: the first start after an update upgrades every company file and can take minutes on large books; the
+    program used to give up after 60 seconds. A small window says what is happening while the service is still working."""
+    if ready.wait(5) or not thread.is_alive(): return
+    root = None
+    try:
+        root = tk.Tk(); root.title("Saber Accounting"); root.resizable(False, False)
+        tk.Label(root, text="Preparing your company files...", font=("Segoe UI", 11, "bold"), padx=24, pady=(14)).pack()
+        tk.Label(root, text="The first start after an update brings every company and year up to date.\nThis can take a few minutes on large books - please wait.",
+                 justify="left", padx=24).pack(pady=(0, 14))
+        root.update()
+    except Exception:
+        root = None
+    import time
+    started = time.monotonic()
+    while not ready.is_set() and thread.is_alive() and time.monotonic() - started < limit:
+        ready.wait(0.2)
+        if root is not None:
+            try: root.update()
+            except Exception: root = None
+    if root is not None:
+        try: root.destroy()
+        except Exception: pass
 
 
 def _tell(message, error=False):

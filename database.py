@@ -41,18 +41,42 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             return None
 
     def _open_connection(self):
-        connection = sqlite3.connect(self.path, check_same_thread=not self.pooled)
+        # 2.9.87: wait up to 30 s for another writer (the background backup, a second window) instead of failing at
+        # once with "database is locked" - that error stopped the program from starting while a backup was running.
+        connection = sqlite3.connect(self.path, check_same_thread=not self.pooled, timeout=30)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout=30000")
         connection.execute("PRAGMA foreign_keys=ON")
         # Performance PRAGMAs: WAL keeps reads fast while writing, NORMAL
         # sync is safe under WAL, and a larger page cache / memory temp
         # store cut disk churn. These only speed things up; the data and
         # every existing behaviour are unchanged.
-        connection.execute("PRAGMA journal_mode=WAL")
+        self._set_wal(connection)
         connection.execute("PRAGMA synchronous=NORMAL")
         connection.execute("PRAGMA temp_store=MEMORY")
         connection.execute("PRAGMA cache_size=-16000")  # ~16 MB page cache
         return connection
+
+    def _set_wal(self, connection):
+        """2.9.87: switching to WAL needs the -wal / -shm files next to the data file. On Windows they can be held for a
+        moment by an antivirus scan, a backup or sync tool, or left behind by a program that was closed by force, and
+        SQLite then answers "disk I/O error": the program stopped at start ("could not start its local data service" in
+        the user's log). Now: a few short retries; a left-over -shm file (rebuilt by SQLite from the -wal) is removed
+        when nothing holds it; then the program carries on - nothing is lost."""
+        import time
+        for attempt in range(10):
+            try:
+                connection.execute("PRAGMA journal_mode=WAL"); return True
+            except sqlite3.OperationalError as exc:
+                text = str(exc).lower()
+                if "disk i/o" not in text and "locked" not in text and "busy" not in text: raise
+                logging.getLogger("saber").warning("Data file busy (%s), attempt %s: %s", self.path, attempt + 1, exc)
+                if attempt == 3:
+                    try: os.remove(str(self.path) + "-shm")  # fails harmlessly while another program really holds it
+                    except OSError: pass
+                time.sleep(0.2 * (attempt + 1))
+        logging.getLogger("saber").warning("Opening %s without switching to WAL (its -wal / -shm files are held by another program)", self.path)
+        return False
 
     def release(self):
         """Close the kept-open connection (before the file is moved, deleted or replaced)."""

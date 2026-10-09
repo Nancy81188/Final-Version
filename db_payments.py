@@ -183,7 +183,9 @@ class PaymentsStore:
             number=str(item.get("expense_number") or "").strip() or self._next_number(db,"expenses","expense_number","EXP",date)
             db.execute("UPDATE expenses SET expense_number=? WHERE id=?",(number,expense_id))
             entry=db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,created_by,created_at)
-                VALUES(?,?,?,?,?,?,?,?)""",(number if not db.execute("SELECT 1 FROM journal_entries WHERE entry_number=?",(number,)).fetchone() else f"EXP-{expense_id}",date,description,"expense",expense_id,currency,user_id,utcnow()))
+                VALUES(?,?,?,?,?,?,?,?)""",(number if not db.execute("SELECT 1 FROM journal_entries WHERE entry_number=?",(number,)).fetchone() else f"EXP-{expense_id}",date,
+                description+(f" - {str(item.get('reference')).strip()}" if str(item.get("reference") or "").strip() and str(item.get("reference")).strip() not in description else ""),  # 2.9.87: the supplier's invoice number in the entry
+                "expense",expense_id,currency,user_id,utcnow()))
             lines=[self._line_for_side(expense_account,with_vat,expense_side),self._line_for_side(expense_without_vat_account,without_vat,expense_without_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(payment_account,total,payment_side)]
             difference=sum(Decimal(str(line[1]))-Decimal(str(line[2])) for line in lines)
             if difference>0: lines.append((DEFAULT_LEBANESE_ACCOUNTS["import_variance"],Decimal("0"),difference))

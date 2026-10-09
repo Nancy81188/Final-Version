@@ -435,6 +435,13 @@ def _vat_amount_after(text, invoice_currency=""):
 
 
 def _invoice_number(text):
+    same_line = re.compile(
+        r"(?:invoice|inv|facture|فاتورة|رقم[^\S\n]*(?:ال)?فاتورة|n°[^\S\n]*facture|bill)"
+        r"[^\S\n]*(?:no\.?|number|num|#|n°|رقم)?[^\S\n]*[:#.]?[^\S\n]*([A-Z\d][A-Z\d\-/]{1,24})", re.I)
+    for match in same_line.finditer(text):  # 2.9.87
+        candidate = _normalize_amount_line(match.group(1)).strip("-/")
+        if any(char.isdigit() for char in candidate) and not re.fullmatch(r"\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}", candidate):
+            return candidate
     pattern = re.compile(
         r"(?:invoice|inv|facture|فاتورة|رقم\s*(?:ال)?فاتورة|n°\s*facture|bill)"
         r"\s*(?:no\.?|number|num|#|n°|رقم)?\s*[:#.]?\s*([A-Z\d][A-Z\d\-/]{1,24})",
@@ -727,6 +734,22 @@ def _total_first_row(line):
     return None
 
 
+EXPENSE_ACCOUNT_HINTS = (  # 2.9.87: a starting point for the expense account (Lebanese chart); the user confirms it
+    (r"\b(?:office\s+)?rent(?:al)?\b|loyer|إيجار", "6263.1"), (r"\bwater\b|مياه", "6263.3"),
+    (r"maintenance|repair|entretien|صيانة", "6262"), (r"telephone|mobile\s+line|internet|telecom|courier|postage|اتصالات|هاتف", "6261.5"),
+    (r"insurance|assurance|تأمين", "6268"), (r"advertis|publicit|marketing|إعلان", "6269.3"),
+    (r"stationery|office\s+supplies|papeterie|قرطاسية", "6269.4"), (r"legal|lawyer|consult|audit\s+fee|accounting\s+fee|avocat|محام|استشار", "6265.3"),
+    (r"travel|hotel|air\s*ticket|flight|accommodation|سفر|فندق", "6264.2"), (r"subscription|abonnement|اشتراك", "6266.2"),
+    (r"bank\s+charges?|commission\s+bancaire", "6739"), (r"transport(?:ation)?|freight|shipping|clearance|customs\s+formalities|نقل|شحن", "6261.1"),
+)
+
+
+def suggest_expense_account(text):
+    for pattern, code in EXPENSE_ACCOUNT_HINTS:
+        if re.search(pattern, text or "", re.I): return code
+    return ""
+
+
 def suggest_invoice_type(text):
     """Conservative PDF category suggestion, never a posting decision.
 
@@ -923,6 +946,7 @@ def _parse_invoice_text(path, text):
     result = {"file": path.name, "path": str(path), "text": text, "invoice_number": "", "invoice_date": "", "party_name": "", "currency": "",
               "subtotal": None, "vat": None, "total": None, "items": [], "notes": ""}
     result["suggested_type"] = suggest_invoice_type(text)
+    result["suggested_account"] = suggest_expense_account(text)
     if len(text.strip()) < 20:
         result["notes"] = "This PDF is a scanned image (no text inside). The file will be attached; enter the amounts manually."; return result
     result["invoice_number"] = _invoice_number(text)
@@ -940,6 +964,9 @@ def _parse_invoice_text(path, text):
             or abs(result["subtotal"] + result["vat"] - result["total"]) > max(0.05, abs(result["total"]) * 0.005)):
         result["subtotal"] = reconciled
     result["party_name"] = _supplier_name(text)
+    top = [line for line in text.splitlines() if line.strip()][:4]
+    if mentions_own_company("\n".join(top)):  # 2.9.87: the company issued this document (a sales invoice): the party is the customer
+        result["party_name"] = _bill_to_name(text) or result["party_name"]
     result["items"] = _line_items(text)
     # 2.9.85: rows with their own VAT column - the subtotal of the taxable rows and of the rows without VAT
     if result["items"] and all("vat" in i for i in result["items"]) and result.get("vat") is not None:
@@ -981,9 +1008,9 @@ def _parse_invoice_text(path, text):
     return result
 
 
-_ADDRESS = re.compile(r"invoice|facture|date|tel|phone|fax|page|www|@|p\.?\s*o\.?\s*box|b\.p\.|street|floor|flr|level|block|bldg|"
-                      r"building|tower|avenue|road|zone|imm\.|secteur|capital|r\.?c\.?\b|mof|vat|v\.a\.t|bill\s+to|client|customer|"
-                      r"name\s*:|address|^copy$|original|receipts?$|pre-?bill|\bref\b|a/c|account|ministry|department|description", re.I)
+_ADDRESS = re.compile(r"\b(?:invoice|facture|date|tel|phone|fax|page|www|street|floor|flr|level|block|bldg|building|towers?|avenue|road|highway|"
+                      r"zone|secteur|capital|mof|vat|client|customer|address|original|ref|account|ministry|department|description|"
+                      r"statement|period|balance)\b|@|p\.?\s*o\.?\s*box|b\.p\.|imm\.|\br\.?c\.?\b|v\.a\.t|bill\s+to|name\s*:|^copy$|receipts?$|pre-?bill|a/c", re.I)
 _COMPANY_FORM = re.compile(r"\b(?:s\.?a\.?l|s\.?a\.?r\.?l|sarl|llc|l\.l\.c|ltd|limited|inc|co\.|c\.s\.?|group|fze|fzco|est\.?|"
                            r"establishment|trading|company|center|centre|shipping|logistics|est)\b|شركة|مؤسسة", re.I)
 
@@ -1016,11 +1043,23 @@ def _supplier_name(text):
     return first[:60] if letters >= 8 and sum(ch.isalpha() or ch == " " for ch in first) >= 0.8 * len(first) else ""
 
 
+def _bill_to_name(text):
+    """The name after 'Bill to / Sold to / Client / Customer / M/s' (same line, or the next line when the label is alone)."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        match = re.search(r"(?i)\b(?:bill(?:ed)?\s*to|sold\s*to|invoice\s*to|client|customer|m/s|messrs)\b\s*(?:name)?\s*[:.]?\s*(.*)$", line)
+        if not match: continue
+        value = re.split(r"\s{3,}", match.group(1).strip())[0].strip(" :-")
+        if len(value) < 3 and index + 1 < len(lines): value = re.split(r"\s{3,}", lines[index + 1].strip())[0].strip(" :-")
+        if len(value) >= 3 and sum(ch.isalpha() for ch in value) >= 3 and not mentions_own_company(value): return value[:60]
+    return ""
+
+
 def _merge_invoice_suggestions(primary, fallback):
     """Fill gaps from OCR while keeping values read from the PDF text layer preferred."""
     result = dict(primary)
     for key in ("invoice_number", "invoice_date", "party_name", "currency", "subtotal", "vat",
-                "total", "items", "suggested_type", "asset_name", "acquisition_cost"):
+                "total", "items", "suggested_type", "suggested_account", "asset_name", "acquisition_cost"):
         value = result.get(key)
         if value is None or value == "" or value == []:
             replacement = fallback.get(key)

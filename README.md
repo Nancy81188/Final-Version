@@ -1,5 +1,58 @@
 # Saber Accounting MVP
 
+## Version 2.9.87 (PDF on every tab, bank reconciliation, program start and setup)
+- Program start / setup (important):
+  - The background backup program (SaberAccountingBackup, started with Windows) also upgraded the company files. After an update the old backup kept running and fought the new version over the same files: "database is locked", "could not start its local data service", and the setup could not replace the backup program (in use). Now the backup only copies files (never upgrades them); the setup stops the backup and Saber before installing and starts the backup again after; uninstall stops them too.
+  - The data files wait up to 30 seconds for another writer instead of failing at once.
+  - The first start after an update (every company file is brought up to date) shows "Preparing your company files..." and waits, instead of stopping after 60 seconds; if the service really stops, the message gives the reason.
+  - Reading PDFs in the background no longer touches the window from the reading thread (Tk is not thread-safe); the same for the local PDF assistance.
+- Bank Reconciliation:
+  - "Import Statement (Excel / CSV / PDF)": a bank statement in PDF (text or scan) is read - date, description, cheque number, amount with its sign from the running balance; opening and closing balance lines are not movements. The closing balance fills "Statement ending balance", and the program checks opening + movements = closing (a warning when a line was not read).
+  - The same statement imported twice is not doubled.
+  - An opening balance brought forward (opening voucher) is no longer an outstanding deposit (the reconciliation showed a 10,000 difference); book items of earlier months still not matched stay outstanding once earlier statements were imported.
+  - Post Line: money in (interest) is proposed to 773 Interests & Similar Revenues Earned instead of the bank-charges account.
+- Purchases: each item line has VAT Yes / No; the lines without VAT make the Exempt amount and carry no VAT when posted (an invoice with spices at 11% and nuts at 0% is posted exactly).
+- Sales > Import PDF: the item lines of the PDF are filled (not one "As per file" line); the customer is taken from "Bill To" when the invoice is ours.
+- Expenses > PDF: the expense account is suggested from the text (rent 6263.1, maintenance 6262, telephone / internet 6261.5, insurance 6268, advertising 6269.3, stationery 6269.4, legal / consulting 6265.3, travel 6264.2, subscriptions 6266.2, bank charges 6739, transport 6261.1) - check it before saving; the expense entry shows the supplier's invoice number.
+- Fixed Assets > Fill from PDF: after the register item is created, the program offers to book the supplier's invoice (Dr asset + VAT / Cr supplier) and links it to the asset - the register item alone posts nothing.
+- PDF reading: the invoice number is taken on the line of its label first ("TAX INVOICE" followed by the address no longer gives "W38"); supplier names containing address words (TECHZONE) are kept.
+- Checked through the real screens with real and test PDFs: Purchases (54-line text invoice), Expenses (scanned), Fixed Assets, Sales, Uploaded Data (8-page bundle: 2 invoices + supporting papers), Bank Reconciliation (PDF and scanned statement) - 26 checks, all passed; the trial balance balances.
+- Changed files: pdf_import.py, bank_rec.py, database.py, db_payments.py, company_manager.py, backup_service.py, run_desktop.py, installer.iss, desktop_stage3_common.py, desktop_stage3.py, desktop_purchases.py, desktop_expenses.py, desktop_asset_register.py, desktop_v22.py, app_runtime.py, README.md. New test: test_v2_9_87.py.
+
+## Version 2.9.87 (program start, setup, PDF on every tab, bank reconciliation)
+- Program start / setup (important, from the user's log):
+  - "Saber Accounting could not start its local data service": the log showed "disk I/O error" when the data file was switched to WAL - its -wal / -shm files were held by another Saber program (the background backup) or a sync folder. The program now tries again for a few seconds, then opens the file in its current mode (slower, nothing lost) instead of stopping.
+  - The background backup (SaberAccountingBackup, started with Windows) also upgraded the company files; after an update the old backup kept running and fought the new version over the same files, and the setup could not replace it (in use). Now the backup only copies files; the setup stops the backup and Saber before installing and starts the backup again after; uninstall stops them too.
+  - The data files wait up to 30 seconds for another writer instead of failing at once with "database is locked".
+  - The first start after an update shows "Preparing your company files..." and waits instead of stopping after 60 seconds; if the service really stops, the message gives the reason.
+  - Reading PDFs in the background no longer touches the window from the reading thread (Tk is not thread-safe); the same for the local PDF assistance.
+- Bank Reconciliation:
+  - "Import Statement (Excel / CSV / PDF)": a bank statement in PDF (text or scan) is read - date, description, cheque number, amount with its sign from the running balance; opening / closing balance lines are not movements. The closing balance fills "Statement ending balance" and the program checks opening + movements = closing (warning when a line was not read).
+  - The same statement imported twice is not doubled.
+  - An opening balance brought forward (opening voucher) is no longer an outstanding deposit (the report showed a 10,000 difference); book items of earlier months still not matched stay outstanding once earlier statements were imported.
+  - Post Line: money in (interest) is proposed to 773 Interests & Similar Revenues Earned, not the bank-charges account.
+- Purchases: each item line has VAT Yes / No; lines without VAT make the Exempt amount and carry no VAT (an invoice with spices at 11% and nuts at 0% is posted exactly).
+- Sales > Import PDF: the item lines of the PDF are filled (not one "As per file" line); the customer comes from "Bill To" when the invoice is ours.
+- Expenses > PDF: the expense account is suggested from the text (rent 6263.1, maintenance 6262, telephone / internet 6261.5, insurance 6268, advertising 6269.3, stationery 6269.4, legal / consulting 6265.3, travel 6264.2, subscriptions 6266.2, bank charges 6739, transport 6261.1) - check it; the expense entry shows the supplier's invoice number.
+- Fixed Assets > Fill from PDF: after the register item is created, the program offers to book the supplier's invoice (Dr asset + VAT / Cr supplier) and links it to the asset.
+- PDF reading: the invoice number is taken on its label line first ("TAX INVOICE" + address no longer gives "W38"); supplier names with address words (TECHZONE) are kept.
+- Checked through the real screens with real and test PDFs: Purchases (54-line invoice), Expenses (scan), Fixed Assets, Sales, Uploaded Data (8-page bundle), Bank Reconciliation (PDF and scanned statement): 26 checks passed, trial balance balanced.
+- Changed files: database.py, pdf_import.py, bank_rec.py, db_payments.py, company_manager.py, backup_service.py, run_desktop.py, installer.iss, desktop_stage3_common.py, desktop_stage3.py, desktop_purchases.py, desktop_expenses.py, desktop_asset_register.py, desktop_v22.py, app_runtime.py, README.md. New test: test_v2_9_87.py.
+
+## Version 2.9.87 (program start, setup, speed, PDF on every tab, bank reconciliation)
+- Program start (from the user's log): "could not start its local data service" came from "disk I/O error" when the data file was opened - its -wal / -shm files were held for a moment (antivirus scan, backup or sync tool, a program closed by force). The program now retries for a few seconds, removes a left-over -shm file when nothing holds it (SQLite rebuilds it from the -wal), and carries on; the data files wait up to 30 seconds for another writer instead of failing with "database is locked".
+- The first start after an update shows "Preparing your company files..." and waits instead of stopping after 60 seconds; if the service really stops, the message gives the reason.
+- Setup: the setup stops Saber and the background backup before replacing the files ("file in use" / stuck setup) and starts the backup again after; uninstall stops them too. The background backup only copies the files (it used to upgrade them too, fighting the new version after an update).
+- Speed: the header logo is drawn once per run (a third of a second every time the main screen opened); the PDF reading thread never touches the window (it could freeze it).
+- Bank Reconciliation: "Import Statement (Excel / CSV / PDF)" reads a PDF statement (text or scan) - date, description, cheque number, amount signed by the running balance; the closing balance fills "Statement ending balance" and opening + movements = closing is checked. The same statement is not imported twice. An opening balance brought forward is no longer an outstanding deposit (the report showed a 10,000 difference). Money in (interest) is proposed to 773 instead of the bank-charges account.
+- Purchases: each item line has VAT Yes / No; lines without VAT make the Exempt amount and carry no VAT when posted.
+- Sales > Import PDF: the item lines of the PDF are filled; the customer comes from "Bill To" when the invoice is ours.
+- Expenses > PDF: the expense account is suggested from the text (rent 6263.1, maintenance 6262, telephone 6261.5, insurance 6268, advertising 6269.3, stationery 6269.4, legal / consulting 6265.3, travel 6264.2, subscriptions 6266.2, bank charges 6739, transport 6261.1); the entry shows the supplier's invoice number.
+- Fixed Assets > Fill from PDF: offers to book the supplier's invoice (Dr asset + VAT / Cr supplier) and links it to the asset.
+- PDF reading: invoice number on its label line first (no more "W38"); supplier names with address words (TECHZONE) kept.
+- Checked through the real screens (Purchases, Expenses scan, Fixed Assets, Sales, Uploaded Data 8-page bundle, Bank Reconciliation PDF and scan): 26 checks passed, trial balance balanced.
+- Changed files: database.py, brand_images.py, run_desktop.py, installer.iss, backup_service.py, company_manager.py, pdf_import.py, bank_rec.py, db_payments.py, desktop_stage3_common.py, desktop_stage3.py, desktop_purchases.py, desktop_expenses.py, desktop_asset_register.py, desktop_v22.py, app_runtime.py, README.md. New test: test_v2_9_87.py.
+
 ## Version 2.9.86 (new items on upload: notice and 90% warning)
 - Uploading an invoice (Purchases > PDF, Uploaded Data PDF, Import Purchases from Excel): an item that does not exist in Inventory is created, and a notice then lists the new items (code, name, unit) so they can be checked (category, unit, stock account).
 - When an item with 90% or more of the same name exists (e.g. "HPL Panel 4mm Wht" and "HPL Panel 4mm White"), a warning asks what to do: use the existing item or create a new one (the answer is kept for the rest of the session). Names less alike are created without a question; the same name written differently (case, spaces, dashes) is still the same item.

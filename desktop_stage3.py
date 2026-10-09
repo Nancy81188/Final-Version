@@ -13,11 +13,17 @@ from desktop_expenses import ExpensesMixin
 class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
     def run_ai_task(self, work, success):
         """Run free local document/account assistance off the UI thread."""
+        import queue
+        events=queue.Queue()  # 2.9.87: the thread never calls the window (Tk is not thread-safe); the screen polls
         def run():
-            try: result=work(None)
-            except Exception as exc:
-                error=str(exc); self.after(0,lambda:messagebox.showerror("Local PDF assistance",error)); return
-            self.after(0,lambda:success(result))
+            try: events.put(("done",work(None)))
+            except Exception as exc: events.put(("error",str(exc)))
+        def poll():
+            try: kind,value=events.get_nowait()
+            except queue.Empty: self.after(100,poll); return
+            if kind=="error": messagebox.showerror("Local PDF assistance",value)
+            else: success(value)
+        self.after(100,poll)
         threading.Thread(target=run,daemon=True,name="SaberLocalAssist").start()
 
     # ================================================================ Import

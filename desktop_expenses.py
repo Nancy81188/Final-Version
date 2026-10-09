@@ -96,6 +96,8 @@ class ExpensesMixin:
             if subtotal is None and data.get("total") is not None and data.get("vat") is not None:
                 subtotal=round(data["total"]-data["vat"],2)
             if subtotal is not None and not v["with_vat"].get(): v["with_vat"].set(f'{subtotal:.2f}')
+            if data.get("suggested_account") and not v["account"].get().strip():  # 2.9.87: rent -> 6263.1 ... (check it)
+                from desktop_common import account_label; v["account"].set(account_label(self, data["suggested_account"]))
             self.expense_amounts_changed("none")
             suggestion=f["pdf_suggested_type"]
             f["pdf_label"].config(text=f"{Path(path).name}: {data.get('notes', '')}" +

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from decimal import Decimal
 
@@ -29,14 +30,86 @@ def add_statement_lines(database, account, currency, rows, user_id):
         for row in rows:
             amount = _d(row.get("amount"))
             if not amount: continue
+            day = iso_date(row.get("date"), "Date"); text = str(row.get("description") or "").strip()
+            if db.execute("SELECT 1 FROM bank_statement_lines WHERE account_code=? AND currency=? AND line_date=? AND CAST(amount AS REAL)=? AND COALESCE(description,'')=?",
+                          (account, currency, day, float(amount), text)).fetchone():
+                continue  # 2.9.87: the same statement imported twice is not doubled
             db.execute("INSERT INTO bank_statement_lines(account_code,currency,line_date,description,reference,amount,created_at) VALUES(?,?,?,?,?,?,?)",
                 (account, currency, iso_date(row.get("date"), "Date"), str(row.get("description") or "").strip(), str(row.get("reference") or "").strip(), str(amount), utcnow())); added += 1
         db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)", (user_id, "import", "bank_statement", json.dumps({"account": account, "lines": added}), utcnow()))
     return added
 
 
+_STATEMENT_DATE = re.compile(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})\b")
+_STATEMENT_MONEY = re.compile(r"(?<![\d/.\-])-?\d{1,3}(?:,\d{3})*\.\d{2}(?![\d/])(?:\s*(?:CR|DR|-))?", re.I)
+_DEBIT_WORDS = re.compile(r"(?i)\b(?:chq|cheque|check|withdraw\w*|charges?|commission|fees?|debit|payment|paid|transfer\s+to|atm|pos|card|tax)\b")
+
+
+def read_statement_pdf(path):
+    """2.9.87: a bank statement in PDF (text, or a scan read with the local OCR). Each line that starts with a date and
+    has amounts is a movement; the running balance column gives its sign (balance up = money in, down = money out);
+    opening / closing balance lines are not movements. Returns the same rows as the Excel import, plus the balances read."""
+    import pdf_import
+    from pypdf import PdfReader
+    reader = PdfReader(str(path)); texts = []
+    for index, page in enumerate(reader.pages):
+        text = pdf_import._page_text(page, True) or pdf_import._page_text(page)
+        if len(text.strip()) < 20 or text.count("\x1f") > 5:
+            try: text = pdf_import._ocr_pdf_pages(path, [index])[0]
+            except Exception as exc:
+                if not texts: raise ValueError(f"This PDF is a scan and the local OCR could not read it ({exc})")
+        texts.append(text)
+    rows, opening, closing, previous = [], None, None, None
+    for raw in "\n".join(pdf_import.normalize_invoice_text(t) for t in texts).splitlines():
+        match = _STATEMENT_DATE.match(raw)
+        if not match: continue
+        day, month, year = match.groups(); year = int(year) + (2000 if len(year) == 2 else 0)
+        try: date = datetime(year, int(month), int(day)).strftime("%Y-%m-%d")
+        except ValueError: continue
+        rest = raw[match.end():]
+        rest = re.sub(r"^\s*\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}", "", rest)  # value date
+        amounts = []
+        for m in _STATEMENT_MONEY.finditer(rest):
+            token = m.group(0).strip(); negative = token.startswith("-") or token.upper().endswith(("DR", "-"))
+            value = Decimal(re.sub(r"(?i)[^\d.]", "", token)); amounts.append((-value if negative else value, m.start()))
+        description = re.sub(r"\s{2,}", " ", _STATEMENT_MONEY.sub(" ", rest)).strip(" |-")
+        low = description.casefold()
+        if re.search(r"opening|brought forward|b/f|previous balance|رصيد سابق|solde (?:initial|precedent)", low):
+            if amounts: opening = previous = amounts[-1][0]
+            continue
+        if re.search(r"closing|carried forward|c/f|new balance|رصيد نهائي|solde final", low):
+            if amounts: closing = amounts[-1][0]
+            continue
+        if not amounts: continue
+        reference = ""
+        ref = re.search(r"(?i)\b(?:chq|cheque|ref|no\.?)\s*#?\s*(\d{3,})", description)
+        if ref: reference = ref.group(1)
+        if len(amounts) >= 2 and previous is not None:
+            balance = amounts[-1][0]; amount = balance - previous; previous = balance
+            if abs(abs(amount) - abs(amounts[-2][0])) > Decimal("0.01"):  # the balance column does not follow: trust the amount and its column
+                amount = amounts[-2][0] if not _DEBIT_WORDS.search(description) else -abs(amounts[-2][0])
+        elif len(amounts) >= 2:
+            amount = amounts[0][0] if not _DEBIT_WORDS.search(description) else -abs(amounts[0][0]); previous = amounts[-1][0]
+        else:
+            amount = -abs(amounts[0][0]) if _DEBIT_WORDS.search(description) else amounts[0][0]
+            if previous is not None: previous += amount
+        if amount: rows.append({"date": date, "description": description[:200], "reference": reference, "amount": amount})
+    if not rows: raise ValueError("No movement was found in this PDF statement (lines must start with a date and show the amounts)")
+    return rows if opening is None and closing is None else _with_balances(rows, opening, closing)
+
+
+class _Rows(list):
+    """Rows of a statement, with the opening and closing balances printed on it (when found)."""
+
+
+def _with_balances(rows, opening, closing):
+    result = _Rows(rows); result.opening = opening; result.closing = closing; return result
+
+
 def read_statement_file(path):
-    """Excel / CSV bank statement: Date, Description, Reference and either Amount or Debit / Credit (or Withdrawal / Deposit)."""
+    """Excel / CSV bank statement: Date, Description, Reference and either Amount or Debit / Credit (or Withdrawal / Deposit).
+    2.9.87: a PDF statement is read too."""
+    if str(path).lower().endswith(".pdf"): return read_statement_pdf(path)
     from importer import _header_map, _date
     if str(path).lower().endswith(".csv"):
         import csv
@@ -73,6 +146,7 @@ def book_lines(database, account, currency, date_from, date_to):
     with database.connect() as db:
         matched = {r["journal_line_id"]: r["id"] for r in db.execute("SELECT id,journal_line_id FROM bank_statement_lines WHERE journal_line_id IS NOT NULL")}
         rows = [dict(r) for r in db.execute("""SELECT l.id,e.entry_number,e.entry_date,COALESCE(l.description,e.description) description,e.description entry_description,
+            e.source_type,COALESCE(e.voucher_type,'') voucher_type,
             CAST(l.debit AS REAL) debit,CAST(l.credit AS REAL) credit,COALESCE(NULLIF(l.line_currency,''),e.currency) currency,
             CASE WHEN COALESCE(NULLIF(l.line_currency,''),e.currency)<>e.currency AND l.amount IS NOT NULL THEN CAST(l.amount AS REAL) ELSE NULL END line_amount
             FROM journal_lines l JOIN journal_entries e ON e.id=l.entry_id JOIN accounts a ON a.id=l.account_id WHERE a.code=?""", (account,))]
@@ -144,9 +218,15 @@ def post_statement_line(database, statement_id, account_code, user_id):
 
 def reconciliation(database, account, currency, date_from, date_to, statement_balance=None):
     """Bank balance per statement = book balance + payments not yet cleared - deposits not yet cleared + statement items not booked."""
-    books_all = book_lines(database, account, currency, "0000-01-01", date_to); books = [b for b in books_all if b["iso_date"] >= date_from]
+    books_all = book_lines(database, account, currency, "0000-01-01", date_to)
     statement = statement_lines(database, account, date_from, date_to)
     book_balance = sum((b["amount"] for b in books_all), ZERO)
+    # 2.9.87: an opening balance brought forward is not a deposit waiting for the bank (it is the statement's opening
+    # balance); book items of earlier months still not matched stay outstanding once earlier statements were imported.
+    with database.connect() as db:
+        earlier = db.execute("SELECT 1 FROM bank_statement_lines WHERE account_code=? AND currency=? AND line_date<? LIMIT 1", (account, currency, date_from)).fetchone()
+    def opening(b): return b.get("source_type") in ("opening", "year_close") or b.get("voucher_type") == "04"
+    books = [b for b in books_all if (b["iso_date"] >= date_from or earlier) and not opening(b)]
     outstanding = [b for b in books if not b["statement_id"]]
     not_booked = [s for s in statement if not s["journal_line_id"] and s["currency"] == currency]
     deposits = sum((b["amount"] for b in outstanding if b["amount"] > 0), ZERO); payments = -sum((b["amount"] for b in outstanding if b["amount"] < 0), ZERO)

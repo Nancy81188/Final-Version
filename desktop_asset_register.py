@@ -100,7 +100,36 @@ class AssetRegisterMixin:
                 self.asset_fields[key].set(f"{value:.2f}" if key=="cost" else str(value))
         if details.get("acquired_on"):
             self.asset_fields["start_on"].set(details["acquired_on"])
-        self.review_asset_pdf(path,data.get("notes",""))
+        self.review_asset_pdf(path,data.get("notes",""),on_created=lambda created:self.offer_asset_purchase(created,data,path))
+
+    def offer_asset_purchase(self,asset,data,path):
+        """2.9.87: the register item alone posts nothing - the books would miss the asset. Offer to book the supplier's
+        invoice read from the same PDF (Dr asset account + VAT / Cr supplier) and link it to the register item."""
+        if asset.get("invoice_id") or asset.get("_already_registered"): return None
+        cost=data.get("subtotal") or data.get("acquisition_cost"); vat=data.get("vat") or 0; party=(data.get("party_name") or "").strip()
+        if not cost or not party: return None
+        account=str(asset.get("asset_account") or "").split(" - ",1)[0]; total=round(float(cost)+float(vat),2)
+        if not messagebox.askyesno("Book the asset purchase",
+                f"The register item does not post an entry. Book the supplier's invoice now?\n\n"
+                f"{data.get('invoice_number') or ''}  {data.get('invoice_date') or ''}  {party}\n"
+                f"Dr {account} (asset)  {float(cost):,.2f}\nDr deductible VAT  {float(vat):,.2f}\nCr {party}  {total:,.2f} {data.get('currency') or asset.get('currency')}\n\n"
+                "Choose No if this invoice is already entered in Purchases."): return None
+        rate=round(float(vat)/float(cost)*100,4) if cost else 0
+        try:
+            invoice_id=self.client.create_manual_invoice({"invoice_number":data.get("invoice_number") or "","invoice_date":data.get("invoice_date") or asset.get("acquired_on"),
+                "party_name":party,"kind":"assets","currency":data.get("currency") or asset.get("currency") or "USD","status":"posted","source_file":Path(path).name,
+                "expense_account":account,"expense_no_vat_account":account},
+                [{"description":asset.get("name") or "Fixed asset","quantity":1,"unit_price":float(cost),"deductible_subtotal":float(cost),"vat_rate":rate,"vat":float(vat)}])["invoice_id"]
+            try: self.client.upload_attachment(invoice_id,Path(path).name,"application/pdf",Path(path).read_bytes())
+            except Exception: pass
+            fields={k:asset.get(k) for k in ("asset_code","name","acquired_on","start_on","currency","cost","residual","useful_months","frequency","asset_account","depreciation_account","accumulated_account","annual_rate","opening_date")}
+            fields.update(acquired_on=_dd(fields["acquired_on"]),start_on=_dd(fields["start_on"]),opening_date=_dd(fields.get("opening_date")) if fields.get("opening_date") else "",invoice_id=invoice_id)
+            try: self.client.save_asset(fields,asset["id"])
+            except Exception: pass  # the invoice is booked; the link is optional
+        except Exception as exc:
+            return messagebox.showerror("Book the asset purchase",f"The register item is saved, but the invoice was not booked: {exc}\nRecord it in Purchases (type Assets).")
+        messagebox.showinfo("Book the asset purchase",f"Purchase booked and linked to asset {asset.get('asset_code')}."); self.load_assets()
+        return invoice_id
 
     def review_asset_pdf(self,path,parser_notes="",on_created=None):
         """Editable, explicit review of all register-defining fields before creation."""

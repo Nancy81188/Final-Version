@@ -13,7 +13,10 @@ def backup_all(master_path):
     master_path = Path(master_path)
     if not master_path.is_file():
         return []
-    manager = CompanyManager(master_path)
+    # 2.9.87: the background backup only copies the files. It used to upgrade them too (an older backup program still
+    # running after an update fought with the new program over the same files: "database is locked", the program could
+    # not start and the setup could not replace the backup program).
+    manager = CompanyManager(master_path, prepare=False)
     made = []
     for company in manager.list_companies(True):
         for year in company.get("years", []):

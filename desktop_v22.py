@@ -147,13 +147,26 @@ class V22Mixin:
         from pdf_import import read_invoice_pdf
         path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf")])
         if not path: return
+        from desktop_stage3_common import prepare_pdf_reading; prepare_pdf_reading(self)  # 2.9.87: our name is the seller, the party is the customer
         data = read_invoice_pdf(path); self.new_sales_invoice(confirm=False)
         if data.get("invoice_date"): self.sales_date.set(data["invoice_date"])
         if data.get("invoice_number"): self.sales_no.set(str(data["invoice_number"]).strip())
         if data.get("party_name"): self.sales_party.set(data["party_name"])
         if data.get("currency"): self.sales_currency.set(data["currency"])
-        first = self.sales_items[0]; first.update(description=f"As per {Path(path).name}", quantity=1, unit_price=data.get("subtotal") or data.get("total") or 0)
-        self.recalculate_sales_item(first); self.sales_sheet.item(first["_iid"], values=self.sales_row_values(first)); self.update_sales_totals()
+        rate = round(data["vat"] / data["subtotal"] * 100, 4) if data.get("subtotal") and data.get("vat") is not None else None
+        items = [i for i in data.get("items") or [] if i.get("quantity") and i.get("unit_price") is not None]
+        if items and data.get("subtotal") and abs(sum(float(i["total"]) for i in items) - float(data["subtotal"])) <= max(0.05, float(data["subtotal"]) * 0.005):
+            for index, item in enumerate(items):  # 2.9.87: the lines of the PDF, not one "As per file" line
+                values = {"description": item["description"], "quantity": item["quantity"], "unit": item.get("unit") or "unit", "unit_price": item["unit_price"], "discount_percent": 0}
+                if rate is not None: values["vat_rate"] = rate if "vat" not in item else (11.0 if item["vat"] else 0.0)
+                if index == 0:
+                    first = self.sales_items[0]; first.update(values); self.recalculate_sales_item(first); self.sales_sheet.item(first["_iid"], values=self.sales_row_values(first))
+                else: self.add_sales_item(values)
+        else:
+            first = self.sales_items[0]; first.update(description=f"As per {Path(path).name}", quantity=1, unit_price=data.get("subtotal") or data.get("total") or 0)
+            if rate is not None: first["vat_rate"] = rate
+            self.recalculate_sales_item(first); self.sales_sheet.item(first["_iid"], values=self.sales_row_values(first))
+        self.update_sales_totals()
         messagebox.showinfo("Import PDF", f"{data.get('notes', '')}\nCheck the invoice number, customer and amount, then press Save.")
 
     # ------------------------------------------------------------ F2: the list that fits the field you are in
@@ -454,7 +467,7 @@ class V22Mixin:
         tk.Label(bar, text="Statement ending balance", bg=LIGHT).pack(side="left"); tk.Entry(bar, textvariable=self.bk["balance"], width=12).pack(side="left", padx=4)
         tk.Button(bar, text="Show", command=self.load_bank_rec, bg=GOLD, fg=NAVY, border=0, padx=14, pady=5, font=("Segoe UI", 9, "bold")).pack(side="left", padx=6)
         bar2 = tk.Frame(page, bg=LIGHT); bar2.pack(fill="x", padx=8, pady=2)
-        for text, command in (("Import Statement (Excel / CSV)", self.import_bank_statement), ("Auto Match", self.bank_auto_match), ("Match Selected", self.bank_match_selected),
+        for text, command in (("Import Statement (Excel / CSV / PDF)", self.import_bank_statement), ("Auto Match", self.bank_auto_match), ("Match Selected", self.bank_match_selected),
                               ("Unmatch", self.bank_unmatch), ("Delete Statement Line", self.bank_delete_line)):
             tk.Button(bar2, text=text, command=command, bg=NAVY if text != "Delete Statement Line" else "#8B1E1E", fg="white", border=0, padx=10, pady=5).pack(side="left", padx=2)
         tk.Label(bar2, text="Book to", bg=LIGHT).pack(side="left", padx=(8, 2)); tk.Entry(bar2, textvariable=self.bk["post_account"], width=20).pack(side="left")
@@ -503,13 +516,24 @@ class V22Mixin:
         import bank_rec
         try: account, currency, _start, _end = self._bank_params()
         except ValueError as exc: return messagebox.showwarning("Bank Reconciliation", str(exc))
-        path = filedialog.askopenfilename(filetypes=[("Bank statement", "*.xlsx *.xlsm *.csv")])
+        path = filedialog.askopenfilename(filetypes=[("Bank statement", "*.xlsx *.xlsm *.csv *.pdf")])
         if not path: return
         try:
-            rows = [{**row, "amount": str(row["amount"])} for row in bank_rec.read_statement_file(path)]
+            read = bank_rec.read_statement_file(path)
+            rows = [{**row, "amount": str(row["amount"])} for row in read]
             added = self.client.bank_action("import", {"account": account, "currency": currency, "rows": rows})["added"]
         except Exception as exc: return messagebox.showerror("Bank Reconciliation", f"The statement could not be read: {exc}")
-        messagebox.showinfo("Bank Reconciliation", f"{added} statement line(s) imported. Press Auto Match."); self.load_bank_rec()
+        note = ""
+        opening, closing = getattr(read, "opening", None), getattr(read, "closing", None)
+        if closing is not None:  # 2.9.87: the ending balance printed on the statement fills the check
+            self.bk["balance"].set(f"{closing:.2f}")
+            if opening is not None:
+                moved = sum((r["amount"] for r in read), type(closing)(0)); gap = closing - opening - moved
+                note = (f"\nStatement: opening {opening:,.2f} + movements {moved:,.2f} = closing {closing:,.2f} (all lines read)." if abs(gap) < 0.005 else
+                        f"\nWARNING: opening {opening:,.2f} + movements {moved:,.2f} differs from the closing {closing:,.2f} by {gap:,.2f}: a line was not read - check the statement.")
+        skipped = len(rows) - added
+        messagebox.showinfo("Bank Reconciliation", f"{added} statement line(s) imported" + (f" ({skipped} already imported, skipped)" if skipped else "") + f". Press Auto Match.{note}")
+        self.load_bank_rec()
 
     def bank_auto_match(self):
         try: account, currency, start, end = self._bank_params(); matched = self.client.bank_action("auto-match", {"account": account, "currency": currency, "from": start, "to": end})["matched"]
@@ -536,7 +560,13 @@ class V22Mixin:
     def bank_post_line(self):
         s = self.bk_trees["statement"].selection()
         if not s: return messagebox.showwarning("Bank Reconciliation", "Select the statement line to book (bank charges, interest...)")
-        try: voucher = self.client.bank_action("post", {"statement_id": s[0], "account_code": self.bk["post_account"].get()})["voucher"]
+        account = self.bk["post_account"].get()
+        line = next((x for x in (getattr(self, "bank_data", None) or {}).get("statement", []) if str(x["id"]) == str(s[0])), None)
+        if line and float(line["amount"]) > 0 and account.split(" - ", 1)[0].strip().startswith("673"):  # 2.9.87: money in is not a bank charge
+            account = "773 - Interests & Similar Revenues Earned"
+            if not messagebox.askyesno("Bank Reconciliation", "This line is money IN (interest, transfer...). Book it to 773 Interests & Similar Revenues Earned?\n"
+                                       "(Choose No and type another account in 'Book to' for a transfer or a receipt.)"): return
+        try: voucher = self.client.bank_action("post", {"statement_id": s[0], "account_code": account})["voucher"]
         except Exception as exc: return messagebox.showerror("Bank Reconciliation", str(exc))
         messagebox.showinfo("Bank Reconciliation", f"Booked as {voucher} and matched."); self.load_bank_rec(); self.load_journal(); self.load_trial()
 

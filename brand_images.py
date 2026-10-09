@@ -24,7 +24,17 @@ def _transparent_background(img):
     return img
 
 
+_MARKS = {}
+
+
 def header_mark(path, height=46):
+    """2.9.87: drawn once per run (it took a third of a second every time the main screen opened)."""
+    key = (str(path), int(height))
+    if key not in _MARKS: _MARKS[key] = _header_mark(path, height)
+    return _MARKS[key].copy()
+
+
+def _header_mark(path, height=46):
     """The SA monogram only, navy parts in white, gold kept, transparent background, `height` pixels high."""
     from PIL import Image
     img = _load(path); w, h = img.size

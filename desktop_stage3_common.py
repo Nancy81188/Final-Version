@@ -147,23 +147,33 @@ def run_with_progress(app, title, work, done):
              bg=LIGHT, fg=MUTED, wraplength=440, justify="left").pack(padx=16, pady=4, anchor="w")
     tk.Button(window, text="Stop (keep what is read)", command=cancel.set, bg=RED, fg="white", border=0, padx=12, pady=5).pack(pady=(4, 12))
 
-    def progress(done_pages, total, stage="OCR"):
-        def show():
-            if not window.winfo_exists(): return
-            label.config(text=f"{stage}: page {done_pages + 1} of {total}" + ("  -  stopping..." if cancel.is_set() else ""))
-            bar.config(value=100 * done_pages / max(total, 1))
-        try: app.after(0, show)
-        except Exception: pass
+    import queue
+    events = queue.Queue()  # 2.9.87: the reading thread never touches the window; the screen polls this queue
 
-    def finish(result=None, error=None):
-        try: window.destroy()
-        except Exception: pass
-        if error is not None: return messagebox.showerror(title, error)
-        done(result)
+    def progress(done_pages, total, stage="OCR"):
+        events.put(("progress", (done_pages, total, stage)))
 
     def run():
-        try: result = work(progress, cancel)
-        except Exception as exc:
-            message = str(exc); app.after(0, lambda: finish(error=message)); return
-        app.after(0, lambda: finish(result))
+        try: events.put(("done", work(progress, cancel)))
+        except Exception as exc: events.put(("error", str(exc)))
+
+    def poll():
+        try:
+            while True:
+                kind, value = events.get_nowait()
+                if kind == "progress":
+                    done_pages, total, stage = value
+                    if window.winfo_exists():
+                        label.config(text=f"{stage}: page {done_pages + 1} of {total}" + ("  -  stopping..." if cancel.is_set() else ""))
+                        bar.config(value=100 * done_pages / max(total, 1))
+                    continue
+                try: window.destroy()
+                except Exception: pass
+                if kind == "error": messagebox.showerror(title, value)
+                else: done(value)
+                return
+        except queue.Empty:
+            pass
+        app.after(100, poll)
+    app.after(100, poll)
     threading.Thread(target=run, daemon=True, name="SaberPdfRead").start()
