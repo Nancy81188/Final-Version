@@ -25,7 +25,7 @@ ARABIC_TOTAL = ("اجمالي الفاتورة", "المجموع الكلي", "�
                 "المبلغ المستحق", "الصافي للدفع", "الاجمالي", "المجموع")
 ENGLISH_MONTHS = {
     "jan": 1, "january": 1, "janv": 1, "janvier": 1,
-    "feb": 2, "february": 2, "fev": 2, "fevr": 2, "févr": 2, "février": 2,
+    "feb": 2, "fob": 2, "february": 2, "fev": 2, "fevr": 2, "févr": 2, "février": 2,
     "mar": 3, "march": 3, "mars": 3,
     "apr": 4, "april": 4, "avr": 4, "avril": 4,
     "may": 5, "mai": 5,
@@ -39,6 +39,51 @@ ENGLISH_MONTHS = {
 }
 CURRENCY_CODE = re.compile(r"\b(USD|EUR|AED|LBP)\b", re.I)
 
+# 2.9.85: the names of the company whose books are open (the buyer on a purchase invoice). Set by the program;
+# a line naming it is never taken as the supplier, and a page addressed to someone else is a supporting document.
+OWN_COMPANY_NAMES = []
+
+
+KNOWN_PARTIES = []  # 2.9.85: suppliers / customers already in the books - a name printed on the page is taken first
+
+
+def set_known_parties(names):
+    KNOWN_PARTIES[:] = sorted({n.strip() for n in (str(x or "") for x in names or []) if len(n.strip()) >= 4}, key=len, reverse=True)
+
+
+def _squash(text):
+    return re.sub(r"[^0-9a-z؀-ۿ]+", " ", (text or "").casefold()).strip()
+
+
+def _known_party_in(text):
+    """The known party printed earliest on the page (the longest name wins at the same place); never the open company."""
+    page = " " + _squash(text) + " "; best = None
+    for name in KNOWN_PARTIES:
+        key = _squash(name)
+        if len(key) < 4 or mentions_own_company(name): continue
+        position = page.find(" " + key + " ")
+        if position >= 0 and (best is None or position < best[0]): best = (position, name)
+    return best[1] if best else ""
+
+
+def set_own_company(*names):
+    OWN_COMPANY_NAMES[:] = [n for n in (str(x or "").strip() for x in names) if len(n) >= 3]
+
+
+def _own_words():
+    words = set()
+    for name in OWN_COMPANY_NAMES:
+        for word in re.findall(r"[A-Za-z\u0600-\u06FF]{4,}", name):
+            if word.casefold() not in {"international", "company", "group", "trading", "lebanon", "holding", "services", "sarl", "offshore"}:
+                words.add(word.casefold())
+    return words
+
+
+def mentions_own_company(text):
+    """True when the text names the open company (one distinctive word of its name is enough, OCR is not exact)."""
+    words = _own_words(); low = (text or "").casefold()
+    return bool(words) and any(re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", low) for w in words)
+
 
 def _normalize_amount_line(line):
     """Normalize OCR Arabic digits, separators, hamza and vowel marks for label matching."""
@@ -49,14 +94,36 @@ def _normalize_amount_line(line):
     return re.sub(r"[\u0640\u064b-\u065f\u0670]", "", line)
 
 
-def pdf_text(path):
+def pdf_text(path, layout=False):
     from pypdf import PdfReader
     reader = PdfReader(str(path))
-    return "\n".join((page.extract_text() or "") for page in reader.pages)
+    return "\n".join(_page_text(page, layout) for page in reader.pages)
 
 
-def _ocr_pdf_pages(path, page_numbers=None):
-    """OCR selected zero-based PDF pages locally, with the bundled engine if frozen."""
+def _page_text(page, layout=False):
+    """2.9.85: layout=True keeps the columns of a table on one line in reading order (plain extraction glues the cells
+    of many invoices together: '1193 CHANNA DRIED2.781,529.00 5500.00 %')."""
+    try:
+        return (page.extract_text(extraction_mode="layout") if layout else page.extract_text()) or ""
+    except Exception:
+        return (page.extract_text() or "") if layout else ""
+
+
+def _text_score(path, text):
+    parsed = _parse_invoice_text(path, text)
+    return _ocr_invoice_score(path, text) + (2 if parsed.get("items") else 0), parsed
+
+
+def _better_text(path, plain, layout):
+    """The text (plain or layout) that reads more of the invoice; plain wins a tie."""
+    if len((layout or "").strip()) < 20: return plain
+    if len((plain or "").strip()) < 20: return layout
+    return layout if _text_score(path, layout)[0] > _text_score(path, plain)[0] else plain
+
+
+def _ocr_pdf_pages(path, page_numbers=None, progress=None, cancel=None):
+    """OCR selected zero-based PDF pages locally, with the bundled engine if frozen.
+    2.9.85: progress(done, total) after each page; cancel (an Event) stops before the next page (the rest stay empty)."""
     import pypdfium2 as pdfium
     import pytesseract
 
@@ -88,9 +155,12 @@ def _ocr_pdf_pages(path, page_numbers=None):
 
     document = pdfium.PdfDocument(str(path))
     selected = range(len(document)) if page_numbers is None else page_numbers
-    texts = []
+    texts = []; selected = list(selected)
     try:
         for page_number in selected:
+            if cancel is not None and cancel.is_set():
+                texts.append(""); continue
+            if progress: progress(len(texts), len(selected))
             page = document[int(page_number)]
             bitmap = None
             image = None
@@ -192,6 +262,15 @@ def _invoice_text_needs_ocr(path, text):
     )
 
 
+def _page_needs_ocr(path, text):
+    """2.9.85: one page of a longer PDF. A readable page with the invoice number or date but no total is the first
+    page of a multi-page invoice (the total is on its last page): its text is kept, not replaced by OCR."""
+    if len((text or "").strip()) < 20 or (text or "").count("\x1f") > 5:
+        return True
+    parsed = _parse_invoice_text(path, text)
+    return not parsed.get("invoice_number") and not parsed.get("invoice_date") and parsed.get("total") is None
+
+
 _ARABIC_LETTER = re.compile(r"[\u0600-\u06FF]")
 _ARABIC_HINTS = ("المجموع", "الضريبة", "فاتورة", "التاريخ", "رقم", "القيمة", "المضافة", "شركة")
 
@@ -200,6 +279,9 @@ def _logical_arabic(line):
     """Some PDFs store Arabic lines in visual (drawn right-to-left) order: put them back in reading order,
     keeping numbers and Latin words as they are."""
     if not _ARABIC_LETTER.search(line) or any(h in line for h in _ARABIC_HINTS): return line
+    parts = re.split(r"(\s{3,})", line)
+    if len(parts) > 1:  # 2.9.85: columns of a layout line are turned one by one ("DIWAN GROUP C.S.      <Arabic name>")
+        return "".join(_logical_arabic(part) if not part.isspace() else part for part in parts)
     reversed_line = line[::-1]
     if not any(h in reversed_line for h in _ARABIC_HINTS): return line
     return re.sub(r"[0-9A-Za-z.,:/%$€#\-]+", lambda m: m.group(0)[::-1], reversed_line)
@@ -210,6 +292,7 @@ def normalize_invoice_text(text):
     European decimals (200,00 / 1.234,56) -> 200.00 / 1,234.56."""
     import unicodedata
     text = unicodedata.normalize("NFKC", text or "")
+    text = text.translate(str.maketrans("یکھۀ", "يكهه"))  # 2.9.85: Persian yeh / keheh / heh of Lebanese fonts -> Arabic
     lines = [_logical_arabic(line) for line in text.splitlines()]
     # a label alone on its line followed by a line that is only an amount (common with right-to-left layouts): read them together
     joined = []; amount_only = re.compile(r"^\s*[-+]?[\d.,]+\s*(?:USD|LBP|EUR|AED|SAR|L\.?L\.?|\$|€|ل\.ل\.?)?\s*$", re.I)
@@ -255,7 +338,7 @@ def _amount_after(text, keywords):
             elif not keyword.isascii():
                 # Tesseract may emit RTL rows as "١١١٫٠٠ : المجموع الكلي".
                 prefix = line[:end - len(keyword)].strip()
-                if re.fullmatch(rf"{AMOUNT}\s*[:\-]?", prefix):
+                if re.fullmatch(rf"{AMOUNT}\s*(?:\$|€|USD|LBP|EUR|AED)?\s*[:\-]?", prefix):
                     found = _number(re.search(AMOUNT, prefix).group())
     return found
 
@@ -341,6 +424,9 @@ def _vat_amount_after(text, invoice_currency=""):
                 if score >= best_score:
                     found = value
                     best_score = score
+            elif keyword.isascii() and re.fullmatch(rf"\s*{AMOUNT}\s*[:\-]?\s*", line[:end - len(keyword)] if line[:end].lower().endswith(keyword) else ""):
+                value = _number(re.search(AMOUNT, line[:end - len(keyword)]).group(1))  # 2.9.85: amount first, then the label
+                if value is not None and 1 >= best_score: found = value; best_score = 1
             elif not keyword.isascii():
                 prefix = line[:end - len(keyword)].strip()
                 if re.fullmatch(rf"{AMOUNT}\s*[:\-]?", prefix):
@@ -467,6 +553,10 @@ def _currency_from_total_context(segment):
 def _invoice_currency(text):
     codes = r"(USD|EUR|AED|LBP)"
     lines = text.splitlines()
+    for line in lines:  # 2.9.85: "Currency: USD" / "Devise : EUR"
+        match = re.search(rf"\b(?:currency|devise)\s*[:.]?\s*{codes}\b", line, re.I)
+        if match and not re.search(r"(?i)bank|account|iban|swift|a/c", line):
+            return match.group(1).upper()
     for line in lines:
         match = re.search(rf"\b(?:the\s+)?sum\s+of\s+{codes}\b", line, re.I)
         if match:
@@ -502,6 +592,7 @@ def _invoice_total_after(text):
     lines = [
         line for line in text.splitlines()
         if not re.search(r"\bsub[\s-]*total\b|\btotal\s+(?:ht|before|excl|without)\b", line, re.I)
+        and not re.search(r"\btotal\s+(?:net\s+|gross\s+)?(?:weight|qty|quantity|pieces|packages|kgs?|cbm|volume)\b", line, re.I)
         and not any(label in _normalize_amount_line(line) for label in ARABIC_SUBTOTAL)
         and not any(label in _normalize_amount_line(line) for label in ARABIC_VAT)
     ]
@@ -573,8 +664,8 @@ def _line_items(text):
     """
     items = []
     ignored = re.compile(
-        r"invoice|facture|subtotal|sub-total|total|vat|tva|tax|amount|date|phone|tel|"
-        r"page|discount|shipping|freight|currency|due|رقم|فاتورة|ضريبة",
+        r"\b(?:invoice|facture|subtotal|sub-total|total|vat|tva|tax|amount|date|phone|tel|"
+        r"page|discount|shipping|freight|currency|due)\b|رقم|فاتورة|ضريبة",  # 2.9.85: whole words ("DATES PITTED" is an item)
         re.I,
     )
     number = r"[0-9]{1,3}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,3})?|[0-9]+(?:\.[0-9]{1,3})?"
@@ -588,6 +679,8 @@ def _line_items(text):
             continue
         match = row_pattern.match(line)
         if not match:
+            leading = _total_first_row(line)  # 2.9.85: TOTAL | VAT | DISC % | U.PRICE | QTY | UNIT | DESCRIPTION
+            if leading: items.append(leading)
             continue
         description = match.group("description").strip(" -:|")
         if len(description) < 2 or not any(ch.isalpha() for ch in description):
@@ -607,6 +700,31 @@ def _line_items(text):
             "unit": "unit",
         })
     return items[:200]
+
+
+_UNIT_TOKEN = re.compile(r"(?i)^\d+(?:\.\d+)?\s*(kg|kgs|gr|g|grams?|ml|l|ltr|pcs|pc|box|ctn|m|cm)$")
+
+
+def _total_first_row(line):
+    """A table row whose amounts come first (total, VAT, discount %, unit price, quantity) and the item last."""
+    match = re.match(r"^\s*((?:[\d,]+(?:\.\d+)?\s*%?\s+){3,})(.*[A-Za-z\u0600-\u06FF].*)$", line)
+    if not match: return None
+    numbers = [_number(n) for n in re.findall(r"([\d,]+(?:\.\d+)?)(?!\s*%)(?=\s|$)", match.group(1) + " ")]
+    numbers = [n for n in numbers if n is not None]
+    if len(numbers) < 3: return None
+    total = numbers[0]
+    for i in range(1, len(numbers) - 1):
+        price, quantity = numbers[i], numbers[i + 1]
+        if quantity > 0 and price >= 0 and total > 0 and abs(price * quantity - total) <= max(0.05, total * 0.01):
+            words = match.group(2).split(); unit = "unit"
+            if words and _UNIT_TOKEN.match(words[0]): unit = words.pop(0).upper()
+            description = " ".join(words).strip(" -:|")
+            if len(description) < 2: return None
+            row = {"description": description[:160], "quantity": quantity, "unit_price": price, "total": total, "unit": unit}
+            if i == 2 and (numbers[1] == 0 or abs(numbers[1] - total * 0.11) <= max(0.02, total * 0.001)):
+                row["vat"] = numbers[1]  # the VAT column of the row (0 or 11%)
+            return row
+    return None
 
 
 def suggest_invoice_type(text):
@@ -636,15 +754,57 @@ def suggest_invoice_type(text):
     return found[0] if len(found) == 1 else ""
 
 
+def _page_count(path):
+    try:
+        from pypdf import PdfReader
+        return len(PdfReader(str(path)).pages)
+    except Exception:
+        return 0
+
+
+def _first_invoice(path, pages):
+    """2.9.85: a long PDF (a supplier's invoice with its receipts and customs papers, 79 pages took about 15 minutes
+    with the screen frozen, and the text of a later invoice could win): read page by page - its text, or OCR when
+    the page is a scan - until the first invoice has its total (at most 3 pages). Returns (text, ocr_used)."""
+    from pypdf import PdfReader
+    reader = PdfReader(str(path)); texts = []; ocr_used = False
+    for index in range(min(pages, 3)):
+        page = reader.pages[index]
+        text = _better_text(path, _page_text(page), _page_text(page, True))
+        if _page_needs_ocr(path, text):
+            try:
+                scanned = _ocr_pdf_pages(path, [index])[0]
+                if scanned.strip(): text = scanned; ocr_used = True
+            except Exception:
+                pass
+        texts.append(text)
+        if _parse_invoice_text(path, "\n".join(texts)).get("total") is not None: break
+    return "\n".join(texts), ocr_used
+
+
 def read_invoice_pdf(path):
     """Best guess of invoice number, date, party, currency and amounts. Always review before saving."""
     path = Path(path)
     text_error = ""
+    pages = _page_count(path)
+    if pages > 3:
+        try:
+            text, ocr_used = _first_invoice(path, pages)
+            result = _parse_invoice_text(path, text); result["ocr_used"] = ocr_used
+            result["notes"] = _invoice_notes(result, text, prefix="Local OCR suggestion - please check" if ocr_used else "")
+            result["notes"] += f"; this PDF has {pages} pages: only the first invoice was read - for several invoices use Uploaded Data > Choose PDF Invoice(s)"
+            _warn_on_invoice_total_mismatch(result)
+            return result
+        except Exception:
+            pass  # read it the usual way
     try:
         text = pdf_text(path)
     except Exception as exc:
         text = ""
         text_error = str(exc)
+    if not text_error:
+        try: text = _better_text(path, text, pdf_text(path, layout=True))  # 2.9.85
+        except Exception: pass
     result = _parse_invoice_text(path, text)
     if not _invoice_text_needs_ocr(path, text):
         if text_error:
@@ -779,13 +939,14 @@ def _parse_invoice_text(path, text):
     if reconciled is not None and (result["subtotal"] is None
             or abs(result["subtotal"] + result["vat"] - result["total"]) > max(0.05, abs(result["total"]) * 0.005)):
         result["subtotal"] = reconciled
-    for line in text.splitlines():
-        clean = line.strip()
-        if len(clean) >= 3 and not re.search(r"invoice|facture|date|tel|phone|page|www|@", clean, re.I) and sum(ch.isalpha() for ch in clean) >= 3:
-            # OCR often reads a logo as a short junk word ending in ">" or "|" before the company name.
-            clean = re.sub(r"^\W*\w{0,8}\s*[>»|\]}]+\s*", "", clean).strip() or clean
-            result["party_name"] = clean[:60]; break
+    result["party_name"] = _supplier_name(text)
     result["items"] = _line_items(text)
+    # 2.9.85: rows with their own VAT column - the subtotal of the taxable rows and of the rows without VAT
+    if result["items"] and all("vat" in i for i in result["items"]) and result.get("vat") is not None:
+        line_vat = sum(i["vat"] for i in result["items"]); taxable = sum(i["total"] for i in result["items"] if i["vat"])
+        if abs(line_vat - result["vat"]) <= 0.05 and taxable:
+            result["taxable_subtotal"] = round(taxable, 2)
+            result["exempt_subtotal"] = round(sum(i["total"] for i in result["items"] if not i["vat"]), 2)
     # For a fixed-asset register preview, use a description only when the PDF
     # yields one unambiguous item (or an explicitly labelled asset/description).
     if len(result["items"]) == 1:
@@ -818,6 +979,41 @@ def _parse_invoice_text(path, text):
     result["inferred"] = inferred
     result["notes"] = _invoice_notes(result, text)
     return result
+
+
+_ADDRESS = re.compile(r"invoice|facture|date|tel|phone|fax|page|www|@|p\.?\s*o\.?\s*box|b\.p\.|street|floor|flr|level|block|bldg|"
+                      r"building|tower|avenue|road|zone|imm\.|secteur|capital|r\.?c\.?\b|mof|vat|v\.a\.t|bill\s+to|client|customer|"
+                      r"name\s*:|address|^copy$|original|receipts?$|pre-?bill|\bref\b|a/c|account|ministry|department|description", re.I)
+_COMPANY_FORM = re.compile(r"\b(?:s\.?a\.?l|s\.?a\.?r\.?l|sarl|llc|l\.l\.c|ltd|limited|inc|co\.|c\.s\.?|group|fze|fzco|est\.?|"
+                           r"establishment|trading|company|center|centre|shipping|logistics|est)\b|شركة|مؤسسة", re.I)
+
+
+def _supplier_name(text):
+    """2.9.85: the supplier is usually the first company name at the top of the page. Address, contact and
+    'Bill to' lines are skipped, the open company (the buyer) is never taken, and a line with a company form
+    (SAL, SARL, LLC, Group ...) in the first lines wins over a plain first line."""
+    known = _known_party_in(text)
+    if known: return known[:60]
+    candidates = []; early = 0
+    for index, line in enumerate(text.splitlines()[:40]):
+        if index == 8: early = len(candidates)
+        for segment in re.split(r"\s{3,}|\t", line.strip()):
+            clean = re.sub(r"^\W*\w{0,8}\s*[>»|\]}]+\s*", "", segment.strip()).strip() or segment.strip()  # OCR logo junk ("BCC >")
+            clean = re.split(r"(?i)\s(?:www\.|e-?mail\b|tel\b|fax\b|phone\b|invoice\b|date\b)", " " + clean)[0].strip()  # name, then contacts on the same line
+            clean = clean.strip(" -:|,.")
+            if len(clean) < 3 or sum(ch.isalpha() for ch in clean) < 3 or _ADDRESS.search(clean): continue
+            if re.fullmatch(r"[\W\d]*\w{1,3}[\W\d]*", clean): continue
+            if mentions_own_company(clean): continue
+            candidates.append(clean)
+        if len(candidates) >= 12: break
+    if not candidates: return ""
+    formal = [c for c in candidates[:8] if _COMPANY_FORM.search(c)]
+    latin = [c for c in formal if re.search(r"[A-Za-z]{3}", c)]
+    if latin or formal: return (latin or formal)[0][:60]
+    if early == 0 and len(text.splitlines()) > 8: return ""  # no name-like line at the top of the page
+    first = candidates[0]  # no company form: the first line only when it reads like a name (not OCR noise)
+    letters = sum(ch.isalpha() for ch in first)
+    return first[:60] if letters >= 8 and sum(ch.isalpha() or ch == " " for ch in first) >= 0.8 * len(first) else ""
 
 
 def _merge_invoice_suggestions(primary, fallback):
@@ -873,47 +1069,54 @@ def asset_pdf_details(data):
     }
 
 
-def read_invoice_pdf_pages(path):
+def read_invoice_pdf_pages(path, progress=None, cancel=None):
     """Preview each distinct invoice in a PDF and retain its page range.
 
     A repeated invoice number on later pages is treated as a continuation. Pages
     without extractable text stay visible for manual entry, rather than vanishing.
+    2.9.85: when the open company is known, a page that does not name it (a receipt, a port bill, a customs paper
+    stapled behind the supplier's invoice) is a supporting page of the invoice before it: attached, not read as
+    another invoice. progress(done, total, stage) reports the pages read; cancel (an Event) stops the OCR.
     """
     from pypdf import PdfReader
     path = Path(path)
     reader = PdfReader(str(path))
-    page_texts = [page.extract_text() or "" for page in reader.pages]
+    page_texts = [_better_text(path, _page_text(page), _page_text(page, True)) for page in reader.pages]  # 2.9.85: plain or layout
     blank_pages = {index for index, text in enumerate(page_texts) if len(text.strip()) < 20}
     ocr_candidate_pages = [
         index for index, text in enumerate(page_texts)
-        if _invoice_text_needs_ocr(path, text)
+        if _page_needs_ocr(path, text)
     ]
     ocr_error = ""
     ocr_pages = set()
     if ocr_candidate_pages:
         try:
-            for index, text in zip(ocr_candidate_pages, _ocr_pdf_pages(path, ocr_candidate_pages)):
+            report = (lambda done, total: progress(done, total, "OCR")) if progress else None
+            scanned = _ocr_pdf_pages(path, ocr_candidate_pages, report, cancel) if (report or cancel is not None) else _ocr_pdf_pages(path, ocr_candidate_pages)
+            for index, text in zip(ocr_candidate_pages, scanned):
                 if text.strip():
                     page_texts[index] = text
                     ocr_pages.add(index + 1)
         except Exception as exc:
             ocr_error = str(exc)
-    groups = []
+    groups = []; own = bool(_own_words()) and any(mentions_own_company(text) for text in page_texts)
     for number, text in enumerate(page_texts, 1):
         parsed = _parse_invoice_text(path, text)
         invoice_number = parsed.get("invoice_number")
-        if groups and invoice_number and invoice_number == groups[-1]["invoice_number"]:
+        if groups and own and (not mentions_own_company(text) or (not invoice_number and parsed.get("total") is None)):
+            groups[-1]["pages"].append(number); groups[-1]["support"].append(number)  # supporting document of that invoice
+        elif groups and invoice_number and invoice_number == groups[-1]["invoice_number"]:
             groups[-1]["text"] += "\n" + text
             groups[-1]["pages"].append(number)
         elif groups and not invoice_number and text.strip() and not parsed.get("total"):
             groups[-1]["text"] += "\n" + text
             groups[-1]["pages"].append(number)
         else:
-            groups.append({"invoice_number":invoice_number,"text":text,"pages":[number]})
+            groups.append({"invoice_number":invoice_number,"text":text,"pages":[number],"support":[]})
     results = []
     for group in groups:
         parsed = _parse_invoice_text(path, group["text"])
-        pages = group["pages"]
+        pages = group["pages"]; parsed["pages"] = list(pages); parsed["support_pages"] = list(group["support"])
         parsed["page_range"] = f"Page {pages[0]}" if len(pages)==1 else f"Pages {pages[0]}-{pages[-1]}"
         parsed["ocr_used"] = any(number in ocr_pages for number in pages)
         needs_ocr = any(number - 1 in ocr_candidate_pages for number in pages)
@@ -929,5 +1132,14 @@ def read_invoice_pdf_pages(path):
             parsed["notes"] = f'{parsed["notes"]}; {note}'.strip("; ")
         if not parsed.get("invoice_number"):
             parsed["notes"] += "; confirm invoice boundaries and number"
+        previous = results[-1] if results else None  # 2.9.85: same numbering as the invoice before (000335066 / 000335165): same supplier
+        number = parsed.get("invoice_number") or ""
+        if (not parsed.get("party_name") and previous and previous.get("party_name") and len(number) >= 5
+                and len(number) == len(previous.get("invoice_number") or "") and number[:4] == previous["invoice_number"][:4]):
+            parsed["party_name"] = previous["party_name"]
+        if group["support"]:
+            parsed["notes"] += f"; {len(group['support'])} supporting page(s) not addressed to the company kept with this invoice (not booked)"
+        if cancel is not None and cancel.is_set() and needs_ocr:
+            parsed["notes"] += "; reading stopped before the end: enter the amounts"
         results.append(parsed)
     return results

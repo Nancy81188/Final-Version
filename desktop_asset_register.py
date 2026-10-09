@@ -86,6 +86,7 @@ class AssetRegisterMixin:
         try:
             size=Path(path).stat().st_size
             if not size or size>15*1024*1024: raise ValueError("Choose a non-empty PDF smaller than 15 MB")
+            from desktop_stage3_common import prepare_pdf_reading; prepare_pdf_reading(self)  # 2.9.85
             data=read_invoice_pdf(path)
         except Exception as exc:
             return messagebox.showerror("Asset PDF",f"Could not read the PDF: {exc}")

@@ -82,7 +82,7 @@ class ExpensesMixin:
         if not path: return
         f = self.expense_form; v = f["vars"]; f["pdf"] = path; f["pdf_suggested_type"] = ""
         if path.lower().endswith(".pdf") and not f["id"]:
-            data = read_invoice_pdf(path)
+            prepare_pdf_reading(self); data = read_invoice_pdf(path)  # 2.9.85: the buyer is never the supplier
             f["pdf_suggested_type"] = data.get("suggested_type") or ""
             f["pdf_vat_review"] = True
             f["vat_typed"] = True

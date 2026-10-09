@@ -166,12 +166,21 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
     def choose_import_pdfs(self):
         paths = filedialog.askopenfilenames(filetypes=[("PDF invoices", "*.pdf")])
         if not paths: return
+        prepare_pdf_reading(self)  # 2.9.85: the company (buyer) and the known suppliers
+        def work(progress, cancel):  # 2.9.85: off the screen, page by page, with a Stop button
+            read, errors = [], []
+            for number, path in enumerate(paths, 1):
+                if cancel is not None and cancel.is_set(): break
+                report = (lambda done, total, stage="OCR", n=number: progress(done, total, f"File {n} of {len(paths)} - {stage}")) if progress else None
+                try: read.append((path, read_invoice_pdf_pages(path, progress=report, cancel=cancel) if report else read_invoice_pdf_pages(path)))
+                except Exception as exc: errors.append(f"{Path(path).name}: {exc}")
+            return read, errors
+        run_with_progress(self, "Import PDF", work, lambda result: Stage3Mixin._show_import_pdfs(self, paths, *result))
+
+    def _show_import_pdfs(self, paths, read, errors):
+        for error in errors: messagebox.showerror("Import PDF", error)
         rows = []
-        for path in paths:
-            try: documents=read_invoice_pdf_pages(path)
-            except Exception as exc:
-                messagebox.showerror("Import PDF",f"{Path(path).name}: {exc}")
-                continue
+        for path, documents in read:
             for data in documents:
                 suggested = "Sales" if self.import_type.get()=="Sales" else data.get("suggested_type") or ""
                 asset_details=asset_pdf_details(data)
@@ -180,6 +189,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                 rows.append({"invoice_number": data.get("invoice_number") or "", "invoice_date": data.get("invoice_date") or "",
                          "party_name": data.get("party_name") or "", "currency": data.get("currency") or self.currency.get(),
                           "subtotal": data.get("subtotal"), "vat": data.get("vat"), "total": data.get("total"),
+                          **({"deductible": data["taxable_subtotal"], "non_deductible": data["exempt_subtotal"]} if data.get("taxable_subtotal") is not None else {}),  # 2.9.85
                           "entry_type": suggested, "source": f'{data["file"]} - {data["page_range"]}',
                            "notes": (data.get("notes", "") + "; " + type_note).strip("; "), "_path": path, "_items": data.get("items") or [],
                            "_asset_name":asset_details["name"],"_asset_date":asset_details["acquired_on"],

@@ -1,5 +1,16 @@
 # Saber Accounting MVP
 
+## Version 2.9.85 (purchase PDFs read correctly)
+- Purchase PDFs (Purchases > PDF, Uploaded Data > Choose PDF Invoice(s), Expenses, Assets):
+  - Tables whose amounts come first (TOTAL | VAT | DISC % | U.PRICE | QTY | WEIGHT | ITEM) are read: every item row with its quantity, unit price, unit (2KG, 100GR ...) and its VAT. Item names with "date" in them (DATES PITTED) are no longer skipped.
+  - The columns of the page are read in order (layout text) when that reads more of the invoice; before, the cells of a row were glued together and no item was found.
+  - "Currency: USD" is read (bank-account currencies are ignored); the VAT printed before its label ("1,923.65 V.A.T. 11%") is read, and the VAT in LBP is no longer taken as the VAT; the total is never a "TOTAL NET WEIGHT"; Arabic labels written with Persian letters (الضریبة) are recognised.
+  - When only some rows carry VAT, the Taxable and Exempt amounts are filled from the rows (example: taxable 17,487.75 + exempt 49,527.30, VAT 1,923.65).
+  - Supplier: the company printed at the top (SAL, SARL, Group, Center ...) or a supplier already in the books whose name is on the page - never your own company (the buyer). OCR noise is left empty instead of being taken as a name; an invoice with the same numbering as the one before takes its supplier.
+  - A PDF with an invoice and its supporting papers (receipts, port bills, customs papers addressed to someone else) gives one row per invoice; the other pages stay with their invoice (attached, not booked).
+  - Long scanned PDFs no longer freeze the program: Uploaded Data reads them in the background with "page x of y" and a Stop button; the Purchases screen reads only the first invoice (up to 3 pages) - a 79-page file now takes seconds instead of about 15 minutes.
+- Changed files: pdf_import.py, desktop_stage3_common.py, desktop_stage3.py, desktop_purchases.py, desktop_expenses.py, desktop_asset_register.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_85.py.
+
 ## Version 2.9.84 (fixes from a full-year audit of the program)
 A full year of a test company (sales in USD / EUR / LBP, exempt and zero-rated sales, stock, payroll, assets, VAT, DOE, closing) was audited like a client file. Every finding is fixed:
 - Year close after a DOE (important): after a DOE in the USD books (or EUR ...) on a foreign-currency balance, "Close & Open next year" stopped with "OPEN-<year>-USD is not balanced" (nothing was saved). The revaluation is now carried into the next year's opening as the same kind of line, so every opening voucher balances and the next DOE starts from the revalued amount.

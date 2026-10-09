@@ -86,3 +86,55 @@ def choose_similar_item(app, name, candidates):
     window.bind("<Return>", ok); window.protocol("WM_DELETE_WINDOW", ok)
     app.wait_window(window)
     return result["item"]
+
+
+# ---------------------------------------------------------------- 2.9.85: reading PDFs
+def prepare_pdf_reading(app):
+    """Tell the PDF reader who the company is (the buyer, never the supplier; pages not addressed to it are
+    supporting papers) and which suppliers / customers it already knows (a name printed on the page is used)."""
+    import pdf_import
+    try:
+        names = [(getattr(app, "current_company", None) or {}).get("name")]
+        try: names.append((app.client.settings() or {}).get("company_name"))
+        except Exception: pass
+        pdf_import.set_own_company(*names)
+    except Exception: pass
+    try: pdf_import.set_known_parties([p.get("name") for p in app.client.parties()])
+    except Exception: pass
+
+
+def run_with_progress(app, title, work, done):
+    """Run work(progress, cancel) away from the screen (a long scanned PDF is read page by page with OCR), with a
+    window showing the page being read and a Stop button; done(result) runs on the screen afterwards.
+    Without a real window (tests) the work runs at once."""
+    if not isinstance(app, tk.Misc):
+        return done(work(None, None))
+    cancel = threading.Event(); window = tk.Toplevel(app); window.title(title); window.configure(bg=LIGHT); window.transient(app)
+    window.resizable(False, False); window.protocol("WM_DELETE_WINDOW", cancel.set)
+    label = tk.Label(window, text="Reading the PDF...", bg=LIGHT, fg=NAVY, font=("Segoe UI", 10, "bold"), width=60, anchor="w")
+    label.pack(padx=16, pady=(14, 6), fill="x")
+    bar = ttk.Progressbar(window, mode="determinate", length=420, maximum=100); bar.pack(padx=16, pady=4)
+    tk.Label(window, text="Scanned pages are read with OCR (a few seconds each). You can keep this window open and wait.",
+             bg=LIGHT, fg=MUTED, wraplength=440, justify="left").pack(padx=16, pady=4, anchor="w")
+    tk.Button(window, text="Stop (keep what is read)", command=cancel.set, bg=RED, fg="white", border=0, padx=12, pady=5).pack(pady=(4, 12))
+
+    def progress(done_pages, total, stage="OCR"):
+        def show():
+            if not window.winfo_exists(): return
+            label.config(text=f"{stage}: page {done_pages + 1} of {total}" + ("  -  stopping..." if cancel.is_set() else ""))
+            bar.config(value=100 * done_pages / max(total, 1))
+        try: app.after(0, show)
+        except Exception: pass
+
+    def finish(result=None, error=None):
+        try: window.destroy()
+        except Exception: pass
+        if error is not None: return messagebox.showerror(title, error)
+        done(result)
+
+    def run():
+        try: result = work(progress, cancel)
+        except Exception as exc:
+            message = str(exc); app.after(0, lambda: finish(error=message)); return
+        app.after(0, lambda: finish(result))
+    threading.Thread(target=run, daemon=True, name="SaberPdfRead").start()

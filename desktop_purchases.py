@@ -319,10 +319,15 @@ class PurchasesMixin:
             f["pdf_label"].config(text=f"{Path(path).name} attached to purchase {f['id']}", fg=NAVY)
             self.load_purchases()
             return
-        v = f["vars"]
+        if path.lower().endswith(".pdf"):  # 2.9.85: read off the screen (a scanned PDF takes seconds per page)
+            prepare_pdf_reading(self)
+            return run_with_progress(self, "Purchase PDF", lambda _progress, _cancel: read_invoice_pdf(path), lambda data: PurchasesMixin._apply_purchase_pdf(self, path, data))
+        PurchasesMixin._apply_purchase_pdf(self, path, None)
+
+    def _apply_purchase_pdf(self, path, data):
+        f = self.purchase_form; v = f["vars"]
         f["pdf"] = path; f["pdf_suggested_type"] = ""
-        if path.lower().endswith(".pdf"):
-            data = read_invoice_pdf(path)
+        if data is not None:
             f["pdf_suggested_type"] = data.get("suggested_type") or ""
             if not f["id"]:
                 f["pdf_vat_review"] = True
@@ -342,7 +347,9 @@ class PurchasesMixin:
                 subtotal=data.get("subtotal")
                 if subtotal is None and data.get("total") is not None and data.get("vat") is not None:
                     subtotal=round(data["total"]-data["vat"],2)
-                if subtotal is not None and not v["taxable"].get(): v["taxable"].set(f'{subtotal:.2f}')
+                if data.get("taxable_subtotal") is not None and "exempt" in v and not v["taxable"].get():  # 2.9.85: rows with and without VAT
+                    v["taxable"].set(f'{data["taxable_subtotal"]:.2f}'); v["exempt"].set(f'{data["exempt_subtotal"]:.2f}')
+                elif subtotal is not None and not v["taxable"].get(): v["taxable"].set(f'{subtotal:.2f}')
                 if data.get("party_name") and not v["supplier"].get(): v["supplier"].set(data["party_name"])
                 item_note = self.add_purchase_pdf_items(data)
                 self.purchase_amounts_changed("none")
