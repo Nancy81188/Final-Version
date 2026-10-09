@@ -21,6 +21,7 @@ from desktop_production import ProductionMixin
 from desktop_account_tools import AccountToolsMixin
 from desktop_v22 import V22Mixin
 from desktop_invoices import InvoicesMixin
+from desktop_theme import STRIPE, apply_theme, restripe  # 2.9.94
 from desktop_parties import PartiesMixin
 from desktop_payroll import PayrollMixin
 from desktop_reports import ReportsMixin
@@ -138,40 +139,7 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     def _style(self):
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("TNotebook", background=LIGHT, borderwidth=0)
-        style.configure("TNotebook.Tab", padding=(12, 9), font=("Segoe UI", 9, "bold"), background="#E5ECF2", foreground=NAVY)
-        style.map("TNotebook.Tab", background=[("selected", "white"), ("active", "#D6E4ED")], foreground=[("selected", NAVY)])
-        style.configure("Treeview", rowheight=31, font=("Segoe UI", 10), background="white", fieldbackground="white", foreground=NAVY)
-        style.map("Treeview", background=[("selected", "#D6E4ED")], foreground=[("selected", NAVY)])
-        style.configure("Treeview.Heading", background=NAVY, foreground="white", font=("Segoe UI", 10, "bold"))
-        style.map("Treeview.Heading", background=[("active", NAVY)])
-        style.configure("TCombobox", padding=4)
-        style.configure("Sales.Treeview", rowheight=28, font=("Segoe UI", 10))
-        # lighter, calmer look: shorter rows (more lines on screen), soft heading, clean inputs
-        style.configure("Treeview", rowheight=27)  # 2.9.59: 10 pt text in tables
-        style.configure("Treeview.Heading", background="#23405E", relief="flat", padding=(4, 5))
-        style.map("Treeview.Heading", background=[("active", "#2E5277")])
-        style.configure("TLabelframe", background=LIGHT); style.configure("TLabelframe.Label", background=LIGHT, foreground=NAVY, font=("Segoe UI", 9, "bold"))
-        style.configure("Vertical.TScrollbar", arrowsize=12); style.configure("Horizontal.TScrollbar", arrowsize=12)
-        self.option_add("*Font", ("Segoe UI", 9))
-        self.option_add("*Entry.relief", "solid"); self.option_add("*Entry.borderWidth", 1)
-        self.option_add("*Entry.highlightThickness", 1); self.option_add("*Entry.highlightColor", GOLD); self.option_add("*Entry.highlightBackground", "#C9D3DD")
-        self.option_add("*LabelFrame.foreground", NAVY); self.option_add("*LabelFrame.font", ("Segoe UI", 9, "bold"))
-        self.option_add("*Button.cursor", "hand2"); self.option_add("*Button.relief", "flat")
-        # buttons light up under the mouse
-        def hover(event, entering):
-            widget = event.widget
-            try:
-                if entering:
-                    widget._saber_bg = widget.cget("background"); color = widget._saber_bg.lstrip("#")
-                    if len(color) == 6:
-                        lighter = "#" + "".join(f"{min(255, int(color[i:i + 2], 16) + 28):02x}" for i in (0, 2, 4)); widget._saber_hover = lighter; widget.configure(background=lighter)
-                elif getattr(widget, "_saber_bg", None) and str(widget.cget("background")).lower() == str(getattr(widget, "_saber_hover", "")).lower():
-                    widget.configure(background=widget._saber_bg)  # only undo our own highlight
-            except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
-        self.bind_class("Button", "<Enter>", lambda e: hover(e, True), add="+"); self.bind_class("Button", "<Leave>", lambda e: hover(e, False), add="+")
+        apply_theme(self)  # 2.9.94: one place for the look of every screen (desktop_theme.py)
 
     # ------------------------------------------------------------ mouse wheel scrolling
     def install_mouse_wheel(self):
@@ -899,6 +867,15 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         tree._search_bar=search_bar; tree._selection_totals=totals; tree._column_titles={key:label for key,label,_w in columns}
 
         real_insert,real_delete=tree.insert,tree.delete
+        # 2.9.94: striped rows, redrawn once after a batch of rows, a search or a sort
+        tree.tag_configure("stripe",background=STRIPE); tree._stripe_after=None
+        def schedule_stripes():
+            if tree._stripe_after is None:
+                def run():
+                    tree._stripe_after=None
+                    try: restripe(tree)
+                    except tk.TclError: pass  # the table was closed
+                tree._stripe_after=tree.after_idle(run)
         tree._search_rows=[]
         tree._search_counter=0
         def tracked_insert(parent_id,index,*args,**kwargs):
@@ -908,7 +885,7 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
             record=(parent_id,index,args,saved_kwargs)
             tree._search_rows.append(record)
             if row_matches_search(saved_kwargs.get("values",()),search_var.get()):
-                real_insert(parent_id,index,*args,**saved_kwargs)
+                real_insert(parent_id,index,*args,**saved_kwargs); schedule_stripes()
             return saved_kwargs["iid"]
         def tracked_delete(*item_ids):
             visible=set(tree.get_children(""))
@@ -929,6 +906,7 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
             for parent_id,index,args,saved_kwargs in tree._search_rows:
                 if row_matches_search(saved_kwargs.get("values",()),search_var.get()):
                     real_insert(parent_id,index,*args,**saved_kwargs)
+            schedule_stripes()
         # Debounce: re-filtering rebuilds the whole Treeview, so on a big table
         # doing it on every keystroke feels laggy. Wait a beat after typing
         # stops, then filter once. The result is identical, just smoother.
@@ -954,7 +932,7 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
                 return (1,clean.casefold())
             ordered=sorted(tree.get_children(""),key=lambda item:sortable(tree.set(item,key)),reverse=reverse)
             for position,item in enumerate(ordered): tree.move(item,"",position)
-            tree._sort_reverse[key]=not reverse
+            tree._sort_reverse[key]=not reverse; schedule_stripes()
         for key,label,_width in columns: tree.heading(key,text=label,command=lambda column=key:sort_column(column))
         search_var.trace_add("write",schedule_search)
         search_entry.bind("<Escape>",lambda _event:search_var.set(""))

@@ -1,5 +1,17 @@
 # Saber Accounting MVP
 
+## Version 2.9.94 (office network tested, easier screens, code split)
+- Office network (2-3 PCs): tested as it is really used. The server runs in its own program on the network with an office certificate (HTTPS), and three PCs (three separate programs) work on the same company at the same time with approval on: 45 invoices, 45 different numbers, the 15 drafts approved from another PC, the trial balance balanced. Then the server is stopped and started again: nothing is lost and the PCs sign in again. A PC without the office certificate, plain HTTP and a wrong password are all refused. This test also runs on Windows on every push.
+- New: making the office certificate is one command on the server PC: `python run_server.py --make-certificate OFFICE-PC,192.168.1.10`. Copy `server-cert.pem` (never the key) to each PC's Saber data folder as `office-server-cert.pem`, and the program trusts that server. Nothing leaves the office.
+- Screens (checked on a 1366 x 768 laptop screen):
+  - Purchases: the New / Auto Calculate / Save Purchase / Delete buttons were pushed off the right edge of a laptop screen (Save could not be seen); they now sit under the fields.
+  - Uploaded Data: the 20 buttons are in labelled rows (Edit / Accounts & VAT / Documents), Cancel and Delete apart in red; amounts show as 1,637.25 (were 1637.25 / 1475.0); the invoice number column is wider.
+  - Every table: every second row lightly shaded (easier to follow a line across), softer blue for the selected row; a row's own colour (red for deleted) is kept.
+  - Calmer look in one place (desktop_theme.py): flat tabs, inputs with a gold line when typing, lighter scroll bars, gold progress bars.
+  - Sales Invoice: the arrow buttons say "Previous" / "Next".
+- Code: the largest files were split, with no change in behaviour: inventory reports moved to inventory_reports.py (inventory.py 1,628 -> about 1,070 lines; every old name still works), the sales invoice screen moved to desktop_sales_invoice.py (desktop_invoices.py 1,278 -> about 680 lines), the look moved to desktop_theme.py.
+- Changed files: office_tls.py (new), client.py, server.py, inventory.py, inventory_reports.py (new), desktop_invoices.py, desktop_sales_invoice.py (new), desktop_theme.py (new), desktop.py, desktop_purchases.py, requirements.txt (cryptography, for the office certificate), build-windows-installer.yml, app_runtime.py, installer.iss, README.md. New test: test_v2_9_94.py. Tests changed on purpose: test_v2_9_54.py (reads the sales invoice screen from its new file), test_v2_9_93.py (the "draft not in the books" check now reads the trial balance's real column name, so it really checks).
+
 ## Version 2.9.93 (approval step: one person prepares, another approves; before/after audit trail)
 - Accounting Setup > "Approval (internal control)": tick "Invoices need approval before posting". Then an invoice saved, imported or edited by a user without the new "Can approve" permission (Users screen) is kept as a draft (status review): it is not in the journal, the trial balance or VAT until approved.
 - Sales Invoices > "Approve Selected": a user with "Can approve" posts the selected drafts. Nobody can approve a draft he prepared himself (the administrator can, for a one-person office). Period lock and filed VAT quarters are checked again at approval.
@@ -909,7 +921,7 @@ Sign in with username `admin`, your chosen server password, and server address `
 
 1. Choose one always-on office computer or Windows server to host the shared database.
 2. Give that computer a fixed local IP address.
-3. Allow TCP port `8765` only on the trusted office network. Provision a certificate whose name matches the host name used by clients and whose CA is trusted on their computers.
+3. Allow TCP port `8765` only on the trusted office network. Make the office certificate on the server computer: `python run_server.py --make-certificate SERVER-NAME,SERVER-IP` (2.9.94), then copy `server-cert.pem` to each client computer's Saber data folder as `office-server-cert.pem` (or use a certificate from your own trusted CA).
 4. Run `python run_server.py --host SERVER-IP --tls-cert server-cert.pem --tls-key server-key.pem` only on the server computer. Keep the private key restricted to the server account.
 5. Run the desktop client on each of the three computers.
 6. Enter `https://SERVER-NAME:8765` on the sign-in screen, using the name on the certificate.

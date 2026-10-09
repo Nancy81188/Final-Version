@@ -43,7 +43,14 @@ class ApiClient:
             if parts.scheme not in ("http", "https") or not parts.hostname:
                 raise URLError(f"invalid server address {self.base_url}")
             if parts.scheme == "https":
-                connection = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=60, context=ssl.create_default_context())
+                context = ssl.create_default_context()
+                try:  # 2.9.94: the office server certificate copied to this PC (see office_tls.py)
+                    import office_tls
+                    trusted = office_tls.trusted_certificate()
+                    if trusted: context.load_verify_locations(cafile=str(trusted))
+                except (OSError, ssl.SSLError) as exc:
+                    logging.getLogger("saber.client").warning("Office server certificate not loaded: %s", exc)
+                connection = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=60, context=context)
             else:
                 connection = http.client.HTTPConnection(parts.hostname, parts.port or 80, timeout=60)
             connection.connect()

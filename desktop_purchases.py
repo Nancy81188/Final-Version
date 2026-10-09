@@ -45,8 +45,9 @@ class PurchasesMixin:
         f["discount_percent"] = tk.StringVar(value="0"); f["discount_amount"] = tk.StringVar(value="0"); f["discount_mode"] = "percent"
         f["doc"] = tk.StringVar(value="Invoice")  # 2.9.54: Invoice / Return (goods back to the supplier) / Debit Note / Credit Note
         box = tk.LabelFrame(page, text="Purchase Invoice", bg=LIGHT, padx=6, pady=2); box.pack(fill="x", padx=8, pady=(2, 1))
-        actions = tk.Frame(box, bg=LIGHT); actions.pack(side="right", anchor="ne", padx=(10, 0))
-        fields = tk.Frame(box, bg=LIGHT); fields.pack(side="left", fill="x", expand=True)
+        # 2.9.94: the buttons sit under the fields (on the right they were pushed off a laptop screen: Save could not be seen)
+        actions = tk.Frame(box, bg=LIGHT); actions.pack(side="bottom", fill="x", pady=(4, 2))
+        fields = tk.Frame(box, bg=LIGHT); fields.pack(side="top", fill="x", expand=True)
         r1 = tk.Frame(fields, bg=LIGHT); r1.pack(fill="x")
         tk.Label(r1, text="Supplier", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")
         f["supplier_box"] = ttk.Combobox(r1, textvariable=v["supplier"], width=22); f["supplier_box"].pack(side="left", padx=(4, 8))
@@ -109,11 +110,11 @@ class PurchasesMixin:
         from desktop_brains import EditableSheet
         f["items_sheet"] = EditableSheet(self, items, [("line", "#", 35, "center"), ("item_code", "Item", 125, "w"), ("name", "Description", 410, "w"), ("quantity", "Qty", 70, "e"),
             ("unit", "Unit", 60, "center"), ("unit_cost", "Unit Price", 95, "e"), ("discount_percent", "Discount %", 85, "e"), ("vat_flag", "VAT", 50, "center"), ("total", "Net", 105, "e")],
-            ["item_code", "name", "quantity", "unit", "unit_cost", "discount_percent", "vat_flag"], self.purchase_item_changed, height=12)  # 2.9.87: VAT Yes / No per line
+            ["item_code", "name", "quantity", "unit", "unit_cost", "discount_percent", "vat_flag"], self.purchase_item_changed, height=8)  # 2.9.87: VAT Yes / No per line; 2.9.94: 8 rows so the totals show on a laptop screen
         f["items_sheet"].tree.bind("<F2>", lambda _e: self.purchase_item_lookup())
         f["items_sheet"].tree.master.pack_configure(expand=True,fill="both")
-        r4 = tk.Frame(actions, bg=LIGHT); r4.pack(anchor="e", pady=(2, 0))
-        r5 = tk.Frame(actions, bg=LIGHT); r5.pack(anchor="e", pady=(3, 0))
+        r4 = tk.Frame(actions, bg=LIGHT); r4.pack(side="left", pady=(2, 0))
+        r5 = tk.Frame(actions, bg=LIGHT); r5.pack(side="left", padx=(18, 0), pady=(2, 0))
         f["pdf_label"] = tk.Label(r5, text="No PDF", bg=LIGHT, fg=MUTED)
         self.action_button(r4, "New", self.new_purchase).pack(side="left", padx=(0, 3))
         tk.Button(r4, text="Auto Calculate", command=self.purchase_auto_calculate, bg=NAVY, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)  # 2.9.90

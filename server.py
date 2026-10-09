@@ -1246,7 +1246,15 @@ def main():
     parser.add_argument("--tls-cert",help="Path to a trusted TLS certificate chain (PEM)")
     parser.add_argument("--tls-key",help="Path to the matching TLS private key (PEM)")
     parser.add_argument("--allow-insecure-lan",action="store_true",help="Explicitly permit plaintext on a trusted VPN/LAN")
+    parser.add_argument("--make-certificate",metavar="NAMES",help="Make an office certificate for these server names / IPs (comma separated) and exit")
     args = parser.parse_args()
+    if args.make_certificate:
+        import app_runtime, office_tls
+        cert, key = office_tls.make_certificate(app_runtime.data_dir(), args.make_certificate)
+        print(f"Certificate: {cert}\nPrivate key (keep on this computer only): {key}")
+        print(f"Copy the certificate to each office PC as <Saber data folder>\\{office_tls.TRUSTED_CERT_NAME}, then start the server with:")
+        print(f"  run_server.py --host 0.0.0.0 --tls-cert \"{cert}\" --tls-key \"{key}\"")
+        return
     if not args.database:
         import app_runtime
         args.database = str(app_runtime.main_database_path())

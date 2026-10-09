@@ -124,7 +124,8 @@ class ScreenFixesTest(unittest.TestCase):
     def test_documents_offered_on_the_screens(self):
         import desktop_purchases
         self.assertEqual(desktop_purchases.PURCHASE_DOCUMENTS, ("Invoice", "Return", "Credit Note", "Debit Note"))
-        source = (Path(__file__).resolve().parent / "desktop_invoices.py").read_text(encoding="utf-8")
+        here = Path(__file__).resolve().parent  # 2.9.94: the sales invoice screen moved to desktop_sales_invoice.py
+        source = "".join((here / name).read_text(encoding="utf-8") for name in ("desktop_invoices.py", "desktop_sales_invoice.py"))
         self.assertIn('values=["Invoice","Return","Credit Note","Debit Note"]', source)
 
 
