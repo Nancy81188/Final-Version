@@ -9,6 +9,9 @@ FIN_FILTERS = {"branch": ("Branch", "branch_name"), "project": ("Project", "proj
                "party": ("Customer / Supplier", "party_name"), "section": ("Section", "journal_category")}
 
 
+JOURNAL_SHOWN = 5000
+
+
 class ReportsMixin:
     def build_journal(self):
         filters=tk.Frame(self.journal_tab,bg=LIGHT); filters.pack(fill="x",padx=10,pady=(10,0))
@@ -110,14 +113,16 @@ class ReportsMixin:
             return str(row.get("currency") or "").casefold()
         rows.sort(key=journal_key,reverse=self.journal_sort_order.get()=="Descending")
         self.journal_rows=rows; self.journal_tree.delete(*self.journal_tree.get_children())
-        for row in rows:
+        shown_rows=rows[:JOURNAL_SHOWN]  # 2.9.91: a table of 25,000 lines took seconds to draw; totals and exports keep every line
+        for row in shown_rows:
             self.journal_tree.insert("","end",values=(row["entry_number"],row["entry_date"],row["description"],
                 "DOE" if row.get("voucher_type")=="07" else row["source_type"],row["source_id"],row["currency"],row["account_code"],row["account_name"],
                 row["party_name"],f'{row["debit"]:,.2f}',f'{row["credit"]:,.2f}',f'{row["balance"]:,.2f}'))
         debit=sum(float(row["debit"] or 0) for row in rows); credit=sum(float(row["credit"] or 0) for row in rows)
         state="Balanced" if abs(debit-credit)<0.005 else "UNBALANCED"
         mode="Current Year" if view_year==int(self.current_fiscal_year) else f"{view_year} Read-Only"
-        self.journal_totals.config(text=f"{mode}   Debit: {debit:,.2f}   Credit: {credit:,.2f}   {state}")
+        more=f"   (showing the first {JOURNAL_SHOWN:,} of {len(rows):,} lines - narrow the dates or search; totals are for all lines)" if len(rows)>JOURNAL_SHOWN else ""
+        self.journal_totals.config(text=f"{mode}   Debit: {debit:,.2f}   Credit: {credit:,.2f}   {state}{more}")
 
     def delete_selected_journal_voucher(self):
         if int(self.journal_view_year.get() or self.current_fiscal_year)!=int(self.current_fiscal_year): return messagebox.showwarning("General Journal","Previous-year transactions are read-only")

@@ -46,7 +46,8 @@ def _documents(db, kind, start, end, options):
         invoices = [dict(r) for r in connection.execute("""SELECT i.*,p.name party_name,p.account_number,p.tax_number party_vat_number,p.mof_number party_mof_number FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
             WHERE i.kind=? AND i.status<>'cancelled'""", (kind,))]
         items = {}
-        for row in connection.execute("SELECT * FROM invoice_items ORDER BY id"): items.setdefault(row["invoice_id"], []).append(dict(row))
+        for row in connection.execute("SELECT x.* FROM invoice_items x JOIN invoices i ON i.id=x.invoice_id WHERE i.kind=? ORDER BY x.id", (kind,)):  # 2.9.91: only this kind
+            items.setdefault(row["invoice_id"], []).append(dict(row))
         catalogue = {r["sku"]: dict(r) for r in connection.execute("SELECT * FROM inventory_items")} if _has_table(connection, "inventory_items") else {}
     result = []
     for invoice in invoices:

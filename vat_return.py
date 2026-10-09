@@ -86,14 +86,18 @@ def vat_ratio_method(db):
     return value if value in RATIO_METHODS else "quarter"
 
 
-def _documents(db, start, end, currency, include_review):
+def _documents(db, start, end, currency, include_review, memo=None):
     statuses = ("posted", "review") if include_review else ("posted",)
     std_rate = _vat_setup(db)[0]
     documents = []; skipped = []; review_excluded = 0
-    with db.connect() as connection:
-        invoices = [dict(row) for row in connection.execute("""SELECT i.*,p.name party_name,COALESCE(NULLIF(p.mof_number,''),p.tax_number) party_mof FROM invoices i
-            LEFT JOIN parties p ON p.id=i.party_id WHERE i.status NOT IN ('cancelled','deleted')""")]
-        expenses = [dict(row) for row in connection.execute("SELECT * FROM expenses")]
+    key = ("documents", str(getattr(db, "path", id(db))))
+    if memo is not None and key in memo: invoices, expenses = memo[key]  # 2.9.91: read once per calculation (it was read 16 times)
+    else:
+        with db.connect() as connection:
+            invoices = [dict(row) for row in connection.execute("""SELECT i.*,p.name party_name,COALESCE(NULLIF(p.mof_number,''),p.tax_number) party_mof FROM invoices i
+                LEFT JOIN parties p ON p.id=i.party_id WHERE i.status NOT IN ('cancelled','deleted')""")]
+            expenses = [dict(row) for row in connection.execute("SELECT * FROM expenses")]
+        if memo is not None: memo[key] = (invoices, expenses)
     for row in invoices:
         try: day = iso_date(row["invoice_date"])
         except ValueError: skipped.append(row["invoice_number"]); continue
@@ -194,10 +198,10 @@ def _sales_detail(documents, rates):
     return detail
 
 
-def _turnover(db, start, end, include_review, rates, detail_out=None):
+def _turnover(db, start, end, include_review, rates, detail_out=None, memo=None):
     """Turnover in LBP for the partial deduction ratio (Art. 31, note of form Q11-2):
     revenues giving the right of deduction (taxable + zero-rated) / total revenues (+ exempt + outside the scope)."""
-    documents, _skipped, _review = _documents(db, start, end, None, include_review)
+    documents, _skipped, _review = _documents(db, start, end, None, include_review, memo)
     detail = _sales_detail(documents, rates)
     if detail_out is not None: detail_out.update(detail)
     return detail["taxable"] + detail["export"], detail["exempt"] + detail["out"]
@@ -222,7 +226,7 @@ def build_vat_return(db, year, quarter, currency=None, include_review=False, pre
 def _build_vat_return(db, year, quarter, currency, include_review, previous_year_db, credit_brought_forward, refund_requested, memo):
     start, end = quarter_range(year, quarter)
     currency = str(currency).upper() if currency and str(currency).upper() not in ("ALL", "ALL CURRENCIES") else None
-    documents, skipped, review_excluded = _documents(db, start, end, currency, include_review)
+    documents, skipped, review_excluded = _documents(db, start, end, currency, include_review, memo)
     # 2.9.72: everything is added up in the company's VAT currency (LBP in Lebanon: whole pounds, as before;
     # another currency such as AED or EUR: 2 decimals). The "_lbp" names are kept for the saved returns.
     std_rate, vat_currency, vat_second = _vat_setup(db)
@@ -241,14 +245,14 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
     method = vat_ratio_method(db)
     year_start = f"{int(year)}-01-01"; year_end = f"{int(year)}-12-31"
     ytd_detail = {}
-    ytd_taxable, ytd_exempt = _turnover(db, start if method == "quarter" else year_start, end, include_review, rate_of, ytd_detail)
+    ytd_taxable, ytd_exempt = _turnover(db, start if method == "quarter" else year_start, end, include_review, rate_of, ytd_detail, memo)
     provisional = db.vat_provisional_ratio(year)
     final_detail = ytd_detail
     if method == "quarter":
         ratio = _ratio(ytd_taxable, ytd_exempt); ratio_source = f"turnover of Q{int(quarter)} {int(year)} only"
     elif int(quarter) == 4:
         final_detail = {}
-        final_taxable, final_exempt = _turnover(db, year_start, year_end, include_review, rate_of, final_detail)
+        final_taxable, final_exempt = _turnover(db, year_start, year_end, include_review, rate_of, final_detail, memo)
         ratio = _ratio(final_taxable, final_exempt); ratio_source = "final annual ratio"
     elif provisional is not None: ratio = provisional; ratio_source = "provisional ratio set for the year"
     else: ratio = _ratio(ytd_taxable, ytd_exempt); ratio_source = "year-to-date turnover"

@@ -1,5 +1,18 @@
 # Saber Accounting MVP
 
+## Version 2.9.91 (faster with large books; full company re-checked)
+- Measured with a company of 3,000 invoices and 750 receipts (about 25,000 journal lines), then made faster:
+  - Dates are read once (one screen read 300,000 dates one by one): every report, list and sort is quicker.
+  - VAT return: the documents are read once per calculation instead of 16 times (Q4 also builds Q1-Q3 for the credit chain): 2.9 s -> 1.4 s on the screen.
+  - Dashboard charts and sales reports read only the item lines of their own invoices; account codes are read once.
+  - Exchange-rate list: one query instead of one count per rate (it is shown on several screens).
+  - General Journal table shows the first 5,000 lines (narrow the dates or search for the rest); the totals, the balance check and Excel / PDF still use every line.
+  - The other screens are prepared while you are not typing or clicking (they made the screen stutter right after a company was opened); a screen you open is still built at once.
+  - Lists that rarely change (chart of accounts, customers / suppliers, settings) are kept for 60 seconds instead of 10; any change made on this computer refreshes them at once.
+  - The sales invoice amount in words (English and Arabic) is drawn once per amount.
+- Re-checked as an accountant: the full-year company (78 procedures), every PDF tab and the bank reconciliation (26 checks), and a project company (two projects and a department: revenue, purchases, expenses and payroll per project) - all agree with the books. The 3 remaining exceptions are by design (documents of a filed VAT quarter are refused; the deduction ratio is per quarter since 2.9.83).
+- Changed files: database_common.py, desktop_common.py, ledger_reports.py, business_reports.py, vat_return.py, db_rates.py, desktop.py, desktop_reports.py, desktop_invoices.py, client.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_91.py.
+
 ## Version 2.9.90 (owner requests: totals, item accounts, new company, attachments)
 - PDF totals: the amount in words on the VAT line ("Eighty One Thousand ... and 94/100 USD") gave a VAT of 100 and a wrong subtotal; it is now ignored (Diwan SJ20251714: 78,948.89 + VAT 2,269.05 = 81,217.94).
 - Purchases > new button "Auto Calculate": taxable / exempt from the item lines (VAT Yes / No), VAT = (taxable - discount) x VAT %, and the total. A PDF whose item lines do not make its total (a page missing from the file) keeps the invoice amounts and says so; its lines are not added.

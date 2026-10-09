@@ -714,6 +714,10 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
     def _build_next_page(self,generation):
         if generation!=getattr(self,"_page_generation",None): return  # the company / year was switched meanwhile
         pending=self.__dict__.get("_pending_builders")
+        # 2.9.91: the other pages are prepared while the user is not typing or clicking (each page takes a fraction of a
+        # second; built in the middle of typing they made the screen stutter). A page needed now is built at once.
+        if pending and time.monotonic()-getattr(self,"last_activity",0)<1.0:
+            self.after(400,lambda:self._build_next_page(generation)); return
         if pending:
             self._run_page_builder(pending.pop(0))
         if pending: self.after(30,lambda:self._build_next_page(generation))

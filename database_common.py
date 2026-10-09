@@ -273,11 +273,22 @@ def parse_ts(value):
 
 def iso_date(value, field="Date"):
     """Accept DD-MM-YYYY, DDMMYYYY, YYYY-MM-DD or YYYYMMDD and return YYYY-MM-DD."""
-    text = str(value or "").strip()
+    found = _iso_date_cached(str(value or "").strip())
+    if found is None: raise ValueError(f"{field} must use DD-MM-YYYY")
+    return found
+
+
+import functools as _functools
+
+
+@_functools.lru_cache(maxsize=65536)
+def _iso_date_cached(text):
+    """2.9.91: every report reads thousands of dates (300,000 strptime calls for one screen of 3,000 invoices); the same
+    text always gives the same date, so each one is worked out once. Invalid dates still fail."""
     for pattern in ("%Y-%m-%d", "%d-%m-%Y", "%d%m%Y", "%Y%m%d", "%d/%m/%Y"):
         try: return datetime.strptime(text, pattern).strftime("%Y-%m-%d")
         except ValueError: pass
-    raise ValueError(f"{field} must use DD-MM-YYYY")
+    return None
 
 def _soft_iso(value):
     """A report date given as DD-MM-YYYY or YYYY-MM-DD -> YYYY-MM-DD (dates are compared as text). Anything else is kept."""
@@ -286,8 +297,8 @@ def _soft_iso(value):
     except ValueError: return value
 
 def display_date(value):
-    try: return datetime.strptime(iso_date(value), "%Y-%m-%d").strftime("%d-%m-%Y")
-    except ValueError: return str(value or "")
+    found = _iso_date_cached(str(value or "").strip())
+    return f"{found[8:10]}-{found[5:7]}-{found[:4]}" if found else str(value or "")
 
 def parse_permissions(value):
     try: data = json.loads(value or "{}") if isinstance(value, str) else dict(value or {})

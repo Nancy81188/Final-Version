@@ -64,8 +64,10 @@ class RatesStore:
         self._ensure_automatic_rates()
         with self.connect() as db:
             return [dict(row) for row in db.execute("""SELECT r.id,r.rate_date,r.from_currency,r.to_currency,CAST(r.rate AS REAL) rate,r.created_at,
-                (SELECT COUNT(*) FROM exchange_rate_samples s WHERE s.rate_date=r.rate_date AND s.from_currency=r.from_currency AND s.to_currency=r.to_currency) samples
-                FROM exchange_rates r ORDER BY r.id DESC""")]
+                COALESCE(s.samples,0) samples FROM exchange_rates r
+                LEFT JOIN (SELECT rate_date,from_currency,to_currency,COUNT(*) samples FROM exchange_rate_samples GROUP BY rate_date,from_currency,to_currency) s
+                  ON s.rate_date=r.rate_date AND s.from_currency=r.from_currency AND s.to_currency=r.to_currency
+                ORDER BY r.id DESC""")]  # 2.9.91: one pass instead of one count per rate
 
     _RATE_DOWNLOADS = {}
 

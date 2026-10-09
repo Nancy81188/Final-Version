@@ -8,6 +8,7 @@ currency (account currency, LBP or USD)."""
 from __future__ import annotations
 
 from datetime import datetime
+import functools
 from decimal import Decimal, ROUND_HALF_UP
 
 from database import display_date, iso_date
@@ -19,7 +20,12 @@ CLASS_NAMES = {"1": "Capital accounts", "2": "Fixed assets", "3": "Inventory", "
 
 
 def _digits(value):
-    return "".join(ch for ch in str(value or "") if ch.isdigit())
+    return _digits_of(str(value or ""))
+
+
+@functools.lru_cache(maxsize=65536)
+def _digits_of(text):  # 2.9.91: called for every journal line of every report; account codes repeat
+    return "".join(ch for ch in text if ch.isdigit())
 
 
 def _key(code, fill="0"):

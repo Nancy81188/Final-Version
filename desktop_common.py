@@ -56,7 +56,14 @@ def auto_dash_date(text):
     return f"{digits[:2]}-{digits[2:4]}-{digits[4:]}"
 
 def sortable_date(value):
-    text=str(value or "").strip()
+    return _sortable_date(str(value or "").strip())
+
+
+import functools as _functools
+
+
+@_functools.lru_cache(maxsize=65536)
+def _sortable_date(text):  # 2.9.91: tables sort thousands of rows by date; each date text is read once
     for pattern in ("%d-%m-%Y","%Y-%m-%d"):
         try: return datetime.strptime(text,pattern)
         except ValueError: pass

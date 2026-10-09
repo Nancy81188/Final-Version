@@ -1070,7 +1070,11 @@ class InvoicesMixin:
                 label.config(text=f"{values[key]:,.2f} {currency}" if key=="TOTAL" else f"{values[key]:,.2f}",fg=NAVY)
             self.sales_vat_caption.config(text=f"VAT {vat_rate_text(self)}" if not export else f"VAT {vat_rate_text(self)}  ({self.sales_treatment.get()})",font=("Segoe UI",9,"overstrike") if export else ("Segoe UI",9))
             from report_export import shape_arabic
-            words=amount_in_words(result["grand_total"],currency); self.sales_words.config(text=f'{words["en"]}\n{shape_arabic(words["ar"])}')
+            key=(str(result["grand_total"]),currency); cache=self.__dict__.setdefault("_sales_words_cache",{})  # 2.9.91: drawn once per amount
+            if key not in cache:
+                words=amount_in_words(result["grand_total"],currency); cache[key]=f'{words["en"]}\n{shape_arabic(words["ar"])}'
+                if len(cache)>500: cache.clear()
+            if self.sales_words.cget("text")!=cache[key]: self.sales_words.config(text=cache[key])
         self.sales_totals.config(text=f'{len(lines)} line(s)')
 
     def sales_type_changed(self):

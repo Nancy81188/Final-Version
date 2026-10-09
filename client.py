@@ -21,7 +21,7 @@ class SessionExpired(RuntimeError):
 CACHED_PATHS = ("/api/accounts", "/api/branches", "/api/currencies", "/api/exchange-rates", "/api/parties",
                 "/api/projects", "/api/departments", "/api/settings", "/api/dimension-settings", "/api/inventory/items",
                 "/api/inventory/warehouses", "/api/inventory/categories", "/api/me")
-CACHE_SECONDS = 10.0
+CACHE_SECONDS = 60.0  # 2.9.91: lists that rarely change (chart, parties...); any change made here clears them at once
 
 
 class ApiClient:
