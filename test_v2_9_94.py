@@ -83,11 +83,13 @@ class OfficeNetworkTest(unittest.TestCase):
         cls.server = subprocess.Popen([sys.executable, str(HERE / "run_server.py"), "--host", "0.0.0.0", "--port", str(cls.port), "--database", str(cls.database),
                                        "--admin-password", "Admin-2025!", "--tls-cert", str(cls.cert), "--tls-key", str(cls.key)],
                                       cwd=str(HERE), env=cls.env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-        for _ in range(600):
-            try: ApiClient(cls.url).login("admin", "Admin-2025!"); return
-            except Exception:
-                if cls.server.poll() is not None: raise RuntimeError("server stopped: " + cls.server.stderr.read()[-1500:])
-                time.sleep(0.05)
+        urls = [cls.url] + ([f"https://127.0.0.1:{cls.port}"] if cls.address != "127.0.0.1" else [])
+        for attempt in range(600):
+            for url in urls if attempt > 40 else urls[:1]:  # some cloud machines block their own network address: then 127.0.0.1
+                try: ApiClient(url).login("admin", "Admin-2025!"); cls.url = url; return
+                except Exception: pass
+            if cls.server.poll() is not None: raise RuntimeError("server stopped: " + cls.server.stderr.read()[-1500:])
+            time.sleep(0.05)
         raise RuntimeError("server did not start")
 
     @classmethod
