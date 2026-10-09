@@ -1,5 +1,11 @@
 # Saber Accounting MVP
 
+## Version 2.9.86 (new items on upload: notice and 90% warning)
+- Uploading an invoice (Purchases > PDF, Uploaded Data PDF, Import Purchases from Excel): an item that does not exist in Inventory is created, and a notice then lists the new items (code, name, unit) so they can be checked (category, unit, stock account).
+- When an item with 90% or more of the same name exists (e.g. "HPL Panel 4mm Wht" and "HPL Panel 4mm White"), a warning asks what to do: use the existing item or create a new one (the answer is kept for the rest of the session). Names less alike are created without a question; the same name written differently (case, spaces, dashes) is still the same item.
+- Uploaded Data: a PDF whose rows carry their own VAT (some rows 11%, some 0%) is posted with each line's own VAT instead of one average rate.
+- Changed files: inventory.py, desktop_stage3_common.py, desktop_purchases.py, desktop_stage3.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_86.py.
+
 ## Version 2.9.85 (purchase PDFs read correctly)
 - Purchase PDFs (Purchases > PDF, Uploaded Data > Choose PDF Invoice(s), Expenses, Assets):
   - Tables whose amounts come first (TOTAL | VAT | DISC % | U.PRICE | QTY | WEIGHT | ITEM) are read: every item row with its quantity, unit price, unit (2KG, 100GR ...) and its VAT. Item names with "date" in them (DATES PITTED) are no longer skipped.

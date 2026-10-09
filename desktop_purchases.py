@@ -261,6 +261,7 @@ class PurchasesMixin:
                                                    "currency": invoice["currency"], "status": "posted", "source_file": Path(path).name}, lines); done += 1
                 self.load_inventory()
             except Exception as exc: errors.append(f"{invoice['invoice_number']}: {exc}")
+        notify_new_items(self, "Import Purchases")  # 2.9.86: which items were new
         (messagebox.showwarning if errors else messagebox.showinfo)("Import Purchases", f"{done} purchase(s) imported and received into stock; {created} new item(s) created." + ("\n" + "\n".join(errors[:12]) if errors else ""))
         self.load_purchases(); self.load_invoices(); self.load_journal(); self.load_trial()
 
@@ -395,7 +396,8 @@ class PurchasesMixin:
             created += 1
         if created:
             self.load_inventory()
-        return f"{created} item(s) created or matched in Inventory; review quantity and price before Save"
+        new = notify_new_items(self, "Purchase PDF")  # 2.9.86
+        return f"{created} item(s) created or matched in Inventory ({len(new)} new); review quantity and price before Save"
 
     def ai_read_purchase_pdf(self):
         path=filedialog.askopenfilename(filetypes=[("PDF invoice","*.pdf")])

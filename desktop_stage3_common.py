@@ -45,13 +45,40 @@ def auto_upload_on(app):
     except Exception: return False
 
 
+SIMILAR_ITEM_WARNING = 0.90  # 2.9.86 (owner): 90% of the name the same -> warning, the user decides
+
+
+def _remember_new(app, item):
+    if isinstance(item, dict) and item.get("created"):
+        try:
+            new = getattr(app, "_new_items", None)
+            if new is None: new = []; app._new_items = new
+            new.append(item)
+        except Exception: pass
+    return item
+
+
+def notify_new_items(app, title="Inventory"):
+    """2.9.86: after an upload, tell the user which items did not exist and were created in Inventory."""
+    new = list(getattr(app, "_new_items", None) or [])
+    try: app._new_items = []
+    except Exception: pass
+    if not new: return []
+    names = "\n".join(f'{i.get("sku", "")} - {i.get("name", "")} ({i.get("unit") or "unit"})' for i in new[:25])
+    more = f"\n... and {len(new) - 25} more" if len(new) > 25 else ""
+    messagebox.showinfo(title, f"{len(new)} new item(s) did not exist and were created in Inventory:\n\n{names}{more}\n\n"
+                               "Check their category, unit and stock account in Inventory > Items.")
+    return new
+
+
 def resolve_item(app, name, unit="unit", code=None, supplier_id=None):
-    """2.9.51: the inventory item for a purchase line. The same name written differently is matched by the service;
-    when only a CLOSE name exists (e.g. 'HPL Panel 4mm Wht' and 'HPL Panel 4mm White'), the user chooses once:
+    """2.9.51: the inventory item for a purchase line. The same name written differently is matched by the service.
+    2.9.86 (owner): an item that does not exist is created and listed in a notice after the upload; when an item
+    with 90% or more of the same name exists (e.g. 'HPL Panel 4mm Wht' and 'HPL Panel 4mm White'), a warning asks:
     use the existing item or create a new one. The answer is remembered for the rest of the session."""
     client = app.client
     if code or not isinstance(app, tk.Misc):
-        return client.find_or_create_item(name, unit, code, supplier_id)
+        return _remember_new(app, client.find_or_create_item(name, unit, code, supplier_id))
     memory = getattr(app, "_item_choices", None)
     if memory is None:
         memory = {}
@@ -60,20 +87,22 @@ def resolve_item(app, name, unit="unit", code=None, supplier_id=None):
     key = str(name or "").strip().casefold()
     if key in memory:
         chosen = memory[key]
-        return chosen if chosen else client.find_or_create_item(name, unit, None, supplier_id)
+        return chosen if chosen else _remember_new(app, client.find_or_create_item(name, unit, None, supplier_id))
     try: candidates = client.similar_items(name)
     except Exception: candidates = []
-    if not isinstance(candidates, list) or not candidates or candidates[0].get("score", 0) >= 1:
-        return client.find_or_create_item(name, unit, None, supplier_id)
+    candidates = [c for c in candidates if c.get("score", 0) >= SIMILAR_ITEM_WARNING] if isinstance(candidates, list) else []
+    if not candidates or candidates[0].get("score", 0) >= 1:
+        return _remember_new(app, client.find_or_create_item(name, unit, None, supplier_id))
     chosen = choose_similar_item(app, name, candidates)
     memory[key] = chosen
-    return chosen if chosen else client.find_or_create_item(name, unit, None, supplier_id)
+    return chosen if chosen else _remember_new(app, client.find_or_create_item(name, unit, None, supplier_id))
 
 
 def choose_similar_item(app, name, candidates):
     """Small window: use one of the close items, or create a new item. Returns the chosen item or None (create)."""
-    window = tk.Toplevel(app); window.title("Same item?"); window.transient(app); window.grab_set()
-    tk.Label(window, text=f"The invoice line\n\"{name}\"\nlooks like an item you already have:", justify="left", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+    window = tk.Toplevel(app); window.title("Warning - same item?"); window.transient(app); window.grab_set()
+    tk.Label(window, text=f"Warning: the invoice line\n\"{name}\"\nhas 90% or more of the name of an item you already have. Decide:", justify="left",
+             fg=RED, font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
     choice = tk.IntVar(master=window, value=0)
     for index, item in enumerate(candidates):
         tk.Radiobutton(window, text=f'Use {item["sku"]} - {item["name"]} ({item.get("unit") or ""}, {item["score"] * 100:.0f}% alike)', variable=choice, value=index,

@@ -1209,7 +1209,8 @@ def find_or_create_item(database, name, unit="unit", code=None, user_id=None, su
                 for candidate in db.execute("SELECT * FROM inventory_items ORDER BY COALESCE(active,1) DESC,id"):
                     if item_name_key(candidate["name"]) == key: row = candidate; break
     if row: return dict(row)
-    return save_item(database, {"sku": code or "", "name": name, "unit": unit or "unit", "supplier_id": supplier_id}, user_id)
+    created = save_item(database, {"sku": code or "", "name": name, "unit": unit or "unit", "supplier_id": supplier_id}, user_id)
+    return {**created, "created": True}  # 2.9.86: the screens tell the user which items are new
 
 
 # ---------------------------------------------------------------- physical inventory

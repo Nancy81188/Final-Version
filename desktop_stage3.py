@@ -279,9 +279,13 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             last = index == len(items) - 1
             line_subtotal = remaining_subtotal if last else round(float(it["total"]), 2)
             line_vat = remaining_vat if last else round(line_subtotal * rate / 100, 2)
+            line_rate = rate
+            if all("vat" in x for x in items) and abs(sum(float(x["vat"]) for x in items) - vat) <= 0.05:  # 2.9.86: each row's own VAT (0% / 11%)
+                line_vat = remaining_vat if last else round(float(it["vat"]), 2)
+                line_rate = round(line_vat / line_subtotal * 100, 4) if line_subtotal else 0
             remaining_subtotal = round(remaining_subtotal - line_subtotal, 2); remaining_vat = round(remaining_vat - line_vat, 2)
             lines.append({"item_code": item["sku"], "description": item.get("name") or it["description"], "quantity": float(it["quantity"]), "unit": item.get("unit") or "unit",
-                          "unit_price": round(line_subtotal / float(it["quantity"]), 6), "discount_percent": 0, "vat_rate": rate, "warehouse": "MAIN",
+                          "unit_price": round(line_subtotal / float(it["quantity"]), 6), "discount_percent": 0, "vat_rate": line_rate, "warehouse": "MAIN",
                           "deductible_subtotal": line_subtotal, "vat": line_vat})
         invoice = {"invoice_number": r["invoice_number"], "invoice_date": r["invoice_date"], "party_name": r["party_name"], "kind": "purchases",
                    "currency": r["currency"], "status": "posted", "source_file": r.get("source") or "PDF import",
@@ -434,6 +438,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                         try: self.client.upload_attachment(invoice_id, Path(r["_path"]).name, "application/pdf", Path(r["_path"]).read_bytes())
                         except Exception as exc: errors.append(f"{r['line']}: invoice POSTED (ID {invoice_id}), PDF attachment failed: {exc}. Attach it manually; do not re-import")
                     invoice_rows = [r for r in invoice_rows if not any(r is w for w in with_items)]
+                    notify_new_items(self, "Import PDF")  # 2.9.86: the items that did not exist
                 items=[]
                 for r in invoice_rows:
                     row_kind,row_type=TYPES[r["entry_type"]]
