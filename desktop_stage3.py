@@ -54,6 +54,7 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                    ("source", "Source", 150, "w"), ("notes", "Check", 230, "w")]
         bottom = tk.Frame(page, bg=LIGHT); bottom.pack(side="bottom", fill="x", padx=10, pady=8)
         tk.Checkbutton(bottom, text="Replace ALL previous invoices (a safety backup is made first)", variable=self.import_replace, bg=LIGHT, fg=RED).pack(side="left")
+        tk.Button(bottom, text="Auto Calculate Totals", command=self.import_auto_calculate, bg=NAVY, fg="white", border=0, padx=14, pady=8).pack(side="right", padx=6)  # 2.9.89
         tk.Button(bottom, text="Review & Save Import", command=self.send_import, bg=GOLD, fg=NAVY, font=("Segoe UI", 10, "bold"), border=0, padx=26, pady=8).pack(side="right")
         tk.Checkbutton(bottom, text="Save automatically after reading", variable=self.auto_upload_var(), command=self.remember_auto_upload,
                        bg=LIGHT, fg=NAVY).pack(side="right", padx=8)
@@ -251,6 +252,32 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             if not isinstance(found, list): return {}
             return {id(r): (r, matches) for (r, _item), matches in zip(checked, found) if isinstance(matches, list) and matches}
         except Exception: return {}  # the check never blocks an import when the service cannot answer
+
+    def import_auto_calculate(self):
+        """2.9.89: complete or correct the amounts of the selected rows (all rows when none is selected):
+        Total = Subtotal + VAT; a missing amount is worked out from the other two; with the subtotal only, VAT at the
+        standard rate. Each changed row says so in its notes."""
+        sheet = self.import_sheet; chosen = [i for i in sheet.tree.selection() if i in sheet.rows] or list(sheet.rows)
+        rate = 11.0
+        try: rate = float(self.client.settings().get("vat_rate") or 11)
+        except Exception: pass
+        changed = 0
+        for iid in chosen:
+            row = sheet.rows[iid]
+            amounts = {k: _num(row.get(k), None) if row.get(k) not in (None, "") else None for k in ("subtotal", "vat", "total")}
+            s, v, total = amounts["subtotal"], amounts["vat"], amounts["total"]
+            if s is not None and v is not None: new = (s, v, round(s + v, 2))
+            elif total is not None and v is not None: new = (round(total - v, 2), v, total)
+            elif s is not None and total is not None: new = (s, round(total - s, 2), total)
+            elif s is not None: new = (s, round(s * rate / 100, 2), round(s * (1 + rate / 100), 2))
+            elif total is not None: new = (round(total / (1 + rate / 100), 2), round(total - total / (1 + rate / 100), 2), total)
+            else: continue
+            if (s, v, total) == new: continue
+            row["subtotal"], row["vat"], row["total"] = new
+            row["notes"] = (f"Amounts auto-calculated ({new[0]:,.2f} + VAT {new[1]:,.2f} = {new[2]:,.2f}); " + str(row.get("notes") or "").replace("subtotal + VAT differ from the total", "")).strip()
+            self.import_cell_changed_display(row); sheet.refresh(iid); changed += 1
+        self.import_status.config(text=f"{changed} row(s) recalculated: Total = Subtotal + VAT. Check them, then press Review & Save Import.")
+        return changed
 
     def split_ready_import_rows(self, rows):
         """Rows that can be posted without a question, and the others (their Check note says why)."""

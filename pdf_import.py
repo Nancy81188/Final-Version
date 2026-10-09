@@ -153,53 +153,46 @@ def _ocr_pdf_pages(path, page_numbers=None, progress=None, cancel=None):
         raise RuntimeError("Install English or Arabic Tesseract language data to read scanned invoices")
     language = "+".join(languages)
 
+    def read_image(image):
+        text = pytesseract.image_to_string(image, lang=language, config=config)
+        # PSM 6 with both languages can mistake a clear English invoice heading for another word. If key invoice
+        # fields are missing, retry with English layout analysis and keep the better extraction.
+        parsed = _parse_invoice_text(path, text)
+        subtotal, vat, total = (parsed.get(key) for key in ("subtotal", "vat", "total"))
+        amounts_conflict = all(value is not None for value in (subtotal, vat, total)) and abs(subtotal + vat - total) > max(0.05, abs(total) * 0.005)
+        core_fields_missing = any(parsed.get(key) in (None, "") for key in ("invoice_number", "invoice_date", "total"))
+        if "eng" in languages and (core_fields_missing or amounts_conflict):
+            alternate = pytesseract.image_to_string(image, lang="eng", config=english_config)
+            if _ocr_invoice_score(path, alternate) > _ocr_invoice_score(path, text): text = alternate
+        if "eng" in languages and not _labelled_invoice_date(text):
+            text = text + "\n" + _ocr_header_lines(pytesseract, image, english_config)
+        return text
+
+    # 2.9.89: the pages are drawn one by one (PDFium is not thread-safe) but read by several OCR engines at once
+    # (each is its own process): a 79-page scanned file took about 11 minutes, now a fraction on a multi-core PC.
+    from concurrent.futures import ThreadPoolExecutor
+    workers = max(1, min(4, (os.cpu_count() or 2) - 1))
+    os.environ.setdefault("OMP_THREAD_LIMIT", "1")  # one core per engine: OpenMP spinning on all cores made OCR many times slower
     document = pdfium.PdfDocument(str(path))
-    selected = range(len(document)) if page_numbers is None else page_numbers
-    texts = []; selected = list(selected)
+    selected = list(range(len(document)) if page_numbers is None else page_numbers)
+    texts = [""] * len(selected); pending = {}; done = 0
     try:
-        for page_number in selected:
-            if cancel is not None and cancel.is_set():
-                texts.append(""); continue
-            if progress: progress(len(texts), len(selected))
-            page = document[int(page_number)]
-            bitmap = None
-            image = None
-            try:
-                bitmap = page.render(scale=2.0)
-                image = bitmap.to_pil()
-                text = pytesseract.image_to_string(image, lang=language, config=config)
-                # PSM 6 with both languages can mistake a clear English invoice
-                # heading for another word. If key invoice fields are missing,
-                # retry locally with English layout analysis and keep the better
-                # extraction; Arabic OCR remains the preferred result when it
-                # yields more usable fields.
-                parsed = _parse_invoice_text(path, text)
-                subtotal, vat, total = (
-                    parsed.get(key) for key in ("subtotal", "vat", "total")
-                )
-                amounts_conflict = (
-                    all(value is not None for value in (subtotal, vat, total))
-                    and abs(subtotal + vat - total) > max(0.05, abs(total) * 0.005)
-                )
-                core_fields_missing = any(
-                    parsed.get(key) in (None, "")
-                    for key in ("invoice_number", "invoice_date", "total")
-                )
-                if "eng" in languages and (core_fields_missing or amounts_conflict):
-                    alternate = pytesseract.image_to_string(
-                        image, lang="eng", config=english_config
-                    )
-                    if _ocr_invoice_score(path, alternate) > _ocr_invoice_score(path, text):
-                        text = alternate
-                if "eng" in languages and not _labelled_invoice_date(text):
-                    text = text + "\n" + _ocr_header_lines(pytesseract, image, english_config)
-                texts.append(text)
-            finally:
-                if image is not None:
-                    image.close()
-                if bitmap is not None:
-                    bitmap.close()
-                page.close()
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for index, page_number in enumerate(selected):
+                if cancel is not None and cancel.is_set(): break
+                while len(pending) >= workers * 2:  # keep only a few page images in memory
+                    first = min(pending); texts[first] = pending.pop(first).result(); done += 1
+                    if progress: progress(done, len(selected))
+                page = document[int(page_number)]
+                try:
+                    bitmap = page.render(scale=2.0); image = bitmap.to_pil(); bitmap.close()
+                finally:
+                    page.close()
+                pending[index] = pool.submit(lambda img: (read_image(img), img.close())[0], image)
+            if progress and not done: progress(0, len(selected))
+            for index in sorted(pending):
+                texts[index] = pending[index].result(); done += 1
+                if progress: progress(done, len(selected))
     finally:
         document.close()
     return texts

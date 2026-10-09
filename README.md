@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.89 (scanned PDFs much faster, Auto Calculate Totals)
+- Scanned PDFs: the OCR engine used every core of the computer for each page and lost most of its time waiting (OpenMP); it now uses one core per engine and several pages are read side by side on a multi-core PC. An 8-page scanned bundle went from 84 seconds to 17 seconds on one core and 11 seconds on two; the 79-page BCC file is read in a few minutes instead of about 15.
+- Uploaded Data > "Auto Calculate Totals" (selected rows, or all): Total = Subtotal + VAT; a missing amount is worked out from the other two; with the subtotal only, VAT at the company's rate (11%); with the total only, subtotal and VAT are taken out of it. Each changed row says so in Check.
+- Changed files: pdf_import.py, desktop_stage3.py, app_runtime.py, installer.iss, README.md. New test: test_v2_9_89.py.
+
 ## Version 2.9.88 (tested on Windows, several users at once, Lebanese rules checked)
 - Several users at the same time: 4 users saving 80 invoices and 20 receipts at once (plus a second program writing to the same file) got only 36 different invoice numbers - the same number was given twice. Changes are now made one at a time by the data service (reading is never blocked); now 80 invoices, 80 numbers, no voucher number twice, every entry balanced.
 - Windows: the whole test suite now also runs on Windows (GitHub windows-latest) at every change. On Windows a data file whose -shm file is held by another program answers "unable to open database file" (not only "disk I/O error"): the program waits and opens it once the other program lets go (tested by holding the file for 1.5 s). Speed on Windows is measured (300 invoices saved, journal and trial balance).
