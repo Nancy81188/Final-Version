@@ -150,9 +150,16 @@ class OfficeNetworkTest(unittest.TestCase):
         self.stop_server()
         with self.assertRaises(Exception): ApiClient(self.url).login("admin", "Admin-2025!")  # clear error while the server is off
         type(self).start_server()
-        again = ApiClient(self.url); again.login("lina", "Lina-2025!"); again.select_company_year(self.company["id"], 2025)
+        def signed_in(user, password):  # each PC signs in again after the restart (a fresh connection; retried while the server warms up)
+            for attempt in range(40):
+                try:
+                    api = ApiClient(type(self).url); api.login(user, password); api.select_company_year(self.company["id"], 2025); return api
+                except Exception:
+                    if attempt == 39: raise
+                    time.sleep(0.25)
+        again = signed_in("lina", "Lina-2025!")
         self.assertEqual(len(again.invoices()), before)  # nothing lost
-        self.admin.login("admin", "Admin-2025!"); self.admin.select_company_year(self.company["id"], 2025)
+        type(self).admin = signed_in("admin", "Admin-2025!")
 
 
 class SplitAndLookTest(unittest.TestCase):
