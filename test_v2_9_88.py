@@ -40,7 +40,8 @@ class MultiUserTest(unittest.TestCase):
 
     def test_four_users_and_a_second_program_at_the_same_time(self):
         errors, numbers = [], []
-        company_file = next(y["database"] for y in self.admin.companies()[0]["years"] if int(y["year"]) == 2025)
+        from company_manager import CompanyManager
+        company_file = str(CompanyManager(self.database).year_file(next(c for c in CompanyManager(self.database).list_companies(True) if c["id"] == self.company["id"]), 2025))
 
         def user(name, password):
             try:
