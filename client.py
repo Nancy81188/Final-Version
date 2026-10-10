@@ -445,6 +445,9 @@ class ApiClient:
     def tax_settings_report(self,date): return self.request("GET","/api/tax-settings-report?"+urlencode({"date":date}))  # 2.9.100
     def tax_adviser(self): return self.request("GET","/api/tax-adviser")
     def save_tax_adviser(self,item): return self.request("POST","/api/tax-adviser",item)
+    def licence(self): return self.request("GET","/api/owner/licence")  # 2.9.101: the owner (seller)
+    def set_licence(self,valid_until): return self.request("POST","/api/owner/licence",{"valid_until":valid_until})
+    def set_owner_password(self,current,new): return self.request("POST","/api/owner/password",{"current":current,"new":new})
     def tax_review(self,date): return self.request("GET","/api/tax-review?"+urlencode({"date":date}))  # 2.9.98
     def verify_audit_trail(self): return self.request("GET","/api/audit-verify")
     def vat_ledgers(self): return self.request("GET","/api/vat-ledgers")  # 2.9.97
@@ -452,6 +455,7 @@ class ApiClient:
     def create_vat_accounts(self,start_from=0): return self.request("POST","/api/vat-ledgers/create",{"start_from":start_from})
     def test_vat_accounts(self): return self.request("GET","/api/vat-ledgers/test")
     def approve_invoices(self,ids): return self.request("POST","/api/invoices/approve",{"ids":list(ids)})  # 2.9.93
+    def set_item_details(self,items): return self.request("POST","/api/inventory/item-details",{"items":list(items)})  # 2.9.101
     def set_item_accounts(self,item_ids,cost_account=None,sales_account=None): return self.request("POST","/api/inventory/item-accounts",{"item_ids":list(item_ids),"cost_account":cost_account,"sales_account":sales_account})  # 2.9.90
     def find_or_create_item(self,name,unit="unit",sku=None,supplier_id=None): return self.request("POST","/api/inventory/find-or-create",{"name":name,"unit":unit,"sku":sku,"supplier_id":supplier_id})["item"]
     def delete_fiscal_year(self,year): return self.request("POST","/api/fiscal-years/delete",{"year":year})

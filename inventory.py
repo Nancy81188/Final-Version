@@ -118,12 +118,14 @@ def migrate(db):
 
 
 SHOW_KEYS = ("brand", "warehouse", "project", "branch")  # which of these appear in the inventory screens (2.9.45)
+ASK_KEYS = ("category", "subcategory", "brand")  # 2.9.101: asked for each new item a purchase creates
 
 
 def settings(database):
     values = database.settings()
     result = {"currency": values.get("inventory_currency", "USD"), "method": values.get("inventory_method", "average")}
     for key in SHOW_KEYS: result[f"show_{key}"] = values.get(f"inventory_show_{key}", "1") != "0"
+    for key in ASK_KEYS: result[f"ask_{key}"] = values.get(f"inventory_ask_{key}", "0") == "1"
     return result
 
 
@@ -137,6 +139,7 @@ def save_settings(database, item, user_id):
     if currency not in database.currency_codes() or method not in ("average", "fifo"): raise ValueError("Choose a listed currency and Average or FIFO")
     pairs = [("inventory_currency", currency), ("inventory_method", method)]
     pairs += [(f"inventory_show_{key}", "1" if item.get(f"show_{key}") else "0") for key in SHOW_KEYS if f"show_{key}" in item]
+    pairs += [(f"inventory_ask_{key}", "1" if item.get(f"ask_{key}") else "0") for key in ASK_KEYS if f"ask_{key}" in item]
     with database.connect() as db:
         for key, value in pairs:
             db.execute("INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
@@ -962,6 +965,25 @@ def similar_items(database, name, limit=3, threshold=0.82):
         if score < 1.0 and (key in other or other in key) and min(len(key), len(other)) >= 4: score = max(score, 0.86)
         if score >= threshold: found.append({**row, "score": round(score, 3)})
     return sorted(found, key=lambda r: (-r["score"], r["sku"]))[:limit]
+
+
+def set_item_details(database, details, user_id=None):
+    """2.9.101: the category / subcategory / brand of new items, chosen in the table shown after a purchase creates them.
+    details = [{"id": .., "category": .., "subcategory": .., "brand": ..}]; a key that is not given is not changed."""
+    done = 0
+    with database.connect() as db:
+        for row in details or []:
+            for key in ASK_KEYS:
+                if key in row:
+                    value = str(row.get(key) or "").strip() or None
+                    db.execute(f"UPDATE inventory_items SET {key}=? WHERE id=?", (value, int(row["id"])))
+                    if key == "category" and value:
+                        db.execute("INSERT INTO item_categories(name,parent_id) SELECT ?,NULL WHERE NOT EXISTS "
+                                   "(SELECT 1 FROM item_categories WHERE name=? AND parent_id IS NULL)", (value, value))
+            done += 1
+        db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
+                   (user_id, "update", "inventory_item", json.dumps({"details": details}, default=str)[:4000], utcnow()))
+    return {"updated": done}
 
 
 def set_item_accounts(database, item_ids, cost_account=None, sales_account=None, user_id=None):

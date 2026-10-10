@@ -166,7 +166,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(403,{"error":"Backup access is not available for viewer accounts"})
         if path == "/api/me":
             info={k:user[k] for k in ("id","username","role","language","expires_at")}; info["permissions"]={m:self.master_db.user_can(user,m) for m in ("payroll","vat","delete")}
+            import owner_access
+            with self.master_db.connect() as connection: info["licence"]=owner_access.licence(connection)
+            info["owner"]=owner_access.is_owner(user)
             return self._json(200,info)
+        if path == "/api/owner/licence":  # 2.9.101
+            import owner_access
+            with self.master_db.connect() as connection: return self._json(200,owner_access.licence(connection))
         if path in ("/api/payroll/eos-provision","/api/payroll/leave","/api/payroll/leave-balances","/api/payroll/payslips"):  # 2.9.82
             try:
                 if path.endswith("eos-provision"):
@@ -759,6 +765,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if path == "/api/inventory/monthly-variation": return self._json(200,inventory.post_monthly_stock_variation(self.db,body.get("month_end"),user["id"]))  # 2.9.82
                 if path == "/api/inventory/categories": return self._json(200,inventory.save_category(self.db,body,user["id"]))
                 if path == "/api/inventory/counts": return self._json(201,inventory.save_count(self.db,body.get("header",{}),body.get("lines",[]),user["id"],body.get("id"),bool(body.get("post"))))
+                if path == "/api/inventory/item-details": return self._json(200,inventory.set_item_details(self.db,body.get("items"),user["id"]))  # 2.9.101
                 if path == "/api/inventory/item-accounts": return self._json(200,inventory.set_item_accounts(self.db,body.get("item_ids"),body.get("cost_account"),body.get("sales_account"),user["id"]))  # 2.9.90
                 if path == "/api/inventory/find-or-create": return self._json(200,{"item":inventory.find_or_create_item(self.db,body.get("name"),body.get("unit"),body.get("sku"),user["id"],body.get("supplier_id"))})
             except KeyError as exc: return self._json(404,{"error":str(exc).strip("'")})
@@ -870,6 +877,14 @@ class ApiHandler(BaseHTTPRequestHandler):
             try: account=self.db.save_account(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(201,{"saved":True,"account":account})
+        if path in ("/api/owner/licence","/api/owner/password"):  # 2.9.101: only the owner (the seller)
+            import owner_access
+            if not owner_access.is_owner(user): return self._json(403,{"error":"Only the owner of Saber Accounting can do this"})
+            try:
+                with self.master_db.connect() as connection:
+                    if path.endswith("licence"): return self._json(200,owner_access.set_licence(connection,body.get("valid_until"),user["id"]))
+                    owner_access.set_password(connection,body.get("current"),body.get("new"),user["id"]); return self._json(200,{"saved":True})
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/users":
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             try: result=self.master_db.save_user(body,user["id"])

@@ -16,6 +16,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 
 from client import ApiClient
 from i18n import tr
@@ -136,6 +137,7 @@ def display_cells(values):
     if isinstance(values, str) or not isinstance(values, (list, tuple)): return values
     shown = []
     for value in values:
+        if value is None or value == "None": value = ""  # 2.9.101: an empty cell, not the word None
         if isinstance(value, str):
             match = _ISO_DAY.match(value.strip())
             if match: value = f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
@@ -224,6 +226,99 @@ def _install_date_display():
 
 
 _install_date_display()
+
+
+def _install_column_fit():
+    """2.9.101: every table shows its column titles and values in full, and fills its width.
+    A column is never narrower than its title (and the values of the first rows, up to 320 pixels); when the table is wider
+    than its columns, the extra space is shared between them. Hidden columns (width 0) stay hidden."""
+    if getattr(ttk.Treeview, "_saber_fit", False): return
+    real_heading, real_column, real_insert = ttk.Treeview.heading, ttk.Treeview.column, ttk.Treeview.insert
+
+    def schedule(tree):
+        if tree.__dict__.get("_fit_pending"): return
+        tree.__dict__["_fit_pending"] = True
+        try: tree.after_idle(lambda: fit(tree))
+        except tk.TclError: pass
+
+    def fonts(tree):
+        cached = tree.__dict__.get("_fit_fonts")
+        if cached: return cached
+        style = ttk.Style(tree); name = str(tree.cget("style") or "Treeview")
+        head = style.lookup(name + ".Heading", "font") or style.lookup("Treeview.Heading", "font") or "TkHeadingFont"
+        body = style.lookup(name, "font") or style.lookup("Treeview", "font") or "TkDefaultFont"
+        try: cached = (tkfont.Font(tree, font=head), tkfont.Font(tree, font=body))
+        except tk.TclError: cached = (tkfont.nametofont("TkHeadingFont"), tkfont.nametofont("TkDefaultFont"))
+        tree.__dict__["_fit_fonts"] = cached
+        return cached
+
+    def fit(tree):
+        tree.__dict__["_fit_pending"] = False
+        try:
+            if not tree.winfo_exists(): return
+            columns = list(tree["columns"]); shown = list(tree["displaycolumns"])
+            if not columns: return
+            if not shown or shown[0] == "#all": shown = columns
+            head_font, body_font = fonts(tree)
+            base = tree.__dict__.setdefault("_fit_base", {})
+            rows = tree.get_children("")[:30]
+            widths = {}
+            for column in shown:
+                wanted = base.get(column)
+                if wanted is None: wanted = base[column] = int(real_column(tree, column, "width"))
+                if wanted <= 0: continue  # hidden on purpose
+                need = head_font.measure(str(real_heading(tree, column, "text") or "")) + 22
+                index = columns.index(column)
+                for row in rows:
+                    values = tree.item(row, "values")
+                    if index < len(values): need = max(need, min(320, body_font.measure(str(values[index])) + 16))
+                widths[column] = max(wanted, need)
+            if not widths: return
+            total = sum(widths.values()) + (int(real_column(tree, "#0", "width")) if "tree" in str(tree.cget("show")) else 0)
+            space = tree.winfo_width() - 4
+            if space > total + 8:
+                extra = space - total; share = sum(widths.values())
+                for column in widths: widths[column] += int(extra * widths[column] / share)
+            for column, width in widths.items():
+                if int(real_column(tree, column, "width")) != width: real_column(tree, column, width=width)
+        except (tk.TclError, ValueError, ZeroDivisionError):
+            return
+
+    def on_resize(event):
+        tree = event.widget
+        if tree.__dict__.get("_fit_last") != event.width:
+            tree.__dict__["_fit_last"] = event.width; schedule(tree)
+
+    def watch(tree):
+        if not tree.__dict__.get("_fit_bound"):
+            tree.__dict__["_fit_bound"] = True
+            try: tree.bind("<Configure>", on_resize, add="+")
+            except tk.TclError: pass
+        schedule(tree)
+
+    def heading(self, column, option=None, **kw):
+        result = real_heading(self, column, option, **kw)
+        if "text" in kw: watch(self)
+        return result
+
+    def column(self, column, option=None, **kw):
+        if "width" in kw:
+            try: self.__dict__.setdefault("_fit_base", {})[column] = int(kw["width"])
+            except (TypeError, ValueError): pass
+        result = real_column(self, column, option, **kw)
+        if kw: watch(self)
+        return result
+
+    def insert(self, parent, index, iid=None, **kw):
+        new_iid = real_insert(self, parent, index, iid, **kw)
+        if self.__dict__.get("_fit_bound") and len(self.get_children("")) <= 30: schedule(self)
+        return new_iid
+
+    ttk.Treeview.heading, ttk.Treeview.column, ttk.Treeview.insert = heading, column, insert
+    ttk.Treeview._saber_fit = True
+
+
+_install_column_fit()
 
 
 def flow_toolbar(frame, gap=4):

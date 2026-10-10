@@ -641,6 +641,9 @@ class PurchasesMixin:
                 if auto:
                     f["pdf_label"].config(text=text + " Not saved again.", fg=RED); return
                 if not messagebox.askyesno("Already saved", text + "\n\nSave it again anyway?"): return
+        asked = asked_item_details(self)
+        try: items_before = {i["id"] for i in self.client.inventory_items()} if asked else set()
+        except Exception: items_before = set(); asked = []
         try:
             invoice_id = self.client.replace_invoice(f["id"], invoice, lines) if f["id"] else self.client.create_manual_invoice(invoice, lines)["invoice_id"]
         except Exception as exc:
@@ -657,6 +660,10 @@ class PurchasesMixin:
                 return messagebox.showwarning("Purchases",
                     f"Purchase {invoice_id} is SAVED, but the PDF attachment failed: {exc}\n"
                     "Press Save again to retry ONLY the PDF; the purchase and its items will not be posted twice.")
+        if asked:  # 2.9.101: the items this purchase created get their category / brand in a table
+            try: created = [i for i in self.client.inventory_items() if i["id"] not in items_before]
+            except Exception: created = []
+            if created: ask_new_item_details(self, created, "Purchase", asked); self.load_inventory()
         if auto:
             messagebox.showinfo("Purchases", f"Uploaded invoice {invoice['invoice_number']} saved automatically: journal entry INV-{invoice_id} posted"
                                 + (", items received in stock" if len(lines) > 1 or lines[0].get("item_code") else "") + (" and PDF attached." if f["pdf"] else "."))

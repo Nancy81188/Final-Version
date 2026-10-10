@@ -1,5 +1,11 @@
 # Saber Accounting MVP
 
+## Version 2.9.101 (tables that show everything, owner account and licence, category / brand of new items)
+- Every table shows its column titles and values in full (no more "Unit Pric", "Discoun", "JV-2026-000") and fills the width of the screen; empty cells no longer show the word "None". A screen opens at its top.
+- Owner (seller) account: a hidden sign-in that works on every installation, is not in the client's list of users and never expires. The owner sets the licence of the installation (Settings > Users, box shown only to the owner); when it ends, only the owner can sign in to renew it. The owner password can be changed per installation.
+- Inventory > Warehouses & Settings > "New item on a purchase: ask for" Category / Subcategory / Brand: when a purchase creates new items, a table opens to give them their category and brand (pick, Apply to the selected lines or all, Save).
+- Company files made before 2.9.100 now get the approval table when opened (the upgrade check missed it).
+
 ## Version 2.9.100 (selective approval, adviser confirmation, settings print, clearer menu)
 - Accounting Setup > Approval: each company chooses which documents need approval - sales / purchase invoices, journal vouchers, receipts and payments, expenses. A document of a chosen kind saved by a user without "Can approve" waits in "Pending approvals" and is in no report until another user approves it (never the one who prepared it).
 - Payroll > Tax & NSSF Settings: Print Settings and Settings PDF (values in force, salary brackets, NSSF periods, family allowance, posting accounts). "Adviser confirmation..." records the tax adviser who checked the rules (name, licence, date); the Rules pack then shows "Confirmed by the tax adviser".

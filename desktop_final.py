@@ -64,6 +64,9 @@ class FinalFeaturesMixin:
         bar = tk.Frame(self, bg=NAVY); bar.pack(fill="x", side="bottom")
         expires = user.get("expires_at")
         validity = f"Account valid until {_display(expires)}" if expires else "Account without expiry"
+        licence = (user.get("licence") or {}).get("valid_until")
+        if licence: validity += f"   |   Licence until {_display(licence)}"  # 2.9.101
+        if user.get("owner"): validity += "   |   OWNER"
         text = f"Signed in: {user.get('username', '')}   |   Role: {str(user.get('role', '')).title()}   |   {validity}"
         tk.Label(bar, text=text, bg=NAVY, fg="white", font=("Segoe UI", 8)).pack(side="left", padx=12, pady=3)
         if expires:
@@ -783,6 +786,45 @@ class FinalFeaturesMixin:
             ("expires", "Valid Until", 95), ("days", "Days Left", 75), ("payroll", "Payroll", 65), ("vat", "VAT", 55), ("delete", "Delete", 60), ("approve", "Approve", 65)])
         self.users_tree.tag_configure("expired", foreground=RED); self.users_tree.tag_configure("soon", foreground=AMBER)
         self.users_tree.bind("<Double-1>", lambda _event: self.edit_selected_user())
+        if (self.current_user or {}).get("owner"): self.build_owner_box(users)
+
+    def build_owner_box(self, parent):
+        """2.9.101: only the owner (the seller) sees this box: the licence of this installation and the owner password."""
+        box = tk.LabelFrame(parent, text="Owner of Saber Accounting - not shown to the client", bg=LIGHT, fg=NAVY, font=("Segoe UI", 10, "bold"))
+        box.pack(fill="x", padx=10, pady=8)
+        self.licence_until = tk.StringVar(); self.licence_label = tk.StringVar()
+        tk.Label(box, text="Licence valid until", bg=LIGHT).pack(side="left", padx=(8, 4), pady=6)
+        self.date_entry(box, self.licence_until, 12).pack(side="left", padx=4)
+        self.action_button(box, "Save Licence", self.save_licence).pack(side="left", padx=4)
+        self.action_button(box, "Change Owner Password...", self.owner_password_dialog).pack(side="left", padx=4)
+        tk.Label(box, textvariable=self.licence_label, bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
+        self.show_licence()
+
+    def show_licence(self, info=None):
+        try: info = info or self.client.licence()
+        except Exception as exc: self.licence_label.set(str(exc)); return
+        until = info.get("valid_until")
+        self.licence_until.set(_display(until) if until else "")
+        self.licence_label.set("No end date (empty = unlimited)" if not until else
+                               (f"EXPIRED - only you can sign in" if info.get("expired") else f"{info.get('days')} day(s) left"))
+
+    def save_licence(self):
+        try: self.show_licence(self.client.set_licence(self.licence_until.get().strip()))
+        except Exception as exc: messagebox.showerror("Licence", str(exc)); return
+        messagebox.showinfo("Licence", "Licence saved for this installation.")
+
+    def owner_password_dialog(self):
+        window = tk.Toplevel(self); window.title("Owner password"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        current, new, again = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        for row, (label, var) in enumerate((("Current password", current), ("New password (10+ characters)", new), ("New password again", again))):
+            tk.Label(window, text=label, bg=LIGHT).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+            tk.Entry(window, textvariable=var, show="*", width=28).grid(row=row, column=1, padx=10, pady=5)
+        def save():
+            if new.get() != again.get(): messagebox.showerror("Owner password", "The two new passwords are not the same", parent=window); return
+            try: self.client.set_owner_password(current.get(), new.get())
+            except Exception as exc: messagebox.showerror("Owner password", str(exc), parent=window); return
+            messagebox.showinfo("Owner password", "Owner password changed on this installation.", parent=window); window.destroy()
+        self.action_button(window, "Save", save).grid(row=3, column=1, sticky="e", padx=10, pady=10)
 
     def clear_user_form(self):
         self.edit_user_id = None; self.user_name.set(""); self.user_password.set(""); self.user_role.set("accountant"); self.user_active.set(True)

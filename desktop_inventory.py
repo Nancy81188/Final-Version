@@ -531,6 +531,12 @@ class InventoryMixin:
         for key, label in (("brand", "Brand"), ("warehouse", "Warehouse"), ("project", "Project"), ("branch", "Branch")):
             tk.Checkbutton(show_box, text=label, variable=self.inv_show[key], bg=LIGHT).pack(side="left", padx=8)
         tk.Label(show_box, text="Tick only what you use; the others disappear from items, stock documents and report filters. Save Settings to keep the choice.", bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
+        self.inv_ask = {key: tk.BooleanVar(value=False) for key in ("category", "subcategory", "brand")}  # 2.9.101
+        ask_box = tk.LabelFrame(page, text="New item on a purchase: ask for | صنف جديد في المشتريات: اطلب", bg=LIGHT, padx=8, pady=4); ask_box.pack(fill="x", padx=8, pady=(0, 6))
+        for key, label in (("category", "Category"), ("subcategory", "Subcategory"), ("brand", "Brand")):
+            tk.Checkbutton(ask_box, text=label, variable=self.inv_ask[key], bg=LIGHT).pack(side="left", padx=8)
+        tk.Label(ask_box, bg=LIGHT, fg=MUTED,
+                 text="When a purchase creates new items, a table opens to choose their category / brand. Save Settings to keep the choice.").pack(side="left", padx=8)
         self.action_button(box, "Save Settings", self.save_inventory_settings).pack(side="left", padx=4)
         year = getattr(self, "current_fiscal_year", datetime.now().year)
         tk.Button(box, text=f"Post Stock Variation {year}", command=self.post_stock_variation, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(20, 4))
@@ -567,6 +573,7 @@ class InventoryMixin:
     def save_inventory_settings(self):
         payload = {"currency": self.inv_currency.get(), "method": "fifo" if self.inv_method.get() == "FIFO" else "average"}
         payload.update({f"show_{key}": var.get() for key, var in getattr(self, "inv_show", {}).items()})
+        payload.update({f"ask_{key}": var.get() for key, var in getattr(self, "inv_ask", {}).items()})
         try: self.client.save_inventory_settings(payload)
         except Exception as exc: return messagebox.showerror("Inventory", str(exc))
         self.load_inventory(); messagebox.showinfo("Inventory", "Inventory settings saved")
@@ -599,6 +606,7 @@ class InventoryMixin:
         """Brand / warehouse / project / branch appear only when ticked in Warehouses & Settings."""
         show = {key: inv.get(f"show_{key}", True) for key in ("brand", "warehouse", "project", "branch")}
         for key, var in getattr(self, "inv_show", {}).items(): var.set(show[key])
+        for key, var in getattr(self, "inv_ask", {}).items(): var.set(bool(inv.get(f"ask_{key}")))
         def toggle(widget, visible, manager="pack", **options):
             if widget is None or not widget.winfo_exists(): return
             if visible:

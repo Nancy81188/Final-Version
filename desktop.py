@@ -820,6 +820,16 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
             messagebox.showinfo("Saber Accounting","This screen is hidden for this company or for you (Settings > Accounting Settings)."); return
         self._ensure_main_tab(page)
         self.main_notebook.select(page); self.highlight_main_tab()
+        seen=self.__dict__.setdefault("_pages_opened",set())
+        if str(page) not in seen:  # 2.9.101: a screen opens at its top (not half scrolled under the title)
+            seen.add(str(page)); self.after(200,lambda: self._scroll_to_top(page))
+
+    def _scroll_to_top(self,widget):
+        try:
+            for child in widget.winfo_children():
+                if isinstance(child,tk.Canvas) and child.cget("yscrollcommand"): child.yview_moveto(0)
+                self._scroll_to_top(child)
+        except tk.TclError: pass
 
     def highlight_main_tab(self):
         selected=self.main_notebook.select()
