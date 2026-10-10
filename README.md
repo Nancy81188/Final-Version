@@ -4,6 +4,7 @@
 - No more `from x import *`: the 26 modules that used it now import, by name, only what they use (a mistake now shows as an error at once instead of a wrong name at run time).
 - 418 very long lines were split (lines over 200 characters: 505 -> 106); each file was checked to give exactly the same program before and after.
 - The release test stops both from coming back: no new `import *`, and the number of long lines can only go down.
+- Network test: five users (each with their own session) save journal vouchers and expenses into the same company at the same moment while others read the trial balance - nothing lost, no voucher number given twice, no "database is locked", the books balance. It runs on every push.
 - Nothing changes on screen.
 
 ## Version 2.9.101 (tables that show everything, owner account and licence, category / brand of new items)
