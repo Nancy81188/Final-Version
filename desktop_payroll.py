@@ -79,20 +79,29 @@ class PayrollMixin:
             ("schooling_public_child","Public School / Child"),("schooling_public_cap","Public School Cap"),
             ("schooling_private_child","Private School / Child"),("schooling_private_cap","Private School Cap"),
             ("tax_rounding","Round Tax Up To"),("minimum_wage","Minimum Wage"),("family_allowance_spouse","Allowance Spouse"),("family_allowance_child","Allowance per Child"),("family_allowance_cap","Allowance Maximum"),("family_allowance_max_children","Allowance Children"))
+        # 2.9.100: three columns in their own frame (four columns made the tab wider than a laptop screen)
+        fields=tk.Frame(settings_page,bg=LIGHT); fields.grid(row=0,column=0,rowspan=10,columnspan=8,sticky="nw")
+        per_column=-(-len(setting_labels)//3)
         for index,(key,label) in enumerate(setting_labels):
-            column=(index//10)*2; row=index%10
-            tk.Label(settings_page,text=label,bg=LIGHT).grid(row=row,column=column,padx=(10,2),pady=3,sticky="w")
-            tk.Entry(settings_page,textvariable=self.payroll_setting_vars[key],width=13).grid(row=row,column=column+1,padx=(2,10),pady=3,sticky="w")
+            column=(index//per_column)*2; row=index%per_column
+            tk.Label(fields,text=label,bg=LIGHT).grid(row=row,column=column,padx=(10,2),pady=3,sticky="w")
+            tk.Entry(fields,textvariable=self.payroll_setting_vars[key],width=13).grid(row=row,column=column+1,padx=(2,10),pady=3,sticky="w")
         tk.Label(settings_page,text="Tax Brackets JSON (annual LBP): [[ceiling,rate], ... [null,rate]]   Rates as decimals: 3% = 0.03   Dates: DD-MM-YYYY",bg=LIGHT).grid(row=10,column=0,columnspan=4,padx=10,pady=4,sticky="w")
         self.payroll_brackets=tk.Text(settings_page,width=62,height=4); self.payroll_brackets.grid(row=11,column=0,columnspan=6,padx=10,pady=5,sticky="ew")
-        self.action_button(settings_page,"Load Settings",self.load_payroll_settings).grid(row=12,column=0,padx=10,pady=10)
-        self.action_button(settings_page,"Save Settings",self.save_payroll_settings).grid(row=12,column=1,padx=10,pady=10)
-        tk.Button(settings_page,text="Load Lebanese Law 2024-2026",command=self.apply_lebanese_payroll_rules,bg=GOLD,fg=NAVY,border=0,padx=14,pady=7,font=("Segoe UI",9,"bold")).grid(row=12,column=2,columnspan=2,padx=10,pady=10)
-        # 2.9.98: the rules applied, for the tax adviser to confirm (PDF / Excel)
-        adviser=tk.Frame(settings_page,bg=LIGHT); adviser.grid(row=12,column=4,columnspan=4,padx=10,pady=10,sticky="w")  # 2.9.99: row 13 is the NSSF periods box (it hid these buttons)
-        tk.Label(adviser,text="For the tax adviser:",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,6))
-        for label,fmt in (("Rules (PDF)","pdf"),("Rules (Excel)","xlsx")):
-            self.action_button(adviser,label,lambda f=fmt:self.export_tax_review(f)).pack(side="left",padx=3)
+        # 2.9.100: one toolbar (it wraps on a small screen): settings | for the tax adviser | on paper
+        toolbar=tk.Frame(settings_page,bg=LIGHT); toolbar.grid(row=12,column=0,columnspan=8,padx=10,pady=10,sticky="ew")
+        self.action_button(toolbar,"Load Settings",self.load_payroll_settings).pack(side="left",padx=3)
+        tk.Button(toolbar,text="Save Settings",command=self.save_payroll_settings,bg=GOLD,fg=NAVY,border=0,padx=14,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=3)
+        self.action_button(toolbar,"Load Lebanese Law 2024-2026",self.apply_lebanese_payroll_rules).pack(side="left",padx=3)
+        self.action_button(toolbar,"Print Settings",lambda:self.export_tax_settings("print")).pack(side="left",padx=(16,3))
+        self.action_button(toolbar,"Settings PDF",lambda:self.export_tax_settings("pdf")).pack(side="left",padx=3)
+        for label,fmt in (("Rules for the Adviser (PDF)","pdf"),("Rules (Excel)","xlsx")):  # 2.9.98
+            self.action_button(toolbar,label,lambda f=fmt:self.export_tax_review(f)).pack(side="left",padx=3)
+        self.action_button(toolbar,"Adviser confirmation...",self.tax_adviser_dialog).pack(side="left",padx=3)
+        self.tax_adviser_label=tk.Label(toolbar,text="",bg=LIGHT,fg="#5f6b76"); self.tax_adviser_label.pack(side="left",padx=8)
+        from desktop_common import flow_toolbar
+        flow_toolbar(toolbar)
+        self.after_idle(self.show_tax_adviser)
         self.build_payroll_periods_panel(settings_page,13)
         import lebanese_payroll
         family_reference=tk.LabelFrame(settings_page,text="Family allowance reference · 2024–2026 (monthly LBP)",bg=LIGHT,padx=8,pady=6)
@@ -523,6 +532,40 @@ class PayrollMixin:
         for key,var in self.payroll_employee_accounts.items(): var.set(settings.get("employee_account_map",{}).get(key,""))
         for key,var in self.payroll_manager_accounts.items(): var.set(settings.get("manager_account_map",{}).get(key,""))
         self.payroll_brackets.delete("1.0","end"); self.payroll_brackets.insert("1.0",json.dumps(settings.get("tax_brackets",[])))
+
+    def export_tax_settings(self, mode):  # 2.9.100: Print / PDF of Tax & NSSF Settings
+        day = f"31-12-{getattr(self, 'current_fiscal_year', '') or datetime.now().year}"
+        try: report = self.client.tax_settings_report(day)
+        except Exception as exc: return messagebox.showerror("Tax & NSSF Settings", str(exc))
+        if mode == "print": return self.output_sections(report["title"], report["meta"], report["sections"], "Tax_NSSF_Settings", "print")
+        self.save_sections(report["title"], report["meta"], report["sections"], "Tax_NSSF_Settings", mode)
+
+    def show_tax_adviser(self):
+        try: checked = self.client.tax_adviser()
+        except Exception: checked = {}
+        if getattr(self, "tax_adviser_label", None) is not None:
+            text = (f"Checked by {checked['name']} on {checked['date']}") if checked else "Not yet confirmed by a tax adviser"
+            try: self.tax_adviser_label.config(text=text, fg="#2E7D5B" if checked else "#5f6b76")
+            except tk.TclError: pass
+
+    def tax_adviser_dialog(self):
+        """2.9.100: the tax adviser who checked the rules - the rules then show as confirmed by him (Rules PDF, Settings PDF)."""
+        try: checked = self.client.tax_adviser()
+        except Exception: checked = {}
+        window = tk.Toplevel(self); window.title("Tax adviser confirmation"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        tk.Label(window, text="The tax adviser checked the payroll and VAT rules of this company against Lebanese law.", bg=LIGHT, fg=NAVY,
+                 font=("Segoe UI", 10, "bold")).grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w")
+        fields = {}
+        for row, (key, label) in enumerate((("name", "Tax adviser (name)"), ("licence", "Licence / firm"), ("date", "Date of the check"), ("notes", "Notes")), start=1):
+            tk.Label(window, text=label, bg=LIGHT).grid(row=row, column=0, padx=12, pady=4, sticky="w")
+            fields[key] = tk.StringVar(value=str(checked.get(key) or (datetime.now().strftime("%d-%m-%Y") if key == "date" else "")))
+            (self.date_entry(window, fields[key], 14) if key == "date" else tk.Entry(window, textvariable=fields[key], width=44)).grid(row=row, column=1, padx=12, pady=4, sticky="w")
+        def save():
+            try: self.client.save_tax_adviser({k: v.get().strip() for k, v in fields.items()})
+            except Exception as exc: return messagebox.showerror("Tax adviser confirmation", str(exc), parent=window)
+            window.destroy(); self.show_tax_adviser()
+            messagebox.showinfo("Tax adviser confirmation", "Saved. The rules now show as confirmed by the tax adviser (Rules PDF and Settings PDF).")
+        tk.Button(window, text="Save", command=save, bg=GOLD, fg=NAVY, border=0, padx=18, pady=7, font=("Segoe UI", 9, "bold")).grid(row=5, column=0, columnspan=2, pady=12)
 
     def export_tax_review(self, fmt):  # 2.9.98
         day = f"31-12-{getattr(self, 'current_fiscal_year', '') or datetime.now().year}"

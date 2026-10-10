@@ -358,6 +358,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             payroll_extras.migrate(db)
             import audit_chain  # 2.9.97: tamper-evident audit trail (fingerprint chain + triggers)
             audit_chain.migrate(db)
+            import approvals  # 2.9.100: drafts waiting for approval (journal vouchers, payments, expenses)
+            approvals.migrate(db)
             employee_cols={row["name"] for row in db.execute("PRAGMA table_info(employees)")}
             for column in ("nationality","father_name","mother_name","birth_date","birth_place","sex")+self.EMPLOYEE_REGISTER_FIELDS:
                 if column not in employee_cols: db.execute(f"ALTER TABLE employees ADD COLUMN {column} TEXT")

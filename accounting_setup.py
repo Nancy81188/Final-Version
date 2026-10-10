@@ -130,8 +130,13 @@ def save_setup(db, item, user_id):
         except ValueError: raise ValueError("The budget alert % must be a number, for example 10")
         if not 0 < percent <= 1000: raise ValueError("The budget alert % must be between 0 and 1000")
         changes["budget_alert_percent"] = f"{percent:g}"
-    if "approval_required" in item:  # 2.9.93: documents prepared by users without "approve" wait for approval
+    if "approval_types" in item:  # 2.9.100: which kinds of documents need approval in this company
+        import approvals
+        approvals.save_types(db, item.get("approval_types") or [])
+    elif "approval_required" in item:  # 2.9.93: documents prepared by users without "approve" wait for approval
         changes["approval_required"] = "1" if str(item.get("approval_required")).lower() in ("1", "true", "yes", "on") else "0"
+        import approvals
+        approvals.save_types(db, ["invoices"] if changes["approval_required"] == "1" else [])
     if "defaults" in item:
         current = default_accounts(db); chosen = {}
         for key, value in (item.get("defaults") or {}).items():

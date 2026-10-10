@@ -526,9 +526,18 @@ class ApiHandler(BaseHTTPRequestHandler):
                                            int(self._query(parsed,"limit","5000") or 5000))
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)
+        if path == "/api/approvals":  # 2.9.100: what waits for approval, and the kinds chosen for this company
+            import approvals
+            return self._json(200,{"items":approvals.pending(self.db),"types":approvals.types_on(self.db),"labels":approvals.TYPES})
         if path == "/api/tax-review":  # 2.9.98: the payroll and VAT rules applied, for the tax adviser
             import tax_review
             try: return self._json(200,tax_review.build(self.db,self._query(parsed,"date","")))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path in ("/api/tax-settings-report","/api/tax-adviser"):  # 2.9.100: settings on paper; the adviser who checked them
+            import tax_review
+            try:
+                if path=="/api/tax-adviser": return self._json(200,tax_review.adviser(self.db))
+                return self._json(200,tax_review.settings_report(self.db,self._query(parsed,"date","")))
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path in ("/api/audit-report","/api/audit-verify"):  # 2.9.97: audit report and audit-trail integrity (administrator)
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
@@ -621,9 +630,19 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     # 2.9.93: approval (Accounting Settings > "Documents need approval"): an invoice prepared by a user without the
     # "approve" permission is saved as a draft (review); only a user with it posts it, and never the one who prepared it.
-    def _approval_required(self):
-        try: return str(self.db.settings().get("approval_required") or "0") == "1"
+    def _approval_required(self, kind="invoices"):
+        try:
+            import approvals
+            return kind in approvals.types_on(self.db)  # 2.9.100: chosen per company and per kind of document
         except Exception: return False
+
+    def _hold_for_approval(self, user, kind, result):
+        """2.9.100: a voucher / payment / expense of a kind that needs approval, saved by a user without 'Can approve', waits."""
+        if not self._approval_required(kind) or self.master_db.user_can(user, "approve"): return None
+        import approvals
+        entry = approvals.entry_of(self.db, kind, result)
+        if entry and approvals.hold(self.db, entry, user["id"]): return "saved as a draft: it waits for approval by another user"
+        return None
 
     def _approval_gate(self, user, invoice, invoice_id=None):
         if not self._approval_required() or not isinstance(invoice, dict): return None
@@ -784,6 +803,11 @@ class ApiHandler(BaseHTTPRequestHandler):
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             try: return self._json(200,accounting_setup.save_setup(self.db,body,user["id"]))
             except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/tax-adviser":  # 2.9.100: record the tax adviser's check of the rules (administrator)
+            if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
+            import tax_review
+            try: return self._json(200,tax_review.save_adviser(self.db,body,user["id"]))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path in ("/api/vat-ledgers","/api/vat-ledgers/create"):  # 2.9.97
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             import vat_ledgers
@@ -891,11 +915,23 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/payments":
             try: payment_id=self.db.add_payment(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
-            return self._json(201,{"payment_id":payment_id})
+            note=self._hold_for_approval(user,"payments",payment_id)
+            return self._json(201,{"payment_id":payment_id,**({"approval":note} if note else {})})
         if path == "/api/expenses":
             try: expense_id=self.db.add_expense(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
-            return self._json(201,{"expense_id":expense_id})
+            note=self._hold_for_approval(user,"expenses",expense_id)
+            return self._json(201,{"expense_id":expense_id,**({"approval":note} if note else {})})
+        if path == "/api/approvals/approve":  # 2.9.100: post the selected drafts (vouchers, payments, expenses, invoices)
+            if not self.master_db.user_can(user, "approve"): return self._json(403,{"error":"You do not have permission to approve documents. Ask the administrator."})
+            import approvals
+            try:
+                other=user["role"]!="admin"; done=approvals.approve_entries(self.db,body.get("entry_ids",[]),user,other)
+                if body.get("invoice_ids"):
+                    inv=self.db.approve_invoices(body.get("invoice_ids"),user,require_other=other)
+                    done["approved"]+=list(inv.get("approved",[])); done["skipped"]+=list(inv.get("skipped",[]))
+                return self._json(200,done)
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/employees":
             try: result=self.db.save_employee(body,user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
@@ -939,7 +975,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/journal-vouchers":
             try: result=self.db.save_journal_voucher(body.get("voucher",{}),body.get("lines",[]),user["id"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
-            return self._json(201,result)
+            note=self._hold_for_approval(user,"journal_vouchers",result)
+            return self._json(201,{**result,**({"approval":note} if note else {})})
         if path.startswith("/api/invoices/") and path.endswith("/items"):
             try:
                 invoice_id = int(path.split("/")[-2])

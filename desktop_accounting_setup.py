@@ -50,11 +50,22 @@ class AccountingSetupMixin:
             bar = tk.Frame(accounts, bg=LIGHT); bar.grid(row=len(self.setup_default_vars) + 1, column=0, columnspan=3, sticky="w", pady=(6, 0))
             tk.Button(bar, text="Save Default Accounts", command=self.save_default_accounts, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
             self.action_button(bar, "Program Defaults", self.restore_default_accounts).pack(side="left", padx=3)
-        approval = tk.LabelFrame(page, text="Approval (internal control)", bg=LIGHT, padx=8, pady=6); approval.pack(fill="x", padx=8, pady=6)  # 2.9.93
-        self.setup_approval = tk.BooleanVar(value=bool(values.get("approval_required")))
-        tk.Checkbutton(approval, text="Invoices need approval: users without 'Can approve' save them as drafts; another user with 'Can approve' posts them (Invoices > Approve Selected)",
-                       variable=self.setup_approval, bg=LIGHT, state="normal" if is_admin else "disabled", wraplength=900, justify="left").pack(side="left")
-        if is_admin: self.action_button(approval, "Save", self.save_approval_setting).pack(side="left", padx=8)
+        # 2.9.100: selective approval - this company chooses which documents need approval (each client company its own choice)
+        approval = tk.LabelFrame(page, text="Approval (internal control) - for this company", bg=LIGHT, padx=8, pady=6); approval.pack(fill="x", padx=8, pady=6)
+        try: info = self.client.approvals()
+        except Exception: info = {"types": ["invoices"] if values.get("approval_required") else [], "labels": {}, "items": []}
+        labels = info.get("labels") or {"invoices": "Sales / purchase invoices", "journal_vouchers": "Journal vouchers", "payments": "Receipts and payments", "expenses": "Expenses"}
+        tk.Label(approval, text="Need approval (users without 'Can approve' save them as drafts; another user with 'Can approve' posts them):",
+                 bg=LIGHT, fg=NAVY, wraplength=900, justify="left").pack(anchor="w")
+        ticks = tk.Frame(approval, bg=LIGHT); ticks.pack(anchor="w", pady=(4, 2))
+        self.setup_approval_types = {}
+        for key, label in labels.items():
+            self.setup_approval_types[key] = tk.BooleanVar(value=key in (info.get("types") or []))
+            tk.Checkbutton(ticks, text=label, variable=self.setup_approval_types[key], bg=LIGHT, state="normal" if is_admin else "disabled").pack(side="left", padx=(0, 14))
+        buttons = tk.Frame(approval, bg=LIGHT); buttons.pack(anchor="w", pady=(2, 0))
+        if is_admin: tk.Button(buttons, text="Save", command=self.save_approval_setting, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 6))
+        waiting = len(info.get("items") or [])
+        self.action_button(buttons, f"Pending approvals ({waiting})", self.open_approvals).pack(side="left")
         self.build_vat_ledgers_box(page, is_admin)  # 2.9.97
         alerts = tk.LabelFrame(page, text="Dashboard", bg=LIGHT, padx=8, pady=6); alerts.pack(fill="x", padx=8, pady=6)  # 2.9.82
         self.setup_alert_percent = tk.StringVar(value=str(values.get("budget_alert_percent") or "10"))
@@ -146,9 +157,39 @@ class AccountingSetupMixin:
         messagebox.showinfo("Accounting Settings", "Default accounts saved. New documents use them from now on; documents already saved are not changed.")
 
     def save_approval_setting(self):
-        try: self.client.save_accounting_setup({"approval_required": bool(self.setup_approval.get())})
+        kinds = [key for key, var in self.setup_approval_types.items() if var.get()]
+        try: self.client.save_accounting_setup({"approval_types": kinds})
         except Exception as exc: return messagebox.showerror("Accounting Settings", str(exc))
-        messagebox.showinfo("Accounting Settings", "Approval is " + ("ON: invoices of users without 'Can approve' wait for approval." if self.setup_approval.get() else "OFF."))
+        messagebox.showinfo("Accounting Settings", "Approval is OFF for this company." if not kinds else
+                            "Approval is ON for: " + ", ".join(kinds).replace("_", " ") + ". Documents of users without 'Can approve' wait for approval.")
+
+    def open_approvals(self):
+        """2.9.100: everything waiting for approval in this company; approve the selected ones."""
+        try: info = self.client.approvals()
+        except Exception as exc: return messagebox.showerror("Approvals", str(exc))
+        window = tk.Toplevel(self); window.title("Pending approvals"); window.configure(bg=LIGHT); window.transient(self); window.geometry("900x420")
+        tree = ttk.Treeview(window, columns=("kind", "number", "date", "description", "amount", "by"), show="headings", selectmode="extended")
+        for key, label, width in (("kind", "Document", 150), ("number", "No.", 120), ("date", "Date", 90), ("description", "Description", 300), ("amount", "Amount", 110), ("by", "Prepared by", 100)):
+            tree.heading(key, text=label); tree.column(key, width=width, anchor="e" if key == "amount" else "w")
+        tree.pack(fill="both", expand=True, padx=10, pady=10)
+        rows = {}
+        for index, row in enumerate(info.get("items") or []):
+            iid = f"{row['kind']}:{row['id']}"; rows[iid] = row
+            tree.insert("", "end", iid=iid, values=((info.get("labels") or {}).get(row["kind"], row["kind"]), row["number"], row["date"], row["description"],
+                                                     f"{row['currency']} {row['amount']:,.2f}", row["prepared_by"]))
+        def approve():
+            chosen = [rows[i] for i in tree.selection()]
+            if not chosen: return messagebox.showwarning("Approvals", "Select the documents to approve", parent=window)
+            try: result = self.client.approve_documents([r["id"] for r in chosen if r["kind"] != "invoices"], [r["id"] for r in chosen if r["kind"] == "invoices"])
+            except Exception as exc: return messagebox.showerror("Approvals", str(exc), parent=window)
+            window.destroy()
+            for refresh in ("load_invoices", "load_journal", "load_trial", "load_dashboard"):
+                try: getattr(self, refresh)()
+                except Exception: pass
+            messagebox.showinfo("Approvals", f"Approved: {len(result.get('approved', []))}" + ("\n" + "\n".join(result["skipped"]) if result.get("skipped") else ""))
+        bar = tk.Frame(window, bg=LIGHT); bar.pack(pady=(0, 10))
+        tk.Button(bar, text="Approve Selected", command=approve, bg=GOLD, fg=NAVY, border=0, padx=18, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
+        tk.Label(window, text="" if info.get("items") else "Nothing waits for approval.", bg=LIGHT, fg=NAVY).pack()
 
     def save_alert_percent(self):
         try: self.client.save_accounting_setup({"budget_alert_percent": self.setup_alert_percent.get()})

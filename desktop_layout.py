@@ -64,13 +64,27 @@ def grouped_pages(attributes):
     return groups
 
 
+def menu_width(widget, names):
+    """The menu width that shows every item whole: the longest name in bold Segoe UI 10 + the indent, 210 to 320 pixels."""
+    try:
+        import tkinter.font as tkfont
+        font = tkfont.Font(root=widget, family="Segoe UI", size=10, weight="bold")
+        longest = max((font.measure(str(n)) for n in names), default=0)
+        return max(MENU_WIDTH, min(320, longest + 26 * 2 + 18))
+    except tk.TclError:
+        return MENU_WIDTH
+
+
 def build_side_menu(app, holder, attributes, pages, names):
     """Fills holder (a navy column) with the grouped menu. Returns the page buttons in the SAME order as pages,
     so app.highlight_main_tab keeps colouring the selected one."""
     by_attribute = dict(zip(attributes, zip(pages, names)))
-    canvas = tk.Canvas(holder, bg=MENU_BG, highlightthickness=0, width=MENU_WIDTH)
+    width = menu_width(holder, names)  # 2.9.100: wide enough for the longest item in the real font (it was cut on Windows at 125%)
+    try: holder.configure(width=width)
+    except tk.TclError: pass
+    canvas = tk.Canvas(holder, bg=MENU_BG, highlightthickness=0, width=width)
     canvas.pack(side="left", fill="both", expand=True)
-    inner = tk.Frame(canvas, bg=MENU_BG); window = canvas.create_window((0, 0), window=inner, anchor="nw", width=MENU_WIDTH)
+    inner = tk.Frame(canvas, bg=MENU_BG); window = canvas.create_window((0, 0), window=inner, anchor="nw", width=width)
     inner.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
     canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
     canvas._saber_scroll_page = True  # the mouse wheel scrolls it like the pages

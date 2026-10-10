@@ -440,6 +440,11 @@ class ApiClient:
     def save_production_order(self,header,lines,order_id=None): return self.request("POST","/api/production/orders",{"header":header,"lines":lines,"id":order_id})
     def production_report(self,date_from,date_to): return self.request("GET","/api/production/report?"+urlencode({"from":date_from,"to":date_to}))
     def audit_report(self,date_from,date_to,late_days=30): return self.request("GET","/api/audit-report?"+urlencode({"date_from":date_from,"date_to":date_to,"late_days":late_days}))  # 2.9.97
+    def approvals(self): return self.request("GET","/api/approvals")  # 2.9.100
+    def approve_documents(self,entry_ids,invoice_ids=()): return self.request("POST","/api/approvals/approve",{"entry_ids":list(entry_ids),"invoice_ids":list(invoice_ids)})
+    def tax_settings_report(self,date): return self.request("GET","/api/tax-settings-report?"+urlencode({"date":date}))  # 2.9.100
+    def tax_adviser(self): return self.request("GET","/api/tax-adviser")
+    def save_tax_adviser(self,item): return self.request("POST","/api/tax-adviser",item)
     def tax_review(self,date): return self.request("GET","/api/tax-review?"+urlencode({"date":date}))  # 2.9.98
     def verify_audit_trail(self): return self.request("GET","/api/audit-verify")
     def vat_ledgers(self): return self.request("GET","/api/vat-ledgers")  # 2.9.97
