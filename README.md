@@ -1,5 +1,10 @@
 # Saber Accounting MVP
 
+## Version 2.9.99 (scrolling on small screens, family changes with tick boxes)
+- Payroll > Tax & NSSF Settings could not be scrolled to the bottom on a small screen: the form scrolls inside a page that also scrolls, and the wheel stopped at the end of the inner one. Now, at the end of a table or of an inner page, the wheel goes on and scrolls the page around it (everywhere in the program). The "Rules (PDF / Excel)" buttons for the tax adviser were hidden under the NSSF periods box: they are next to Load / Save Settings.
+- Employee > Family changes: tick boxes and dates instead of typing a list. "Married during the year" + date of marriage; "New child" + date of birth + Add child (the list of children born, with Remove). Adding a child raises Children by one, so the count stays right.
+- Changed files: desktop.py, desktop_payroll.py, app_runtime.py, installer.iss, README.md.
+
 ## Version 2.9.98 (physical count in the journal, audited statements pack, tax adviser pack, network check, laptop screens)
 - Physical Inventory > "Apply Count to Stock + Journal": the stock quantities become the counted quantities (adjustment documents, as before) AND the difference is now posted in the journal (JV, type 06): surplus Dr stock 37 / Cr stock variation 6052, shortage the other way, valued at the item cost on the count date, per stock account. The month-end Stock Variation starts from the ledger, so nothing is counted twice. Example (tested): 40 panels at 80 counted 37 and 10 glue at 5 counted 12 -> JV with shortage 240 and surplus 10.
 - Audited financial statements (PDF):

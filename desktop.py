@@ -158,10 +158,12 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
             delta = getattr(event, "delta", 0) or 0
             if not delta: return 0
             return -int(delta / 120) if abs(delta) >= 120 else (-1 if delta > 0 else 1)
-        def scrolls_itself(widget, horizontal):
+        def scrolls_itself(widget, horizontal, amount=0):
             try:
                 if widget.winfo_class() not in ("Treeview", "Text", "Listbox"): return False
                 first, last = (widget.xview() if horizontal else widget.yview())
+                if amount > 0: return float(last) < 0.999   # 2.9.99: at its end, the page scrolls on
+                if amount < 0: return float(first) > 0.001
                 return float(first) > 0.0 or float(last) < 1.0
             except Exception: return False
         def scroll_page(event, skip_self_scrolling=True):
@@ -171,15 +173,19 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
             try: widget = self.winfo_containing(event.x_root, event.y_root)
             except Exception: widget = None
             while widget is not None:
-                if skip_self_scrolling and scrolls_itself(widget, horizontal): return  # its own binding scrolled it
+                if skip_self_scrolling and scrolls_itself(widget, horizontal, amount): return  # its own binding scrolled it
                 if getattr(widget, "_saber_scroll_page", False):
                     try:
                         view = widget.xview() if horizontal else widget.yview()
-                        if float(view[0]) > 0.0 or float(view[1]) < 1.0:
+                        # 2.9.99: a page inside a page (Payroll > Tax & NSSF Settings): at its end the wheel goes on and scrolls
+                        # the outer page, so the bottom of the form can always be reached on a small screen
+                        can_move = float(view[1]) < 0.999 if amount > 0 else float(view[0]) > 0.001
+                        if can_move:
                             (widget.xview_scroll if horizontal else widget.yview_scroll)(amount, "units")
-                    except tk.TclError: pass
-                    return "break"
+                            return "break"
+                    except tk.TclError: return "break"
                 widget = getattr(widget, "master", None)
+            return "break"
         self._scroll_page_under_pointer = scroll_page
         for sequence in ("<MouseWheel>", "<Shift-MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-Button-4>", "<Shift-Button-5>"):
             self.bind_all(sequence, scroll_page, add="+")

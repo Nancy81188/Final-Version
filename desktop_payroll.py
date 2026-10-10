@@ -89,9 +89,9 @@ class PayrollMixin:
         self.action_button(settings_page,"Save Settings",self.save_payroll_settings).grid(row=12,column=1,padx=10,pady=10)
         tk.Button(settings_page,text="Load Lebanese Law 2024-2026",command=self.apply_lebanese_payroll_rules,bg=GOLD,fg=NAVY,border=0,padx=14,pady=7,font=("Segoe UI",9,"bold")).grid(row=12,column=2,columnspan=2,padx=10,pady=10)
         # 2.9.98: the rules applied, for the tax adviser to confirm (PDF / Excel)
-        adviser=tk.Frame(settings_page,bg=LIGHT); adviser.grid(row=13,column=0,columnspan=6,padx=10,pady=(0,10),sticky="w")
+        adviser=tk.Frame(settings_page,bg=LIGHT); adviser.grid(row=12,column=4,columnspan=4,padx=10,pady=10,sticky="w")  # 2.9.99: row 13 is the NSSF periods box (it hid these buttons)
         tk.Label(adviser,text="For the tax adviser:",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,6))
-        for label,fmt in (("Rules to Confirm (PDF)","pdf"),("Rules to Confirm (Excel)","xlsx")):
+        for label,fmt in (("Rules (PDF)","pdf"),("Rules (Excel)","xlsx")):
             self.action_button(adviser,label,lambda f=fmt:self.export_tax_review(f)).pack(side="left",padx=3)
         self.build_payroll_periods_panel(settings_page,13)
         import lebanese_payroll
@@ -150,14 +150,56 @@ class PayrollMixin:
         # 2.9.96: family changes during the year - the spouse counts from the marriage month, a new child from the birth month
         family=tk.LabelFrame(form,text="Family changes | الوضع العائلي",bg=LIGHT,padx=6,pady=4)
         family.grid(row=12,column=0,columnspan=4,padx=10,pady=(8,0),sticky="ew")
-        family_vars={"marriage_date":tk.StringVar(value=safe_display_date(data.get("marriage_date"))),
-                     "children_birth_dates":tk.StringVar(value=", ".join(safe_display_date(d) for d in str(data.get("children_birth_dates") or "").split(",") if d.strip()))}
-        tk.Label(family,text="Date of marriage | تاريخ الزواج",bg=LIGHT).grid(row=0,column=0,padx=6,pady=3,sticky="w")
-        self.date_entry(family,family_vars["marriage_date"],14).grid(row=0,column=1,padx=6,pady=3,sticky="w")
-        tk.Label(family,text="Children's birth dates | تواريخ ولادة الأولاد",bg=LIGHT).grid(row=0,column=2,padx=6,pady=3,sticky="w")
-        tk.Entry(family,textvariable=family_vars["children_birth_dates"],width=40).grid(row=0,column=3,padx=6,pady=3,sticky="w")
-        tk.Label(family,text="DD-MM-YYYY, separated by commas. Payroll counts the spouse from the month of the marriage and each child from the month of birth (a child listed is counted in Children).",
-                 bg=LIGHT,fg="#5f6b76",wraplength=760,justify="left").grid(row=1,column=0,columnspan=4,padx=6,pady=(0,3),sticky="w")
+        # 2.9.99: tick boxes and dates instead of typing a list - marriage during the year, new children one by one
+        family_vars={"marriage_date":tk.StringVar(value=safe_display_date(data.get("marriage_date"))),"children_birth_dates":tk.StringVar()}
+        married_now=tk.BooleanVar(value=bool(data.get("marriage_date")))
+        marriage_box=tk.Checkbutton(family,text="Married during the year | تزوّج خلال السنة",variable=married_now,bg=LIGHT)
+        marriage_box.grid(row=0,column=0,padx=6,pady=3,sticky="w")
+        tk.Label(family,text="Date of marriage",bg=LIGHT).grid(row=0,column=1,padx=(12,4),pady=3,sticky="e")
+        marriage_entry=self.date_entry(family,family_vars["marriage_date"],13); marriage_entry.grid(row=0,column=2,padx=4,pady=3,sticky="w")
+        def marriage_toggled():
+            marriage_entry.configure(state="normal" if married_now.get() else "disabled")
+            if married_now.get():
+                marital.set("married"); marriage_entry.focus_set()
+            else: family_vars["marriage_date"].set("")
+        marriage_box.configure(command=marriage_toggled)
+        new_child=tk.BooleanVar(value=False); birth_var=tk.StringVar()
+        child_box=tk.Checkbutton(family,text="New child | مولود جديد",variable=new_child,bg=LIGHT)
+        child_box.grid(row=1,column=0,padx=6,pady=3,sticky="w")
+        tk.Label(family,text="Date of birth",bg=LIGHT).grid(row=1,column=1,padx=(12,4),pady=3,sticky="e")
+        birth_entry=self.date_entry(family,birth_var,13); birth_entry.grid(row=1,column=2,padx=4,pady=3,sticky="w")
+        tk.Label(family,text="Children born:",bg=LIGHT,fg=NAVY).grid(row=0,column=3,padx=(14,2),pady=3,sticky="ne")
+        births=tk.Listbox(family,height=3,width=16,exportselection=False)
+        births.grid(row=0,column=4,rowspan=2,padx=(4,4),pady=3,sticky="nw")
+        for day in str(data.get("children_birth_dates") or "").split(","):
+            if day.strip(): births.insert("end",safe_display_date(day))
+        def child_count(change):
+            try: children.set(str(max(0,int(children.get() or 0)+change)))
+            except ValueError: children.set(str(max(0,change)))
+        def add_child():
+            day=birth_var.get().strip()
+            if not day: return messagebox.showwarning("New child","Enter the date of birth (DD-MM-YYYY)",parent=window)
+            try: shown=safe_display_date(day); datetime.strptime(shown,"%d-%m-%Y")
+            except ValueError: return messagebox.showwarning("New child","The date of birth must be DD-MM-YYYY",parent=window)
+            if shown in births.get(0,"end"): return messagebox.showinfo("New child","This date is already in the list",parent=window)
+            births.insert("end",shown); birth_var.set(""); new_child.set(False); child_toggled()
+            child_count(+1)  # Children = the number today: the new child is added to it
+        def remove_child():
+            selected=births.curselection()
+            if not selected: return messagebox.showinfo("New child","Select a date in the list first",parent=window)
+            births.delete(selected[0]); child_count(-1)
+        add_button=tk.Button(family,text="Add child",command=add_child,bg=NAVY,fg="white",border=0,padx=12,pady=4)
+        add_button.grid(row=1,column=3,padx=4,pady=3,sticky="w")
+        tk.Button(family,text="Remove",command=remove_child,bg="#8B1E1E",fg="white",border=0,padx=10,pady=3).grid(row=0,column=5,rowspan=2,padx=4,pady=3,sticky="w")
+        def child_toggled():
+            state="normal" if new_child.get() else "disabled"
+            birth_entry.configure(state=state); add_button.configure(state=state)
+            if new_child.get(): birth_entry.focus_set()
+        child_box.configure(command=child_toggled)
+        marriage_toggled() if not married_now.get() else None; child_toggled()
+        family_vars["_births"]=births
+        tk.Label(family,text="Payroll counts the spouse from the month of the marriage and each child from the month of birth (salary-tax deductions and NSSF family allowance). "
+                 "Adding a child raises Children by one.",bg=LIGHT,fg="#5f6b76",wraplength=760,justify="left").grid(row=2,column=0,columnspan=6,padx=6,pady=(2,3),sticky="w")
         register=tk.LabelFrame(form,text="Employee register | سجل المستخدمين",bg=LIGHT,padx=6,pady=4)
         register.grid(row=13,column=0,columnspan=4,padx=10,pady=8,sticky="ew")
         register_vars={key:tk.StringVar(value=str(data.get(key) or "")) for key in ("unit_code","unit_name","cost_of_living","extra_indemnity","representation_taxable","representation_exempt",
@@ -180,7 +222,8 @@ class PayrollMixin:
         def save():
             payload={key:var.get().strip() for key,var in fields.items()}; payload.update({"id":data.get("id"),"marital_status":marital.get(),"spouse_works":spouse_works.get(),"children":children.get(),"employee_group":employee_group.get(),"currency":currency.get(),"active":active.get(),"sex":sex.get()})
             payload.update({key:var.get().strip() for key,var in register_vars.items()}); payload.update({key:"1" if var.get() else "0" for key,var in flags.items()})
-            payload.update({key:var.get().strip() for key,var in family_vars.items()})  # 2.9.96
+            payload.update({"marriage_date":family_vars["marriage_date"].get().strip() if married_now.get() else "",  # 2.9.96 / 2.9.99
+                            "children_birth_dates":", ".join(family_vars["_births"].get(0,"end"))})
             try: saved=self.client.save_employee(payload)
             except Exception as exc: return messagebox.showerror("Employee",str(exc),parent=window)
             window.destroy(); self.load_payroll(); messagebox.showinfo("Employee",f'Employee {saved["employee_number"]} saved successfully')
