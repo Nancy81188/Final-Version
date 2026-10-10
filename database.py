@@ -45,6 +45,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         # once with "database is locked" - that error stopped the program from starting while a backup was running.
         connection = sqlite3.connect(self.path, check_same_thread=not self.pooled, timeout=30)
         connection.row_factory = sqlite3.Row
+        register_money_functions(connection)  # 2.9.97: DSUM(x) adds money exactly
+        import audit_chain; audit_chain.register(connection)  # 2.9.97: fingerprints of the audit trail
         connection.execute("PRAGMA busy_timeout=30000")
         connection.execute("PRAGMA foreign_keys=ON")
         # Performance PRAGMAs: WAL keeps reads fast while writing, NORMAL
@@ -354,6 +356,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             bank_rec.migrate(db)
             import payroll_extras  # 2.9.82: end-of-service provision, leave
             payroll_extras.migrate(db)
+            import audit_chain  # 2.9.97: tamper-evident audit trail (fingerprint chain + triggers)
+            audit_chain.migrate(db)
             employee_cols={row["name"] for row in db.execute("PRAGMA table_info(employees)")}
             for column in ("nationality","father_name","mother_name","birth_date","birth_place","sex")+self.EMPLOYEE_REGISTER_FIELDS:
                 if column not in employee_cols: db.execute(f"ALTER TABLE employees ADD COLUMN {column} TEXT")
@@ -739,6 +743,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         account_type="asset" if party["kind"]=="customer" else "liability"
         db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type,parent_id) VALUES(?,?,?,(SELECT id FROM accounts WHERE code=?))",
             (account_number,f"{label} - {party['name']}",account_type,parent))
+        import vat_ledgers  # 2.9.97: every customer / supplier has its own VAT account (when the rule is on)
+        if vat_ledgers.enabled(db): vat_ledgers.ensure_party_vat_account(db,account_number)
         return account_number
 
     def _date_year(self, value):

@@ -304,7 +304,7 @@ class PaymentsStore:
         """Invoices of a customer / supplier with what is still unpaid (after amounts paid and allocations)."""
         with self.connect() as db:
             rows = [dict(r) for r in db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,i.kind,i.doc_subtype,i.currency,CAST(i.total AS REAL) total,
-                CAST(COALESCE(i.amount_paid,'0') AS REAL) paid,(SELECT COALESCE(SUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a WHERE a.invoice_id=i.id) allocated
+                CAST(COALESCE(i.amount_paid,'0') AS REAL) paid,(SELECT COALESCE(DSUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a WHERE a.invoice_id=i.id) allocated
                 FROM invoices i WHERE i.party_id=? AND i.status NOT IN ('cancelled','deleted') ORDER BY i.id""", (int(party_id),))]
         for row in rows:
             sign = -1 if row.get("doc_subtype") == "credit_note" else 1

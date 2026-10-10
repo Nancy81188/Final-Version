@@ -160,7 +160,7 @@ class AccountsStore:
         with self.connect() as db:
             old = self._account_row(db, source, "From"); new = self._account_row(db, target, "To")
             if old["id"] == new["id"]: raise ValueError("Choose two different accounts")
-            balances = [dict(r) for r in db.execute("""SELECT e.currency,SUM(CAST(j.debit AS REAL))-SUM(CAST(j.credit AS REAL)) balance
+            balances = [dict(r) for r in db.execute("""SELECT e.currency,DSUM(CAST(j.debit AS REAL))-DSUM(CAST(j.credit AS REAL)) balance
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id WHERE j.account_id=? AND
                 (CASE WHEN e.entry_date GLOB '??-??-????' THEN substr(e.entry_date,7,4)||'-'||substr(e.entry_date,4,2)||'-'||substr(e.entry_date,1,2) ELSE e.entry_date END)<=?
                 GROUP BY e.currency""", (old["id"], day))]

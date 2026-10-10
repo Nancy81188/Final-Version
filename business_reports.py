@@ -76,13 +76,13 @@ def ageing(db, options):
     with db.connect() as connection:
         invoices = [dict(r) for r in connection.execute("""SELECT i.id,i.invoice_number,i.invoice_date,i.due_date,i.currency,i.doc_subtype,i.party_id,p.name party_name,p.account_number,p.due_days,
             CAST(i.total AS REAL) total,CAST(COALESCE(i.amount_paid,'0') AS REAL) paid,
-            (SELECT COALESCE(SUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a JOIN payments x ON x.id=a.payment_id WHERE a.invoice_id=i.id AND
+            (SELECT COALESCE(DSUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a JOIN payments x ON x.id=a.payment_id WHERE a.invoice_id=i.id AND
              (CASE WHEN x.payment_date GLOB '??-??-????' THEN substr(x.payment_date,7,4)||'-'||substr(x.payment_date,4,2)||'-'||substr(x.payment_date,1,2) ELSE x.payment_date END)<=?) allocated
             FROM invoices i LEFT JOIN parties p ON p.id=i.party_id WHERE i.kind=? AND i.status IN ('posted','review')""", (as_of, kind))]
         payment_kind = "customer_receipt" if kind == "sale" else "supplier_payment"
         payments = [dict(r) for r in connection.execute("""SELECT x.party_id,x.kind,x.currency,x.payment_date,CAST(x.amount AS REAL) amount,
             p.name party_name,p.kind party_kind,p.account_number,
-            (SELECT COALESCE(SUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a WHERE a.payment_id=x.id) allocated
+            (SELECT COALESCE(DSUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a WHERE a.payment_id=x.id) allocated
             FROM payments x LEFT JOIN parties p ON p.id=x.party_id WHERE x.kind IN ('customer_receipt','supplier_payment')""")]
     parties = {}
     for inv in invoices:

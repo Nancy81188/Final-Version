@@ -74,7 +74,7 @@ class OcrPageTests(unittest.TestCase):
 
         self.assertEqual(result, [alternate_text])
         self.assertEqual(document.pages[0].render_calls, [])
-        self.assertEqual(document.pages[1].render_calls, [{"scale": 2.0}])
+        self.assertEqual(document.pages[1].render_calls, [{"scale": 3.0}])  # 2.9.97: drawn at 3x (small table digits read better)
         self.assertEqual(image_to_string.call_args_list[0].kwargs["lang"], "eng+ara")
         self.assertEqual(image_to_string.call_args_list[0].kwargs["config"], "--psm 6")
         self.assertEqual(image_to_string.call_args_list[1].kwargs["lang"], "eng")

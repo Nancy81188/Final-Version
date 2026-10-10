@@ -190,6 +190,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/accounting-setup":  # 2.9.81: what the company / this user hides, the default posting accounts
             try: return self._json(200,accounting_setup.setup(self.db,self.master_db,user["id"]))
             except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path == "/api/vat-ledgers":  # 2.9.97: VAT account per customer / supplier
+            import vat_ledgers
+            return self._json(200,vat_ledgers.settings(self.db))
+        if path == "/api/vat-ledgers/test":
+            import vat_ledgers
+            return self._json(200,vat_ledgers.test_vat_accounts(self.db))
         if path == "/api/year-end-check":  # 2.9.81: the checks before closing a year
             try:
                 year=int(self._query(parsed,"year")); check=accounting_setup.year_end_check(self.db,year,self._previous_year_db(year))
@@ -520,6 +526,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                                            int(self._query(parsed,"limit","5000") or 5000))
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)
+        if path in ("/api/audit-report","/api/audit-verify"):  # 2.9.97: audit report and audit-trail integrity (administrator)
+            if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
+            import audit_chain, audit_report
+            try:
+                if path=="/api/audit-verify": return self._json(200,audit_chain.verify(self.db))
+                return self._json(200,ledger_reports.json_ready(audit_report.build(self.db,self._query(parsed,"date_from",""),self._query(parsed,"date_to",""),
+                                                                                    self._query(parsed,"late_days","30"))))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/backups/download":
             try:
                 target=self.db.backup_path(self._query(parsed,"name",""))
@@ -765,6 +779,13 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/accounting-setup":  # 2.9.81: company settings (administrator)
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             try: return self._json(200,accounting_setup.save_setup(self.db,body,user["id"]))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
+        if path in ("/api/vat-ledgers","/api/vat-ledgers/create"):  # 2.9.97
+            if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
+            import vat_ledgers
+            try:
+                if path.endswith("/create"): return self._json(200,{"created":vat_ledgers.create_vat_accounts(self.db,int(body.get("start_from") or 0))})
+                return self._json(200,vat_ledgers.save_settings(self.db,body))
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/accounting-setup/user":  # 2.9.81: what this user hides for himself
             try: return self._json(200,{"user_hidden":accounting_setup.save_user_hidden(self.master_db,user["id"],body.get("hidden"))})

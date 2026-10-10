@@ -55,6 +55,7 @@ class AccountingSetupMixin:
         tk.Checkbutton(approval, text="Invoices need approval: users without 'Can approve' save them as drafts; another user with 'Can approve' posts them (Invoices > Approve Selected)",
                        variable=self.setup_approval, bg=LIGHT, state="normal" if is_admin else "disabled", wraplength=900, justify="left").pack(side="left")
         if is_admin: self.action_button(approval, "Save", self.save_approval_setting).pack(side="left", padx=8)
+        self.build_vat_ledgers_box(page, is_admin)  # 2.9.97
         alerts = tk.LabelFrame(page, text="Dashboard", bg=LIGHT, padx=8, pady=6); alerts.pack(fill="x", padx=8, pady=6)  # 2.9.82
         self.setup_alert_percent = tk.StringVar(value=str(values.get("budget_alert_percent") or "10"))
         tk.Label(alerts, text="Show the accounts off budget (costs above / revenue below) by more than", bg=LIGHT).pack(side="left")
@@ -64,6 +65,60 @@ class AccountingSetupMixin:
         check = tk.LabelFrame(page, text="Year-End Check", bg=LIGHT, padx=8, pady=6); check.pack(fill="x", padx=8, pady=6)
         tk.Label(check, text="The points an auditor checks before the books are closed. It runs again by itself when you close the year (Profit & Loss).", bg=LIGHT, fg=MUTED).pack(side="left")
         tk.Button(check, text="Run Year-End Check", command=self.show_year_end_check, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=8)
+
+    # ------------------------------------------------------------ 2.9.97: VAT account per customer / supplier
+    def build_vat_ledgers_box(self, page, is_admin):
+        box = tk.LabelFrame(page, text="VAT by customer / supplier (VAT 140)", bg=LIGHT, padx=8, pady=6); box.pack(fill="x", padx=8, pady=6)
+        try: values = self.client.vat_ledgers()
+        except Exception: values = {"enabled": False, "auto_close": True, "ledgers": []}
+        state = "normal" if is_admin else "disabled"
+        self.vat_by_party = tk.BooleanVar(value=bool(values.get("enabled"))); self.vat_auto_close = tk.BooleanVar(value=bool(values.get("auto_close", True)))
+        top = tk.Frame(box, bg=LIGHT); top.pack(fill="x")
+        tk.Checkbutton(top, text="Every customer / supplier has its own VAT account (supplier 401100025 -> VAT 442100025)", variable=self.vat_by_party, bg=LIGHT, state=state).pack(side="left")
+        tk.Checkbutton(top, text="Close the VAT automatically when the quarterly return is saved", variable=self.vat_auto_close, bg=LIGHT, state=state).pack(side="left", padx=(16, 0))
+        grid = tk.Frame(box, bg=LIGHT); grid.pack(anchor="w", pady=(6, 2))
+        for column, title in enumerate(("Ledger", "VAT", "Main", "Closing", "")):
+            tk.Label(grid, text=title, bg=LIGHT, fg=NAVY, font=("Segoe UI", 9, "bold")).grid(row=0, column=column, padx=4, sticky="w")
+        self.vat_ledger_vars = []
+        for row_index, row in enumerate(values.get("ledgers") or [], start=1):
+            variables = {key: tk.StringVar(value=str(row.get(key) or "")) for key in ("ledger", "vat", "main", "closing", "label")}
+            for column, key in enumerate(("ledger", "vat", "main", "closing")):
+                tk.Entry(grid, textvariable=variables[key], width=12, state=state).grid(row=row_index, column=column, padx=4, pady=2)
+            tk.Label(grid, text=row.get("label") or "", bg=LIGHT, fg=MUTED).grid(row=row_index, column=4, padx=6, sticky="w")
+            self.vat_ledger_vars.append(variables)
+        actions = tk.Frame(box, bg=LIGHT); actions.pack(fill="x", pady=(4, 0))
+        self.vat_start_from = tk.StringVar(value="0")
+        if is_admin:
+            tk.Button(actions, text="Save", command=self.save_vat_ledgers, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 6))
+            tk.Label(actions, text="Start from (>)", bg=LIGHT).pack(side="left", padx=(10, 2))
+            tk.Entry(actions, textvariable=self.vat_start_from, width=11).pack(side="left")
+            self.action_button(actions, "Create VAT Accounts", self.create_vat_accounts).pack(side="left", padx=6)
+        self.action_button(actions, "Testing VAT Accounts", self.test_vat_accounts).pack(side="left", padx=6)
+        tk.Label(box, text="The VAT of each invoice goes to its customer / supplier's own VAT account. At the quarter end each one is closed into the "
+                 "Closing account of its ledger, then the settlement closes those into VAT payable (4425) / VAT to recover (4429).",
+                 bg=LIGHT, fg=MUTED, wraplength=900, justify="left").pack(anchor="w", pady=(4, 0))
+
+    def save_vat_ledgers(self):
+        ledgers = [{key: variable.get().strip() for key, variable in row.items()} for row in self.vat_ledger_vars]
+        try: self.client.save_vat_ledgers({"enabled": self.vat_by_party.get(), "auto_close": self.vat_auto_close.get(), "ledgers": ledgers})
+        except Exception as exc: return messagebox.showerror("VAT by customer / supplier", str(exc))
+        messagebox.showinfo("VAT by customer / supplier", "Saved. New invoices post their VAT to the customer / supplier's own VAT account."
+                            + ("" if not self.vat_by_party.get() else "\n\nPress 'Create VAT Accounts' once for the customers / suppliers you already have."))
+
+    def create_vat_accounts(self):
+        try: made = self.client.create_vat_accounts(int(self.vat_start_from.get() or 0))["created"]
+        except Exception as exc: return messagebox.showerror("Create VAT Accounts", str(exc))
+        try: self.load_accounts()
+        except Exception: pass  # the chart screen refreshes when it is opened
+        messagebox.showinfo("Create VAT Accounts", f"{made} VAT account(s) created.")
+
+    def test_vat_accounts(self):
+        try: result = self.client.test_vat_accounts()
+        except Exception as exc: return messagebox.showerror("Testing VAT Accounts", str(exc))
+        if result["ok"]: return messagebox.showinfo("Testing VAT Accounts", "Every customer / supplier has its VAT account, and every invoice's VAT is on its own party's account.")
+        lines = "\n".join(p["detail"] for p in result["problems"][:40])
+        more = len(result["problems"]) - 40
+        messagebox.showwarning("Testing VAT Accounts", f"{len(result['problems'])} point(s) to check:\n\n{lines}" + (f"\n... and {more} more" if more > 0 else ""))
 
     def _view_choice(self, variables):
         return [key for key, variable in variables.items() if not variable.get()]
@@ -132,6 +187,14 @@ class AccountingSetupMixin:
         tk.Button(bar, text="Show", command=self.load_audit_trail, bg=NAVY, fg="white", border=0, padx=14, pady=4).pack(side="left", padx=4)
         for label, fmt in (("Excel", "xlsx"), ("PDF", "pdf")):
             self.action_button(bar, label, lambda f=fmt: self.export_audit_trail(f)).pack(side="left", padx=2)
+        auditor = tk.Frame(page, bg=LIGHT); auditor.pack(fill="x", padx=8, pady=(4, 2))  # 2.9.97
+        tk.Label(auditor, text="For the auditor:", bg=LIGHT, fg=NAVY, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 6))
+        self.action_button(auditor, "Verify Audit Trail", self.verify_audit_trail).pack(side="left", padx=2)
+        for label, fmt in (("Audit Report (Excel)", "xlsx"), ("Audit Report (PDF)", "pdf")):
+            self.action_button(auditor, label, lambda f=fmt: self.export_audit_report(f)).pack(side="left", padx=2)
+        tk.Label(auditor, text="Late entries = entered more than", bg=LIGHT).pack(side="left", padx=(12, 2))
+        self.audit_late_days = tk.StringVar(value="30"); tk.Entry(auditor, textvariable=self.audit_late_days, width=4).pack(side="left")
+        tk.Label(auditor, text="days after their date", bg=LIGHT).pack(side="left", padx=2)
         frame = tk.Frame(page, bg=LIGHT); frame.pack(fill="both", expand=True, padx=8, pady=4)
         self.audit_tree = ttk.Treeview(frame, columns=("when", "user", "action", "entity", "id", "details"), show="headings")
         for key, label, width in (("when", "Date / time (UTC)", 150), ("user", "User", 100), ("action", "Action", 90), ("entity", "Record", 120), ("id", "No.", 60), ("details", "Details", 600)):
@@ -159,6 +222,22 @@ class AccountingSetupMixin:
         rows = [[str(r["created_at"])[:19].replace("T", " "), r["username"], r["action"], r["entity"], r["entity_id"] or "", r["details"]] for r in self.audit_rows]
         sections = [{"heading": "Audit trail", "headers": ["Date / time (UTC)", "User", "Action", "Record", "No.", "Details"], "rows": rows}]
         self.save_sections("Audit Trail", [f"{len(rows)} changes"], sections, "Audit_Trail", fmt)
+
+    def verify_audit_trail(self):  # 2.9.97
+        try: result = self.client.verify_audit_trail()
+        except Exception as exc: return messagebox.showerror("Verify Audit Trail", str(exc))
+        details = "\n".join(f"Line {b['id']}: {b['problem']}" for b in result.get("broken", [])[:15])
+        (messagebox.showinfo if result["ok"] else messagebox.showwarning)("Verify Audit Trail", result["message"] + (f"\n\n{details}" if details else ""))
+
+    def export_audit_report(self, fmt):  # 2.9.97
+        filters = {k: v.get().strip() for k, v in self.audit_filters.items()}
+        try: report = self.client.audit_report(filters["date_from"], filters["date_to"], self.audit_late_days.get() or "30")
+        except Exception as exc: return messagebox.showerror("Audit Report", str(exc))
+        s = report["summary"]
+        meta = [f"Period {report['from']} - {report['to']}", report["integrity"]["message"],
+                f"{s['entries']} entries, {s['changes']} changes after saving, {s['late']} late, {s['admin']} by the administrator, "
+                f"{s['outside_hours']} outside working hours, {s['manual_cash']} manual vouchers on cash / bank"]
+        self.save_sections("Audit Report", meta, report["sections"], "Audit_Report", fmt)
 
     def show_year_end_check(self, before_closing=False):
         """Shows the check; before closing, returns True when the user goes on."""

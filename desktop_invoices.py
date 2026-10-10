@@ -537,23 +537,10 @@ class InvoicesMixin(SalesInvoiceMixin):
         if invoice_id is None: return
         try: items=self.client.attachments(invoice_id)
         except Exception as exc: return messagebox.showerror("Attachments",str(exc))
-        if not items: return messagebox.showinfo("Attachments","This invoice has no attachments")
-        window=tk.Toplevel(self); window.title("Invoice Attachments"); self.fit_dialog(window,620,340)
-        tree=ttk.Treeview(window,columns=("name","type","size","date"),show="headings")
-        for key,label,width in (("name","File Name",240),("type","Type",140),("size","Size",80),("date","Uploaded",140)):
-            tree.heading(key,text=label); tree.column(key,width=width)
-        for item in items: tree.insert("","end",iid=str(item["id"]),values=(item["file_name"],item["mime_type"],f'{item["size"]/1024:,.1f} KB',item["uploaded_at"][:19]))
-        tree.pack(fill="both",expand=True,padx=10,pady=10)
-        def download():
-            selected=tree.selection()
-            if not selected: return messagebox.showwarning("Attachments","Select one file",parent=window)
-            record=next(item for item in items if str(item["id"])==selected[0])
-            path=filedialog.asksaveasfilename(initialfile=record["file_name"],parent=window)
-            if not path: return
-            try: Path(path).write_bytes(self.client.download_attachment(record["id"])["content"])
-            except Exception as exc: return messagebox.showerror("Attachments",str(exc),parent=window)
-            messagebox.showinfo("Attachments",f"Saved successfully:\n{path}",parent=window)
-        self.action_button(window,"Download Selected",download).pack(pady=(0,10))
+        # 2.9.97: double-click a document to see it (PDF pages / image) inside the program
+        from desktop_attachments import attachments_window
+        number=(getattr(self,"invoice_rows",{}).get(str(invoice_id)) or {}).get("invoice_number") or f"invoice {invoice_id}"
+        attachments_window(self,number,items,lambda record:self.client.download_attachment(record["id"])["content"])
 
     def show_invoice_history(self):
         invoice_id=self.selected_invoice_id()

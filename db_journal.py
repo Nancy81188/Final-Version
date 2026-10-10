@@ -119,7 +119,7 @@ class JournalStore:
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
                 LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
                 WHERE (a.code LIKE '4%' OR a.code LIKE '5%') AND {normal}<=?
-                AND (e.source_type!='invoice' OR i.status='posted') ORDER BY a.code,e.id,j.id""",(day,))]
+                AND (e.source_type!='invoice' OR i.status IN ('posted','cancelled')) ORDER BY a.code,e.id,j.id""",(day,))]
         accounts={}
         for line in lines:
             code=line["code"]; item=accounts.setdefault(code,{"name":line["name_en"],"currencies":set(),"balance":Decimal("0"),"carrying_usd":Decimal("0")})
@@ -157,7 +157,7 @@ class JournalStore:
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
                 LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
                 WHERE (a.code LIKE '4%' OR a.code LIKE '5%') AND {normal}<=?
-                AND (e.source_type!='invoice' OR i.status='posted') ORDER BY a.code,e.id,j.id""",(day,))]
+                AND (e.source_type!='invoice' OR i.status IN ('posted','cancelled')) ORDER BY a.code,e.id,j.id""",(day,))]
         accounts={}; rates={}
         def rate(code,date):
             key=(code,date)
@@ -202,7 +202,7 @@ class JournalStore:
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
                 LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
                 WHERE (a.code LIKE '4%' OR a.code LIKE '5%') AND {normal}<=?
-                AND (e.source_type!='invoice' OR i.status='posted') ORDER BY a.code,e.id,j.id""",(day,))]
+                AND (e.source_type!='invoice' OR i.status IN ('posted','cancelled')) ORDER BY a.code,e.id,j.id""",(day,))]
         groups={}; doe_corrections={}; currencies_by_account={}
         for line in lines:
             code=line["code"]; currency=line["line_currency"]

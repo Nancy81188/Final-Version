@@ -458,7 +458,13 @@ def save_return(db, year, quarter, user_id, previous_year_db=None, credit_brough
         connection.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",
             (user_id, "save", "vat_return", json.dumps({"year": int(year), "quarter": int(quarter), "payable_lbp": str(result["payable_lbp"]),
              "credit_carried_forward_lbp": str(result["credit_carried_forward_lbp"])}), utcnow()))
-    return build_vat_return(db, year, quarter, None, False, previous_year_db, credit_brought_forward, refund_requested)
+        import vat_ledgers
+        auto = vat_ledgers.auto_close(connection)
+    saved = build_vat_return(db, year, quarter, None, False, previous_year_db, credit_brought_forward, refund_requested)
+    if auto:  # 2.9.97: automatic VAT closing - the closing by ledger and the settlement are posted when the return is saved
+        try: saved["settlement"] = post_settlement(db, year, quarter, user_id, previous_year_db)
+        except ValueError as exc: saved["settlement_note"] = str(exc)  # e.g. nothing to settle
+    return saved
 
 
 def reopen_return(db, year, quarter, user_id):
@@ -579,6 +585,14 @@ def settlement_lines(db, result, payable_account=None, credit_account=None, non_
         amount = rnd(amount)
         if amount > 0: lines.append({"account_code": code, "line_currency": vc, "side": "D", "amount": str(amount), "description": note})
         elif amount < 0: lines.append({"account_code": code, "line_currency": vc, "side": "C", "amount": str(-amount), "description": note})
+    closing = []
+    import vat_ledgers
+    with db.connect() as connection:
+        if vat_ledgers.enabled(connection):  # 2.9.97: each customer / supplier VAT account is first closed into its ledger's closing account
+            moves, balances = vat_ledgers.closing_lines(connection, balances)
+            for code, amount, note in moves:
+                amount = rnd(amount)
+                if amount: closing.append({"account_code": code, "line_currency": vc, "side": "D" if amount > 0 else "C", "amount": str(abs(amount)), "description": note})
     for code, balance in sorted(balances.items()): add(code, -balance, "VAT of the quarter closed")
     totals = result["totals_lbp"]
     blocked = -(totals.get("prorata", ZERO) + totals.get("annual_adjustment", ZERO))  # prorata is negative: VAT that is not deductible
@@ -594,12 +608,14 @@ def settlement_lines(db, result, payable_account=None, credit_account=None, non_
     elif net < 0: add(credit_account, -net, "VAT credit to recover / carry forward")
     with db.connect() as connection:
         names = {row["code"]: row["name_en"] for row in connection.execute("SELECT code,name_en FROM accounts")}
-    for line in lines:
+    for line in lines + closing:
         if line["account_code"] not in names: raise ValueError(f"Account {line['account_code']} was not found in the chart of accounts")
         line["account_name"] = names[line["account_code"]]
     payable = sum((Decimal(l["amount"]) for l in lines if l["account_code"] == payable_account and l["side"] == "C"), ZERO)
+    description = f"{SETTLEMENT_PREFIX}Q{result['quarter']} {result['year']}"
     return {"lines": lines, "payable": payable, "net": net, "return_payable": result["payable_lbp"], "currency": vc,
-            "date": result["date_to"], "description": f"{SETTLEMENT_PREFIX}Q{result['quarter']} {result['year']}"}
+            "date": result["date_to"], "description": description,
+            "closing_lines": closing, "closing_description": f"{description} - VAT closing by ledger"}  # 2.9.97
 
 
 def post_settlement(db, year, quarter, user_id, previous_year_db=None, payable_account=None, credit_account=None, non_deductible_account=None):
@@ -609,11 +625,17 @@ def post_settlement(db, year, quarter, user_id, previous_year_db=None, payable_a
     plan = settlement_lines(db, result, payable_account, credit_account, non_deductible_account)
     if len(plan["lines"]) < 2: raise ValueError("Nothing to settle: no VAT movement in the quarter")
     with db.connect() as connection:
-        for row in connection.execute("SELECT id FROM journal_entries WHERE source_type='journal_voucher' AND description=?", (plan["description"],)).fetchall():
+        for row in connection.execute("SELECT id FROM journal_entries WHERE source_type='journal_voucher' AND (description=? OR description=?)",
+                                      (plan["description"], plan["closing_description"])).fetchall():
             connection.execute("DELETE FROM journal_entries WHERE id=?", (row["id"],))
+    closing_number = None
+    if plan.get("closing_lines"):  # 2.9.97: customer / supplier VAT accounts -> closing accounts (44210 / 44270 / 44265 / 44263)
+        closing = db.save_journal_voucher({"entry_date": display_date(plan["date"]), "description": plan["closing_description"], "currency": plan["currency"], "voucher_type": "06"},
+                                          [{k: v for k, v in line.items() if k != "account_name"} for line in plan["closing_lines"]], user_id)
+        closing_number = closing["voucher"]["entry_number"]
     voucher = db.save_journal_voucher({"entry_date": display_date(plan["date"]), "description": plan["description"], "currency": plan["currency"], "voucher_type": "06"},
                                       [{k: v for k, v in line.items() if k != "account_name"} for line in plan["lines"]], user_id)
-    return {**plan, "voucher": voucher["voucher"]["entry_number"]}
+    return {**plan, "voucher": voucher["voucher"]["entry_number"], "closing_voucher": closing_number}
 
 
 def export_sections(result):

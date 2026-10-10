@@ -24,9 +24,10 @@ class ReportsStore:
         for row in self._converted_lines(currency, from_date, to_date):
             if row["account_type"] not in ("income", "expense"): continue
             value = row["signed"].get(currency) or Decimal("0")
-            item = totals.setdefault(row["code"], {"currency": currency, "code": row["code"], "name_en": row["name_en"], "type": row["account_type"], "debit": 0.0, "credit": 0.0})
-            if value >= 0: item["debit"] += float(value)
-            else: item["credit"] -= float(value)
+            item = totals.setdefault(row["code"], {"currency": currency, "code": row["code"], "name_en": row["name_en"], "type": row["account_type"], "debit": Decimal("0"), "credit": Decimal("0")})
+            if value >= 0: item["debit"] += Decimal(str(value))  # 2.9.97: exact, turned into numbers once below
+            else: item["credit"] -= Decimal(str(value))
+        for item in totals.values(): item["debit"], item["credit"] = float(item["debit"]), float(item["credit"])
         rows = sorted(totals.values(), key=lambda r: r["code"])
         for row in rows: row["amount"] = (row["credit"] - row["debit"]) if row["type"] == "income" else (row["debit"] - row["credit"])
         return rows
@@ -70,7 +71,7 @@ class ReportsStore:
         if currency: conditions.append("e.currency=?"); parameters.append(currency)
         with self.connect() as db:
             rows = [dict(row) for row in db.execute(f"""SELECT e.currency,a.code,a.name_en,a.type,
-                SUM(CAST(j.debit AS REAL)) debit,SUM(CAST(j.credit AS REAL)) credit
+                DSUM(CAST(j.debit AS REAL)) debit,DSUM(CAST(j.credit AS REAL)) credit
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
                 WHERE {' AND '.join(conditions)} GROUP BY e.currency,a.id ORDER BY e.currency,a.code""", parameters)]
         for row in rows:
@@ -99,11 +100,11 @@ class ReportsStore:
                 "expenses":0.0,"profit":0.0,"receivables":0.0,"payables":0.0,"overdue":0})
         with self.connect() as db:
             invoice_rows=db.execute("""SELECT kind,currency,
-                SUM(CAST(subtotal AS REAL)) subtotal,
-                SUM(CAST(total AS REAL)-CAST(COALESCE(amount_paid,'0') AS REAL)) outstanding
+                DSUM(CAST(subtotal AS REAL)) subtotal,
+                DSUM(CAST(total AS REAL)-CAST(COALESCE(amount_paid,'0') AS REAL)) outstanding
                 FROM invoices WHERE status NOT IN ('cancelled','deleted')
                 GROUP BY kind,currency""").fetchall()
-            expense_rows=db.execute("""SELECT currency,SUM(CAST(subtotal AS REAL)) subtotal
+            expense_rows=db.execute("""SELECT currency,DSUM(CAST(subtotal AS REAL)) subtotal
                 FROM expenses GROUP BY currency""").fetchall()
             # Preserve the existing DD-MM-YYYY due date interpretation.
             overdue_rows=db.execute("""SELECT currency,COUNT(*) overdue FROM invoices
@@ -113,7 +114,7 @@ class ReportsStore:
                   AND substr(due_date,7,4)||'-'||substr(due_date,4,2)||'-'||substr(due_date,1,2)<?
                 GROUP BY currency""",(datetime.now().strftime("%Y-%m-%d"),)).fetchall()
             monthly=[dict(row) for row in db.execute("""SELECT substr(CASE WHEN invoice_date GLOB '??-??-????' THEN substr(invoice_date,7,4)||'-'||substr(invoice_date,4,2)||'-'||substr(invoice_date,1,2) ELSE invoice_date END,1,7) month,
-                currency,kind,SUM(CAST(subtotal AS REAL)) amount FROM invoices WHERE status NOT IN ('cancelled','deleted') GROUP BY month,currency,kind ORDER BY month""")]
+                currency,kind,DSUM(CAST(subtotal AS REAL)) amount FROM invoices WHERE status NOT IN ('cancelled','deleted') GROUP BY month,currency,kind ORDER BY month""")]
         for row in invoice_rows:
             values=metric(row["currency"]); amount=float(row["subtotal"] or 0)
             outstanding=float(row["outstanding"] or 0)
@@ -266,10 +267,10 @@ class ReportsStore:
 
     def dashboard(self):
         with self.connect() as db:
-            rows = db.execute("""SELECT kind,currency,SUM(CAST(subtotal AS REAL)) subtotal,
-                SUM(CAST(vat AS REAL)) vat,SUM(CAST(total AS REAL)) total,COUNT(*) count,
-                SUM(CASE WHEN kind='sale' THEN CAST(total AS REAL) ELSE 0 END) debit,
-                SUM(CASE WHEN kind='purchase' THEN CAST(total AS REAL) ELSE 0 END) credit
+            rows = db.execute("""SELECT kind,currency,DSUM(CAST(subtotal AS REAL)) subtotal,
+                DSUM(CAST(vat AS REAL)) vat,DSUM(CAST(total AS REAL)) total,COUNT(*) count,
+                DSUM(CASE WHEN kind='sale' THEN CAST(total AS REAL) ELSE 0 END) debit,
+                DSUM(CASE WHEN kind='purchase' THEN CAST(total AS REAL) ELSE 0 END) credit
                 FROM invoices WHERE status NOT IN ('cancelled','deleted') GROUP BY kind,currency""").fetchall()
             return [dict(r) for r in rows]
 
@@ -344,23 +345,23 @@ class ReportsStore:
         if account_to:
             conditions.append("CAST(REPLACE(a.code,'.','') AS INTEGER)<=?"); parameters.append(int(''.join(c for c in str(account_to) if c.isdigit())))
         if branch_id: conditions.append("e.branch_id=?"); parameters.append(int(branch_id))
-        if posting_status=="posted": conditions.append("(e.source_type!='invoice' OR i.status='posted')")
+        if posting_status=="posted": conditions.append("(e.source_type!='invoice' OR i.status IN ('posted','cancelled'))")  # 2.9.97: a cancelled invoice keeps its entry (its reversal is posted too)
         elif posting_status=="review": conditions.append("(e.source_type='invoice' AND i.status='review')")
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
         with self.connect() as db:
             # 2.9.58: summed per account, currency and day by the database (one row per day instead of per line)
             raw=[dict(r) for r in db.execute(f"""SELECT a.code,a.name_en,e.currency,e.entry_date,
-                SUM(CAST(j.debit AS REAL)) debit,SUM(CAST(j.credit AS REAL)) credit
+                DSUM(CAST(j.debit AS REAL)) debit,DSUM(CAST(j.credit AS REAL)) credit
                 FROM journal_lines j JOIN accounts a ON a.id=j.account_id JOIN journal_entries e ON e.id=j.entry_id
                 LEFT JOIN invoices i ON e.source_type='invoice' AND i.id=e.source_id
                 {where_clause} GROUP BY a.code,a.name_en,e.currency,e.entry_date ORDER BY e.currency,a.code""",parameters)]
         totals={}
         for row in raw:
             key=(row["code"],row["name_en"],row["currency"])
+            # 2.9.97: added as exact Decimals, turned into numbers once at the end (floats drifted: 600.0000000000002)
             item=totals.setdefault(key,{"code":row["code"],"name_en":row["name_en"],"currency":row["currency"],
-                "opening":0.0,"debit":0.0,"credit":0.0,"balance":0.0,"closing_balance":0.0,
-                "usd_opening":0.0,"usd_debit":0.0,"usd_credit":0.0,"usd_balance":0.0,"usd_closing_balance":0.0,
-                "lbp_opening":0.0,"lbp_debit":0.0,"lbp_credit":0.0,"lbp_balance":0.0,"lbp_closing_balance":0.0})
+                **{field:Decimal("0") for field in ("opening","debit","credit","balance","closing_balance","usd_opening","usd_debit","usd_credit",
+                   "usd_balance","usd_closing_balance","lbp_opening","lbp_debit","lbp_credit","lbp_balance","lbp_closing_balance")}})
             date=str(row["entry_date"] or "")
             try: date=datetime.strptime(date,"%d-%m-%Y").strftime("%Y-%m-%d")
             except ValueError: pass
@@ -368,9 +369,9 @@ class ReportsStore:
             usd_d=self._converted_amount(debit,row["currency"],"USD",date); usd_c=self._converted_amount(credit,row["currency"],"USD",date)
             lbp_d=self._converted_amount(debit,row["currency"],"LBP",date); lbp_c=self._converted_amount(credit,row["currency"],"LBP",date)
             if from_date and date<from_date:
-                item["opening"]+=float(debit-credit); item["usd_opening"]+=float(usd_d-usd_c); item["lbp_opening"]+=float(lbp_d-lbp_c)
+                item["opening"]+=debit-credit; item["usd_opening"]+=Decimal(str(usd_d-usd_c)); item["lbp_opening"]+=Decimal(str(lbp_d-lbp_c))
                 continue
-            for field,value in (("debit",debit),("credit",credit),("usd_debit",usd_d),("usd_credit",usd_c),("lbp_debit",lbp_d),("lbp_credit",lbp_c)): item[field]+=float(value)
+            for field,value in (("debit",debit),("credit",credit),("usd_debit",usd_d),("usd_credit",usd_c),("lbp_debit",lbp_d),("lbp_credit",lbp_c)): item[field]+=Decimal(str(value))
         for item in totals.values():
             item["balance"]=item["debit"]-item["credit"]
             item["usd_balance"]=item["usd_debit"]-item["usd_credit"]
@@ -378,6 +379,8 @@ class ReportsStore:
             item["closing_balance"]=item["opening"]+item["balance"]
             item["usd_closing_balance"]=item["usd_opening"]+item["usd_balance"]
             item["lbp_closing_balance"]=item["lbp_opening"]+item["lbp_balance"]
+            for field,value in list(item.items()):
+                if isinstance(value,Decimal): item[field]=float(value)
         return list(totals.values())
 
     def general_ledger(self, account_code=None, from_date=None, to_date=None, currency=None):
@@ -407,8 +410,8 @@ class ReportsStore:
         if currency: conditions.append("e.currency=?"); parameters.append(currency)
         with self.connect() as db:
             rows=[dict(row) for row in db.execute(f"""SELECT e.currency,a.code,a.name_en,a.type,
-                SUM(CAST(j.debit AS REAL)) debit,SUM(CAST(j.credit AS REAL)) credit,
-                SUM(CAST(j.debit AS REAL)-CAST(j.credit AS REAL)) balance
+                DSUM(CAST(j.debit AS REAL)) debit,DSUM(CAST(j.credit AS REAL)) credit,
+                DSUM(CAST(j.debit AS REAL)-CAST(j.credit AS REAL)) balance
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
                 WHERE {' AND '.join(conditions)} GROUP BY e.currency,a.id ORDER BY e.currency,a.type,a.code""",parameters)]
         pnl=self.profit_and_loss(None,to_date,currency)
@@ -435,16 +438,18 @@ class ReportsStore:
         if currency: conditions.append("e.currency=?"); parameters.append(currency)
         with self.connect() as db:
             lines=db.execute(f"""SELECT e.currency,COALESCE(e.source_type,'other') source,
-                SUM(CASE WHEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL)>0 THEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL) ELSE 0 END) inflow,
-                SUM(CASE WHEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL)<0 THEN CAST(j.credit AS REAL)-CAST(j.debit AS REAL) ELSE 0 END) outflow
+                DSUM(CASE WHEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL)>0 THEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL) ELSE 0 END) inflow,
+                DSUM(CASE WHEN CAST(j.debit AS REAL)-CAST(j.credit AS REAL)<0 THEN CAST(j.credit AS REAL)-CAST(j.debit AS REAL) ELSE 0 END) outflow
                 FROM journal_lines j JOIN journal_entries e ON e.id=j.entry_id JOIN accounts a ON a.id=j.account_id
                 WHERE {' AND '.join(conditions)} GROUP BY e.currency,COALESCE(e.source_type,'other')""",parameters).fetchall()
         grouped={}
         for line in lines:
             category={"invoice":"Operating - Invoices","expense":"Operating - Expenses","payroll":"Operating - Payroll",
                 "payment":"Operating - Receipts / Payments","opening":"Opening Balance","year_close":"Year Closing"}.get(line["source"],"Other Cash Movement")
-            item=grouped.setdefault((line["currency"],category),{"currency":line["currency"],"category":category,"inflow":0.0,"outflow":0.0,"net":0.0})
-            item["inflow"]+=float(line["inflow"] or 0); item["outflow"]+=float(line["outflow"] or 0); item["net"]=item["inflow"]-item["outflow"]
+            item=grouped.setdefault((line["currency"],category),{"currency":line["currency"],"category":category,"inflow":Decimal("0"),"outflow":Decimal("0"),"net":Decimal("0")})
+            item["inflow"]+=Decimal(str(line["inflow"] or 0)); item["outflow"]+=Decimal(str(line["outflow"] or 0)); item["net"]=item["inflow"]-item["outflow"]
+        for item in grouped.values():  # 2.9.97: exact sums, numbers at the end
+            for field in ("inflow","outflow","net"): item[field]=float(item[field])
         return sorted(grouped.values(),key=lambda row:(row["currency"],row["category"]))
 
     def aging_report(self,as_of_date=None,kind=None,currency=None):
@@ -463,7 +468,7 @@ class ReportsStore:
         with self.connect() as db:
             rows=[dict(row) for row in db.execute(f"""SELECT i.id,i.invoice_number,i.invoice_date,i.due_date,i.kind,i.currency,p.name party_name,p.account_number,
                 (CASE WHEN i.doc_subtype='credit_note' THEN -1 ELSE 1 END)*(CAST(i.total AS REAL)-CAST(COALESCE(i.amount_paid,'0') AS REAL)-
-                (SELECT COALESCE(SUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a JOIN payments x ON x.id=a.payment_id
+                (SELECT COALESCE(DSUM(CAST(a.amount AS REAL)),0) FROM payment_allocations a JOIN payments x ON x.id=a.payment_id
                  WHERE a.invoice_id=i.id AND {payment_day}<=?)) outstanding FROM invoices i LEFT JOIN parties p ON p.id=i.party_id
                 WHERE {' AND '.join(conditions)} ORDER BY p.name,i.due_date,i.invoice_date""",parameters)]
         rows=self._apply_unallocated(rows,as_of.isoformat(),kind,currency)  # 2.9.80
@@ -484,7 +489,7 @@ class ReportsStore:
         payment_day="CASE WHEN x.payment_date GLOB '??-??-????' THEN substr(x.payment_date,7,4)||'-'||substr(x.payment_date,4,2)||'-'||substr(x.payment_date,1,2) ELSE x.payment_date END"
         with self.connect() as db:
             payments=[dict(r) for r in db.execute(f"""SELECT x.party_id,x.kind,x.currency,p.name party_name,p.account_number,
-                CAST(x.amount AS REAL)+CAST(COALESCE(x.exchange_difference,'0') AS REAL)-COALESCE((SELECT SUM(CAST(a.amount AS REAL)) FROM payment_allocations a WHERE a.payment_id=x.id),0) free
+                CAST(x.amount AS REAL)+CAST(COALESCE(x.exchange_difference,'0') AS REAL)-COALESCE((SELECT DSUM(CAST(a.amount AS REAL)) FROM payment_allocations a WHERE a.payment_id=x.id),0) free
                 FROM payments x LEFT JOIN parties p ON p.id=x.party_id WHERE {payment_day}<=?""",(as_of,))]
             party_of={r["id"]:r["party_id"] for r in db.execute("SELECT id,party_id FROM invoices")}
         credits={}  # (party_id, kind, currency) -> amount that settles invoices
@@ -549,7 +554,7 @@ class ReportsStore:
         if currency: conditions.append("currency=?"); parameters.append(currency)
         with self.connect() as db:
             invoice_rows=[dict(row) for row in db.execute(f"""SELECT currency,kind,COUNT(*) invoices,
-                SUM(CAST(subtotal AS REAL)) subtotal,SUM(CAST(vat AS REAL)) vat,SUM(CAST(total AS REAL)) total
+                DSUM(CAST(subtotal AS REAL)) subtotal,DSUM(CAST(vat AS REAL)) vat,DSUM(CAST(total AS REAL)) total
                 FROM invoices WHERE {' AND '.join(conditions)} GROUP BY currency,kind ORDER BY currency,kind""",parameters)]
             expense_conditions=[]; expense_parameters=[]
             expense_date="""CASE WHEN expense_date GLOB '??-??-????'
@@ -559,8 +564,8 @@ class ReportsStore:
             if to_date: expense_conditions.append(f"{expense_date}<=?"); expense_parameters.append(to_date)
             if currency: expense_conditions.append("currency=?"); expense_parameters.append(currency)
             where=" WHERE "+" AND ".join(expense_conditions) if expense_conditions else ""
-            expenses=[dict(row) for row in db.execute(f"""SELECT currency,COUNT(*) invoices,SUM(CAST(subtotal AS REAL)) subtotal,
-                SUM(CAST(vat AS REAL)) vat,SUM(CAST(total AS REAL)) total FROM expenses{where} GROUP BY currency""",expense_parameters)]
+            expenses=[dict(row) for row in db.execute(f"""SELECT currency,COUNT(*) invoices,DSUM(CAST(subtotal AS REAL)) subtotal,
+                DSUM(CAST(vat AS REAL)) vat,DSUM(CAST(total AS REAL)) total FROM expenses{where} GROUP BY currency""",expense_parameters)]
         for row in expenses: invoice_rows.append({**row,"kind":"expense"})
         totals={}
         for row in invoice_rows:

@@ -235,6 +235,9 @@ class CompanyManager:
             "company_mof":item.get("mof_number","").strip(),"company_email":item.get("email","").strip(),"company_website":item.get("website","").strip()}
         with target.connect() as db:
             for key,value in settings.items(): db.execute("INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,value))
+        if item.get("vat_by_party",True):  # 2.9.97: Lebanese practice - every customer / supplier has its own VAT account (Accounting Setup to change)
+            import vat_ledgers
+            vat_ledgers.save_settings(target,{"enabled":True})
         company={"id":company_id,"name":name,"active":True,"years":[{"year":year,"database":str(path.resolve()),"status":"open"}]}
         data["companies"].append(company); self._write(data); return company
 

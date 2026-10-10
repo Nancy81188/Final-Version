@@ -223,7 +223,7 @@ def year_end_check(db, year, previous_year_db=None):
     # 6. receipts / payments not allocated
     with db.connect() as connection:
         free = [dict(r) for r in connection.execute("""SELECT x.payment_number,x.currency,p.name party,
-            CAST(x.amount AS REAL)+CAST(COALESCE(x.exchange_difference,'0') AS REAL)-COALESCE((SELECT SUM(CAST(a.amount AS REAL)) FROM payment_allocations a WHERE a.payment_id=x.id),0) free
+            CAST(x.amount AS REAL)+CAST(COALESCE(x.exchange_difference,'0') AS REAL)-COALESCE((SELECT DSUM(CAST(a.amount AS REAL)) FROM payment_allocations a WHERE a.payment_id=x.id),0) free
             FROM payments x LEFT JOIN parties p ON p.id=x.party_id""")]
     free = [r for r in free if abs(r["free"] or 0) >= 0.01]
     add(WARNING if free else OK, "Receipts / payments allocated", (f"{len(free)} not (fully) allocated, e.g. " + ", ".join(f"{r['payment_number']} {r['party']} {r['free']:,.2f} {r['currency']}" for r in free[:4])) if free else "All allocated to invoices",

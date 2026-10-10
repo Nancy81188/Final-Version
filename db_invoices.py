@@ -84,6 +84,8 @@ class InvoicesStore:
                 vat_code=vat_account.split(" - ",1)[0].strip()
                 if vat_code.startswith(("4426","4421")) or vat_code in (chart_extra.PURCHASE_VAT,chart_extra.EXPORT_VAT,chart_extra.EXPENSE_VAT,defaults["purchase_vat"],defaults["expense_vat"]):
                     vat_account=defaults["output_vat"]
+            import vat_ledgers  # 2.9.97: the party's own VAT account (442100025 for supplier 401100025) when the rule is on
+            vat_account=vat_ledgers.party_vat_account(db,supplier_account,vat_account,kind)
             expense_no_vat_account=str(item.get("expense_no_vat_account") or defaults["purchases_no_vat"]).strip()
             supplier_side=self._side(item.get("supplier_side"),"D" if kind=="sale" else "C")
             vat_side=self._side(item.get("vat_side"),"C" if kind=="sale" else "D")
@@ -492,6 +494,8 @@ class InvoicesStore:
                 supplier_account = party_account
             elif kind == "sale" and (not item.get("supplier_account") or supplier_account==DEFAULT_LEBANESE_ACCOUNTS["accounts_receivable"]):
                 supplier_account = party_account
+            import vat_ledgers  # 2.9.97: the party's own VAT account
+            vat_account = vat_ledgers.party_vat_account(db, supplier_account, vat_account, kind)
             for code, name, account_type in (
                 (supplier_account, "Client Account" if kind=="sale" else "Supplier Account", "asset" if kind=="sale" else "liability"),
                 (vat_account, "Output VAT Account" if kind=="sale" else "VAT Account", "liability" if kind=="sale" else "asset"),
@@ -656,13 +660,13 @@ class InvoicesStore:
         with self.connect() as db:
             items=[dict(row) for row in db.execute("""SELECT ii.id,ii.description,ii.quantity,ii.unit_price,ii.subtotal,ii.deductible_subtotal,ii.non_deductible_subtotal,
                 ii.vat_rate,ii.vat,ii.total,ii.item_code,ii.unit,ii.discount_percent,ii.discount_amount,ii.gross_amount,
-                COALESCE((SELECT SUM(CAST(ret.quantity AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
+                COALESCE((SELECT DSUM(CAST(ret.quantity AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
                     WHERE ri.linked_invoice_id=? AND ri.status NOT IN ('cancelled','deleted') AND ret.origin_item_id=ii.id),0) returned_quantity,
-                COALESCE((SELECT SUM(CAST(ret.deductible_subtotal AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
+                COALESCE((SELECT DSUM(CAST(ret.deductible_subtotal AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
                     WHERE ri.linked_invoice_id=? AND ri.status NOT IN ('cancelled','deleted') AND ret.origin_item_id=ii.id),0) returned_deductible_subtotal,
-                COALESCE((SELECT SUM(CAST(ret.non_deductible_subtotal AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
+                COALESCE((SELECT DSUM(CAST(ret.non_deductible_subtotal AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
                     WHERE ri.linked_invoice_id=? AND ri.status NOT IN ('cancelled','deleted') AND ret.origin_item_id=ii.id),0) returned_non_deductible_subtotal,
-                COALESCE((SELECT SUM(CAST(ret.vat AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
+                COALESCE((SELECT DSUM(CAST(ret.vat AS REAL)) FROM invoice_items ret JOIN invoices ri ON ri.id=ret.invoice_id
                     WHERE ri.linked_invoice_id=? AND ri.status NOT IN ('cancelled','deleted') AND ret.origin_item_id=ii.id),0) returned_vat
                 FROM invoice_items ii WHERE ii.invoice_id=? ORDER BY ii.id""",(invoice_id,invoice_id,invoice_id,invoice_id,invoice_id))]
         return {"invoice":invoice,"items":items}

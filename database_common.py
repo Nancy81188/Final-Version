@@ -323,3 +323,33 @@ def verify_password(password, encoded):
     salt_hex, digest_hex = encoded.split(":", 1)
     candidate = hash_password(password, bytes.fromhex(salt_hex)).split(":", 1)[1]
     return hmac.compare_digest(candidate, digest_hex)
+
+
+# ---------------------------------------------------------------- 2.9.97: exact money sums in SQL
+_SIX_PLACES = Decimal("0.000001")
+
+
+class DecimalSum:
+    """SQL aggregate DSUM(x): adds money exactly (Decimal) instead of floating point. Each value is read to 6 decimals
+    (that also removes float noise such as 0.30000000000000004 from an expression), the result is returned once.
+    Whole numbers stay whole (DSUM(1) counts); no rows gives NULL, like SUM."""
+
+    def __init__(self):
+        self.total = Decimal("0"); self.seen = False; self.whole = True
+
+    def step(self, value):
+        if value is None or value == "": return
+        if not isinstance(value, int): self.whole = False
+        try: self.total += Decimal(str(value)).quantize(_SIX_PLACES)
+        except (ArithmeticError, ValueError): return
+        self.seen = True
+
+    def finalize(self):
+        if not self.seen: return None
+        return int(self.total) if self.whole else float(self.total)
+
+
+def register_money_functions(connection):
+    connection.create_aggregate("DSUM", 1, DecimalSum)
+    return connection
+

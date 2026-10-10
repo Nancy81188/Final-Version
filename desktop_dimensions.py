@@ -175,13 +175,14 @@ class DimensionsMixin:
         year = getattr(self, "current_fiscal_year", datetime.now().year)
         self.budget_year = tk.StringVar(value=str(year)); self.budget_currency = tk.StringVar(value="USD")
         self.budget_department = tk.StringVar(value=NONE); self.budget_project = tk.StringVar(value=NONE); self.budget_upto = tk.StringVar(value="Dec")
-        bar = tk.Frame(page, bg=LIGHT); bar.pack(fill="x", padx=10, pady=8)
+        # 2.9.97: the page in titled cards - Budget / Budget from a year + % / Forecast / Budget lines
+        bar = tk.LabelFrame(page, text="Budget", bg=LIGHT, padx=8, pady=4); bar.pack(fill="x", padx=10, pady=(8, 6))
         tk.Label(bar, text="Year", bg=LIGHT).pack(side="left"); tk.Entry(bar, textvariable=self.budget_year, width=6).pack(side="left", padx=(4, 10))
         tk.Label(bar, text="Currency", bg=LIGHT).pack(side="left")
         ttk.Combobox(bar, textvariable=self.budget_currency, values=self.currency_codes, state="readonly", width=6).pack(side="left", padx=(4, 10))
         self.dimension_selectors(bar, self.budget_department, self.budget_project)
-        tk.Button(bar, text="Load", command=self.load_budget, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
-        tk.Button(bar, text="Save Budget", command=self.save_budget, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=3)
+        tk.Button(bar, text="Load", command=self.load_budget, bg=NAVY, fg="white", border=0, padx=14, pady=6).pack(side="left", padx=3)
+        tk.Button(bar, text="Save Budget", command=self.save_budget, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.budget_projection_mode=tk.StringVar(value="Monthly")
         ttk.Combobox(bar,textvariable=self.budget_projection_mode,values=["Monthly","Yearly"],state="readonly",width=9).pack(side="left",padx=3)
         self.action_button(bar,"Project from Actual",self.project_budget).pack(side="left",padx=3)
@@ -195,7 +196,8 @@ class DimensionsMixin:
         tk.Button(from_bar, text="Fill the Budget", command=self.budget_from_year, bg=GOLD, fg=NAVY, border=0, padx=14, pady=5, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         tk.Label(from_bar, text="Months of the base year x (1 + %) per year up to the Year above. Review, then Save Budget.",
                  bg=LIGHT, fg=MUTED, wraplength=420, justify="left").pack(side="left", padx=10)
-        forecast_bar=tk.Frame(page,bg=LIGHT); forecast_bar.pack(fill="x",padx=10,pady=(0,5))
+        forecast_card=tk.LabelFrame(page,text="Forecast and 5-year projection",bg=LIGHT,padx=8,pady=4); forecast_card.pack(fill="x",padx=10,pady=(0,6))
+        forecast_bar=tk.Frame(forecast_card,bg=LIGHT); forecast_bar.pack(fill="x",pady=(0,4))
         self.budget_forecast_year=tk.StringVar(value=str(year)); self.budget_forecast_horizon=tk.StringVar(value="Quarter (3 months)")
         tk.Label(forecast_bar,text="Actual report year",bg=LIGHT).pack(side="left")
         tk.Entry(forecast_bar,textvariable=self.budget_forecast_year,width=6).pack(side="left",padx=(4,10))
@@ -206,7 +208,7 @@ class DimensionsMixin:
         for label,mode in (("Excel","xlsx"),("PDF","pdf"),("Print","print")):
             self.action_button(forecast_bar,label,lambda fmt=mode:self.export_budget_forecast(fmt)).pack(side="left",padx=2)
         tk.Label(forecast_bar,text="Company-wide actuals; trailing 3 complete months estimate the future.",bg=LIGHT,fg=MUTED).pack(side="left",padx=10)
-        long_bar=tk.Frame(page,bg=LIGHT); long_bar.pack(fill="x",padx=10,pady=(0,5))
+        long_bar=tk.Frame(forecast_card,bg=LIGHT); long_bar.pack(fill="x")
         self.budget_long_target=tk.StringVar(value=""); self.budget_long_growth=tk.StringVar(value="0"); self.budget_long_growth_by_year=tk.StringVar(value="")
         tk.Label(long_bar,text="5-Year Projection to date (DD-MM-YYYY)",bg=LIGHT).pack(side="left")
         tk.Entry(long_bar,textvariable=self.budget_long_target,width=12).pack(side="left",padx=(4,10))
@@ -216,15 +218,16 @@ class DimensionsMixin:
         tk.Entry(long_bar,textvariable=self.budget_long_growth_by_year,width=22).pack(side="left",padx=(4,10))
         self.action_button(long_bar,"5-Year Projection",self.budget_long_term_projection).pack(side="left",padx=3)
         tk.Label(long_bar,text="Uses the Actual report year above as the base year; a saved budget for a future year wins over the growth %.",bg=LIGHT,fg=MUTED).pack(side="left",padx=10)
-        tools = tk.Frame(page, bg=LIGHT); tools.pack(fill="x", padx=10)
+        lines_card = tk.LabelFrame(page, text="Budget lines", bg=LIGHT, padx=8, pady=4); lines_card.pack(fill="x", padx=10, pady=(0, 4))
+        tools = tk.Frame(lines_card, bg=LIGHT); tools.pack(fill="x")
         self.action_button(tools, "Add Account", self.add_budget_line).pack(side="left", padx=(0, 3))
         tk.Button(tools, text="Delete Line", command=self.delete_budget_line, bg=RED, fg="white", border=0, padx=12, pady=7).pack(side="left", padx=3)
         self.action_button(tools, "Spread Annual over 12 Months", self.spread_budget_line).pack(side="left", padx=3)
         tk.Label(tools, text="Compare up to", bg=LIGHT).pack(side="left", padx=(20, 4))
         ttk.Combobox(tools, textvariable=self.budget_upto, values=MONTHS, state="readonly", width=5).pack(side="left")
         tk.Button(tools, text="Budget vs Actual", command=self.budget_vs_actual, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=6)
-        tk.Label(page, text="Type an account number (F2 to search), then either an Annual amount or the monthly amounts. An annual budget alone is spread evenly over the year. "
-                 "Leave Department and Project as (none) for the company budget.", bg=LIGHT, fg=MUTED, wraplength=1100, justify="left").pack(fill="x", padx=12, pady=(4, 0))
+        tk.Label(lines_card, text="Type an account number (F2 to search), then either an Annual amount or the monthly amounts. An annual budget alone is spread evenly over the year. "
+                 "Leave Department and Project as (none) for the company budget.", bg=LIGHT, fg=MUTED, wraplength=1000, justify="left").pack(fill="x", pady=(4, 0))
         columns = [("line", "#", 40, "center"), ("account", "Account", 105, "w"), ("account_name", "Account Name", 190, "w"), ("annual", "Annual", 105, "e")] + \
                   [(m.lower(), m, 78, "e") for m in MONTHS] + [("total", "Months Total", 105, "e")]
         self.budget_sheet = EditableSheet(self, page, columns, ["account", "annual"] + [m.lower() for m in MONTHS], self.budget_cell_changed, height=7, lookup_column="account")

@@ -351,11 +351,19 @@ class AssetRegisterMixin:
                 try: Path(target).write_bytes(content)
                 except Exception as exc: return messagebox.showerror("Download PDF",str(exc),parent=window)
                 messagebox.showinfo("Asset PDF",f"PDF downloaded to:\n{target}",parent=window)
-        tree.bind("<Double-1>",lambda _event:download(True))
+        def view():  # 2.9.97: see the PDF inside the program
+            record=selected_record()
+            if not record: return messagebox.showwarning("Asset PDF","Select an attachment first",parent=window)
+            try: content=self.client.download_asset_attachment(record["id"])["content"]
+            except Exception as exc: return messagebox.showerror("Asset PDF",str(exc),parent=window)
+            from desktop_attachments import show_document
+            show_document(window,record["file_name"],content)
+        tree.bind("<Double-1>",lambda _event:view())
         controls=tk.Frame(window,bg=LIGHT); controls.pack(fill="x",padx=8,pady=(0,8))
+        tk.Button(controls,text="View",command=view,bg=GOLD,fg=NAVY,border=0,padx=16,pady=6,font=("Segoe UI",9,"bold")).pack(side="left",padx=3)
         self.action_button(controls,"Attach / Retry PDF",attach).pack(side="left",padx=3)
         self.action_button(controls,"Download selected",lambda:download(False)).pack(side="left",padx=3)
-        self.action_button(controls,"Open selected",lambda:download(True)).pack(side="left",padx=3)
+        self.action_button(controls,"Open in PDF reader",lambda:download(True)).pack(side="left",padx=3)
         self.action_button(controls,"Refresh",refresh).pack(side="left",padx=3)
         self.action_button(controls,"Close",window.destroy).pack(side="right",padx=3)
         tk.Label(window,text="Attach / Retry affects only this saved asset's PDF documents; it never saves or posts the asset.",

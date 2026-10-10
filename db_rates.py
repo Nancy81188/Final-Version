@@ -226,7 +226,7 @@ class RatesStore:
         now=_time.monotonic()
         if now-state["checked"]>1.0:  # at most one cheap check per second: a new or removed rate empties the cache
             with self.connect() as db:
-                signature=tuple(db.execute("SELECT COUNT(*),MAX(id),COALESCE(SUM(LENGTH(rate)),0) FROM exchange_rates").fetchone())
+                signature=tuple(db.execute("SELECT COUNT(*),MAX(id),COALESCE(DSUM(LENGTH(rate)),0) FROM exchange_rates").fetchone())
             if signature!=state["signature"]: state["cache"]={}; state["signature"]=signature
             state["checked"]=now
         return state["cache"]

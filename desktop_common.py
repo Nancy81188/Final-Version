@@ -245,18 +245,36 @@ def flow_toolbar(frame, gap=4):
     frame._flow_order = [e for e in getattr(frame, "_flow_order", []) if e[0].winfo_exists()] + order
     frame._saber_flow = True; frame._flow_pending = False
 
+    def inner_offsets():
+        """2.9.97: a titled box (LabelFrame) or a padded frame. Tk already places the rows inside the border and below the
+        title, so the rows only move by the padding - but the box HEIGHT must count the title, border and padding (it did
+        not, and the box was cut in half: Cash Budget / Budget 'from a year + %'). Returns (left, top, extra_height)."""
+        def pixels(option):
+            try: return int(round(frame.winfo_fpixels(str(frame.cget(option)) or "0")))
+            except (tk.TclError, ValueError): return 0
+        border = pixels("borderwidth") + pixels("highlightthickness")
+        padx, pady = pixels("padx"), pixels("pady")
+        title = 0
+        if isinstance(frame, tk.LabelFrame) and str(frame.cget("text") or ""):
+            try:
+                import tkinter.font as tkfont
+                title = tkfont.Font(root=frame, font=frame.cget("font")).metrics("linespace")
+            except tk.TclError: title = 16
+        return padx, pady, 2 * border + title + 2 * pady, 2 * padx
+
     def layout():
         frame._flow_pending = False
         if not frame.winfo_exists(): return
-        width = frame.winfo_width()
+        left0, top0, extra_height, extra_width = inner_offsets()
+        width = frame.winfo_width() - extra_width
         if width <= 1: width = max(frame.winfo_reqwidth(), 600)
         x = y = 0; row = 0
         for widget, _side, (left, right), (top, bottom) in frame._flow_order:
             if not widget.winfo_exists() or getattr(widget, "_flow_hidden", False): continue
             w, h = widget.winfo_reqwidth(), widget.winfo_reqheight()
             if x > 0 and x + left + w + right > width: x = 0; y += row + gap; row = 0
-            widget.place(x=x + left, y=y + top); x += left + w + right; row = max(row, top + h + bottom)
-        height = max(1, y + row)
+            widget.place(x=left0 + x + left, y=top0 + y + top); x += left + w + right; row = max(row, top + h + bottom)
+        height = max(1, y + row + extra_height)
         if int(frame.cget("height") or 0) != height: frame.configure(height=height)
 
     def schedule(_event=None):

@@ -154,7 +154,14 @@ def _ocr_pdf_pages(path, page_numbers=None, progress=None, cancel=None):
     language = "+".join(languages)
 
     def read_image(image):
-        text = pytesseract.image_to_string(image, lang=language, config=config)
+        if _is_photo(image):  # 2.9.97: a phone photo of a bill (dark background, often sideways)
+            return _read_photo(pytesseract, image, language)
+        image = _remove_table_lines(image)  # 2.9.97: the table borders hid most item rows from the OCR (1 row of 21 read)
+        text = _fix_ocr_text(pytesseract.image_to_string(image, lang=language, config=config))
+        if _word_count(text) < 25:  # 2.9.97: almost nothing read - the page may be turned
+            turned = _upright(pytesseract, image)
+            if turned is not None:
+                image = turned; text = _fix_ocr_text(pytesseract.image_to_string(image, lang=language, config=config))
         # PSM 6 with both languages can mistake a clear English invoice heading for another word. If key invoice
         # fields are missing, retry with English layout analysis and keep the better extraction.
         parsed = _parse_invoice_text(path, text)
@@ -162,7 +169,7 @@ def _ocr_pdf_pages(path, page_numbers=None, progress=None, cancel=None):
         amounts_conflict = all(value is not None for value in (subtotal, vat, total)) and abs(subtotal + vat - total) > max(0.05, abs(total) * 0.005)
         core_fields_missing = any(parsed.get(key) in (None, "") for key in ("invoice_number", "invoice_date", "total"))
         if "eng" in languages and (core_fields_missing or amounts_conflict):
-            alternate = pytesseract.image_to_string(image, lang="eng", config=english_config)
+            alternate = _fix_ocr_text(pytesseract.image_to_string(image, lang="eng", config=english_config))
             if _ocr_invoice_score(path, alternate) > _ocr_invoice_score(path, text): text = alternate
         if "eng" in languages and not _labelled_invoice_date(text):
             text = text + "\n" + _ocr_header_lines(pytesseract, image, english_config)
@@ -185,7 +192,7 @@ def _ocr_pdf_pages(path, page_numbers=None, progress=None, cancel=None):
                     if progress: progress(done, len(selected))
                 page = document[int(page_number)]
                 try:
-                    bitmap = page.render(scale=2.0); image = bitmap.to_pil(); bitmap.close()
+                    bitmap = page.render(scale=3.0); image = bitmap.to_pil(); bitmap.close()  # 2.9.97: 3x reads small table digits better
                 finally:
                     page.close()
                 pending[index] = pool.submit(lambda img: (read_image(img), img.close())[0], image)
@@ -221,7 +228,124 @@ def _ocr_header_lines(pytesseract, image, config):
 
 
 def _ocr_pdf(path, page_numbers=None):
-    return "\n".join(_ocr_pdf_pages(path, page_numbers))
+    return "\n".join(_without_copies(_ocr_pdf_pages(path, page_numbers)))
+
+
+def _page_key(text):
+    """The invoice number and the amounts of a page."""
+    joined = re.sub(r"\b([A-Z]{1,3}) (\d{5,})\b", r"\1\2", text)  # 'SJ 20252445' on the copy = 'SJ20252445'
+    number = re.sub(r"\s+", "", _invoice_number(joined) or "")
+    amounts = set(re.findall(r"\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}", text))
+    return number, amounts
+
+
+def _without_copies(texts):
+    """2.9.97: a scanned file often holds the original and a copy of the same invoice (Diwan: page 2 = page 1 with the PO
+    number): reading both doubled every item. A page with the same invoice number and mostly the same amounts as an earlier
+    page is left out (a real second page of an invoice has other items, so other amounts). OCR reads a few digits differently
+    on each copy, so the amounts are compared by overlap, not exactly."""
+    kept, seen = [], []
+    for text in texts:
+        number, amounts = _page_key(text)
+        copy = False
+        for earlier_number, earlier in seen:
+            union = amounts | earlier
+            overlap = len(amounts & earlier) / len(union) if union else 0
+            if len(amounts) >= 5 and ((number and number == earlier_number and overlap >= 0.6) or overlap >= 0.9): copy = True; break
+        if copy: continue
+        seen.append((number, amounts)); kept.append(text)
+    return kept
+
+
+def _trim_ocr_name(name):
+    """2.9.97: OCR reads the Arabic half of a bilingual letterhead as Latin noise after the company name
+    ('DIWAN GROUP C.S. LS GF Sl gall ASE'): keep the name up to its company form (C.S., S.A.L., SARL, LLC, FZE ...)."""
+    match = re.match(r"^(.*?\b(?:s\.a\.r\.l|s\.a\.l|sarl|sal|llc|ltd|limited|inc|c\.s|fze|fzco|co)\.?)(?=\s|$)", name.strip(), re.I)
+    return match.group(1).strip() if match and len(match.group(1)) >= 4 else name
+
+
+def _word_count(text):
+    return sum(1 for word in str(text or "").split() if len(word) > 2 and sum(ch.isalnum() for ch in word) >= len(word) * 0.7)
+
+
+def _is_photo(image):
+    """2.9.97: a photo, not a scan: a dark border / background around the paper (a scan is white around the text)."""
+    try:
+        import numpy as np
+        gray = np.array(image.convert("L").resize((200, max(1, int(200 * image.height / max(1, image.width))))))
+        edges = np.concatenate([gray[:6].ravel(), gray[-6:].ravel(), gray[:, :6].ravel(), gray[:, -6:].ravel()])
+        return float(edges.mean()) < 150 or float((gray < 160).mean()) > 0.35
+    except Exception:
+        return False
+
+
+def _upright(pytesseract, image):
+    """The page turned upright: Tesseract's orientation check when its data is there, else the better of 90 / 270 degrees."""
+    try:
+        osd = pytesseract.image_to_osd(image)
+        angle = int(re.search(r"Rotate:\s*(\d+)", osd).group(1))
+        return image.rotate(-angle, expand=True) if angle else None
+    except Exception:
+        best, best_words = None, 0
+        try:
+            for angle in (90, 270, 180):
+                turned = image.rotate(angle, expand=True)
+                words = _word_count(pytesseract.image_to_string(turned.resize((turned.width // 2, turned.height // 2)), lang="eng", config="--psm 6"))
+                if words > best_words: best, best_words = turned, words
+        except Exception:
+            return None  # not an image that can be turned (or no OCR engine): keep the page as it is
+        return best if best_words >= 15 else None
+
+
+def _otsu(gray):
+    import numpy as np
+    from PIL import Image
+    values = np.array(gray); histogram = np.bincount(values.ravel(), minlength=256).astype(float)
+    total = values.size; weighted = np.dot(np.arange(256), histogram); best, threshold, w0, s0 = 0.0, 128, 0.0, 0.0
+    for level in range(256):
+        w0 += histogram[level]
+        if w0 == 0 or w0 == total: continue
+        s0 += level * histogram[level]; m0 = s0 / w0; m1 = (weighted - s0) / (total - w0)
+        between = w0 * (total - w0) * (m0 - m1) ** 2
+        if between > best: best, threshold = between, level
+    return Image.fromarray(((values > threshold) * 255).astype("uint8"))
+
+
+def _read_photo(pytesseract, image, language):
+    """2.9.97: turn the photo upright, then read it twice (contrast-enhanced, and black-and-white at half size) and keep
+    both texts: on a photographed EDL bill each read finds amounts the other misses."""
+    from PIL import ImageOps
+    turned = _upright(pytesseract, image)
+    if turned is not None: image = turned
+    gray = ImageOps.autocontrast(image.convert("L"), cutoff=2)
+    first = pytesseract.image_to_string(gray, lang="eng", config="--psm 4")
+    second = pytesseract.image_to_string(_otsu(gray.resize((gray.width // 2, gray.height // 2))), lang="eng", config="--psm 11")
+    arabic = pytesseract.image_to_string(gray, lang=language, config="--psm 6") if "ara" in language else ""
+    return _fix_ocr_text("\n".join((first, second, arabic)))
+
+
+def _remove_table_lines(image):
+    """2.9.97: whiten the long horizontal / vertical rules of a table before OCR (they make Tesseract skip the rows)."""
+    try:
+        import numpy as np
+        from PIL import Image
+        gray = np.array(image.convert("L")); dark = gray < 160
+        height, width = dark.shape
+        rows, columns = dark.sum(axis=1) > width * 0.35, dark.sum(axis=0) > height * 0.25
+        if rows.mean() > 0.2 or columns.mean() > 0.2: return image  # not table rules: a dark photo - leave it
+        clean = gray.copy()
+        clean[rows, :] = 255
+        clean[:, columns] = 255
+        return Image.fromarray(clean)
+    except Exception:
+        return image
+
+
+def _fix_ocr_text(text):
+    """2.9.97: common OCR misreads on invoices: 'SJ2025...' read as '$J2025...', 'Currency' as 'Curreney'."""
+    text = re.sub(r"\$(?=[A-Z]\s?\d{6,})", "S", text)
+    text = re.sub(r"(?i)\bcurr[ec]n[ec]y\b", "Currency", text)
+    return text
 
 
 def _ocr_invoice_score(path, text):
@@ -431,6 +555,8 @@ def _vat_amount_after(text, invoice_currency=""):
 
 
 def _invoice_number(text):
+    proforma = re.search(r"(?i)pro-?\s?forma\s*(?:no\.?|number|#)?\s*[:#]\s*([A-Z\d][A-Z\d.\-/]{2,30})", text)  # 2.9.97: PROFORMA#:PF.HO.25.0000005
+    if proforma and any(ch.isdigit() for ch in proforma.group(1)): return proforma.group(1).strip(".-/")
     same_line = re.compile(
         r"(?:invoice|inv|facture|فاتورة|رقم[^\S\n]*(?:ال)?فاتورة|n°[^\S\n]*facture|bill)"
         r"[^\S\n]*(?:no\.?|number|num|#|n°|رقم)?[^\S\n]*[:#.]?[^\S\n]*([A-Z\d][A-Z\d\-/]{1,24})", re.I)
@@ -678,6 +804,7 @@ def _line_items(text):
     )
     for raw in text.splitlines():
         line = " ".join(_normalize_amount_line(raw).split())
+        line = " ".join(re.sub(r"(?<=\d)\s*\$|\$\s*(?=\d)", " ", line).split())  # 2.9.97: 7.10$ 9,585.00$ / $ 7.10
         if len(line) < 5 or ignored.search(line):
             continue
         match = row_pattern.match(line)
@@ -716,8 +843,14 @@ def _total_first_row(line):
     numbers = [n for n in numbers if n is not None]
     if len(numbers) < 3: return None
     total = numbers[0]
+    def lost_dot(value, expected):  # 2.9.97: OCR dropped the decimal point (4.4 read as 44, 4.15 as 415)
+        if expected <= 0 or value == expected: return value
+        digits = lambda x: re.sub(r"\D", "", f"{x:.4f}".rstrip("0").rstrip("."))
+        return expected if digits(value) == digits(expected) and float(value).is_integer() else value
     for i in range(1, len(numbers) - 1):
         price, quantity = numbers[i], numbers[i + 1]
+        if quantity > 0 and total > 0: price = lost_dot(price, round(total / quantity, 4))
+        if i == 2 and total > 0: numbers[1] = lost_dot(numbers[1], round(total * 0.11, 2))
         if quantity > 0 and price >= 0 and total > 0 and abs(price * quantity - total) <= max(0.05, total * 0.01):
             words = match.group(2).split(); unit = "unit"
             if words and _UNIT_TOKEN.match(words[0]): unit = words.pop(0).upper()
@@ -738,11 +871,65 @@ EXPENSE_ACCOUNT_HINTS = (  # 2.9.87: a starting point for the expense account (L
     (r"travel|hotel|air\s*ticket|flight|accommodation|سفر|فندق", "6264.2"), (r"subscription|abonnement|اشتراك", "6266.2"),
     (r"bank\s+charges?|commission\s+bancaire", "6739"), (r"transport(?:ation)?|freight|shipping|clearance|customs\s+formalities|نقل|شحن", "6261.1"),
 )
+# 2.9.97: scored categories - every keyword found counts, the strongest category wins ("TRAVEL INSURANCE" on an air-ticket
+# invoice is travel, not insurance). Each category has its 9-digit expense account, opened automatically when missing.
+EXPENSE_CATEGORIES = (
+    ("Travel", "6264.2", "626420000", "Travel & Accommodation Expenses",
+     (r"\btravel", r"\btickets?\b", r"\bflights?\b", r"\bair(?:line|ways|\s*ticket)", r"\bhotel", r"accommodation", r"\bvisa\b",
+      r"\b[A-Z0-9]{2}-?\d{3,4}\b(?=.*\b[A-Z]{3}/[A-Z]{3})", r"\b[A-Z]{3}/[A-Z]{3}\b", r"سفر", r"تذكرة", r"فندق")),
+    ("Electricity", "6263.4", "626340000", "Electricity Expenses",
+     (r"electricit", r"électricit", r"\bEDL\b", r"ed[li]\W{0,2}[gq]ov", r"\bkwh\b", r"\bgenerator\b", r"\bampere", r"\btranches?\b", r"\bbranchement",
+      r"\bconsommation\b", r"\bcompteur\b", r"كهرباء", r"مولد", r"عداد", r"اشتراك\s+كهرباء")),
+    ("Commissions", "6265.2", "626520000", "Commissions Paid to Agents",
+     (r"\bcommissions?\b(?!\s+bancaire)", r"\baffiliate", r"\bbrokerage\b", r"\bcourtage", r"عمولة")),
+    ("Rent", "6263.1", "626310000", "Rent Expenses", (r"\b(?:office\s+)?rent(?:al)?\b", r"\bloyer", r"إيجار")),
+    ("Water", "6263.3", "626330000", "Water Expenses", (r"\bwater\b", r"مياه")),
+    ("Telecom", "6261.5", "626150000", "Telephone, Internet & Postage", (r"telephone", r"mobile\s+line", r"internet", r"telecom", r"courier", r"postage", r"اتصالات", r"هاتف")),
+    ("Maintenance", "6262", "626200000", "Maintenance & Repairs", (r"maintenance", r"\brepair", r"entretien", r"صيانة")),
+    ("Insurance", "6268", "626800000", "Insurance Premium", (r"insurance\s+(?:premium|policy)", r"\bpolicy\s+no", r"\bassurance", r"تأمين")),
+    ("Advertising", "6269.3", "626930000", "Advertising & Marketing", (r"advertis", r"publicit", r"marketing", r"إعلان")),
+    ("Stationery", "6269.4", "626940000", "Stationery & Office Supplies", (r"stationery", r"office\s+supplies", r"papeterie", r"قرطاسية")),
+    ("Professional fees", "6265.3", "626530000", "Legal & Consulting Fees", (r"\blegal\b", r"lawyer", r"consult", r"audit\s+fee", r"accounting\s+fee", r"avocat", r"محام", r"استشار")),
+    ("Subscriptions", "6266.2", "626620000", "Subscriptions", (r"subscription", r"abonnement")),
+    ("Transport", "6261.1", "626110000", "Transport & Shipping", (r"\btransport(?:ation)?\b", r"freight", r"shipping", r"clearance", r"نقل", r"شحن")),
+    ("Bank charges", "6739", "673900000", "Bank Commissions", (r"bank\s+charges?", r"commission\s+bancaire")),
+)
+
+
+def expense_category(text):
+    """(label, parent code, 9-digit account, account name) of the strongest category, or None."""
+    best, best_score = None, 0
+    for category in EXPENSE_CATEGORIES:
+        score = sum(len(re.findall(pattern, text or "", re.I)) for pattern in category[4])
+        if score > best_score: best, best_score = category, score
+    if not best or (best[0] == "Travel" and best_score < 2): return None  # 'HOTEL' alone on a card statement is not travel
+    return best[:4]
 
 
 def suggest_expense_account(text):
+    found = expense_category(text)
+    if found: return found[1]
     for pattern, code in EXPENSE_ACCOUNT_HINTS:
         if re.search(pattern, text or "", re.I): return code
+    return ""
+
+
+_GENERIC_MAIL = {"info", "support", "sales", "admin", "contact", "accounts", "accounting", "billing", "noreply", "no-reply", "office", "mail", "hello", "finance"}
+
+
+def supplier_from_email(text):
+    """2.9.97: the issuer of the document from its e-mail address ('Pegasus@pegasuslb.com' -> Pegasus, 'support@eaugroup.co' ->
+    the 'EAU Group' written in the text). The name printed in the header is often the CUSTOMER (the buyer's company)."""
+    for local, domain in re.findall(r"([A-Za-z0-9._-]+)@([A-Za-z0-9-]+)\.", text or ""):
+        if domain.lower() in ("gmail", "hotmail", "yahoo", "outlook", "icloud", "live"): continue
+        if local.lower() not in _GENERIC_MAIL and len(local) >= 3 and local.isalpha(): return local[0].upper() + local[1:]
+        squashed = domain.lower().replace("-", "")
+        tokens = re.findall(r"[A-Za-z&]+", re.sub(r"\S+@\S+|www\.\S+|https?://\S+", " ", text))  # not the address itself
+        for size in range(1, 5):  # every run of 1-4 words, overlapping ('EAU Group' inside 'EAU Group Affiliate')
+            for start in range(len(tokens) - size + 1):
+                words = tokens[start:start + size]
+                if re.sub(r"[^a-z]", "", "".join(words).lower()) == squashed: return " ".join(words)
+        return domain[0].upper() + domain[1:]
     return ""
 
 
@@ -858,6 +1045,7 @@ def read_invoice_pdf(path):
     combined_text = "\n".join(part for part in (text.strip(), ocr_text.strip()) if part)
     result["text"] = combined_text
     result["ocr_used"] = True
+    result["party_name"] = _trim_ocr_name(result.get("party_name") or "")  # 2.9.97
     prefix = "Local English/Arabic OCR suggestion - please check"
     if len(text.strip()) < 20:
         prefix = "Scanned PDF; " + prefix
@@ -872,6 +1060,8 @@ def _warn_on_invoice_total_mismatch(result):
     subtotal, vat, total = (result.get(key) for key in ("subtotal", "vat", "total"))
     if any(value is None for value in (subtotal, vat, total)):
         return
+    if result.get("exempt_subtotal") and result.get("taxable_subtotal") is not None:  # 2.9.97: + the part without VAT (stamp, rounding)
+        subtotal = result["taxable_subtotal"] + result["exempt_subtotal"]
     if abs(subtotal + vat - total) > max(0.05, abs(total) * 0.005):
         result["vat"] = None
         result["acquisition_cost"] = None
@@ -943,6 +1133,10 @@ def _parse_invoice_text(path, text):
               "subtotal": None, "vat": None, "total": None, "items": [], "notes": ""}
     result["suggested_type"] = suggest_invoice_type(text)
     result["suggested_account"] = suggest_expense_account(text)
+    category = expense_category(text)  # 2.9.97: e.g. ("Travel", "6264.2", "626420000", "Travel & Accommodation Expenses")
+    result["expense_category"] = category[0] if category else ""
+    result["suggested_account_9"], result["suggested_account_name"] = (category[2], category[3]) if category else ("", "")
+    result["supplier_hint"] = supplier_from_email(text)
     if len(text.strip()) < 20:
         result["notes"] = "This PDF is a scanned image (no text inside). The file will be attached; enter the amounts manually."; return result
     result["invoice_number"] = _invoice_number(text)
@@ -999,9 +1193,67 @@ def _parse_invoice_text(path, text):
     if foreign and result.get("currency") in ("", "LBP", None):
         result["currency"] = foreign[0]
         inferred.append(f"currency {foreign[0]} (the LBP amount is the VAT at about {foreign[1]:,} LBP)")
+    _reconcile_with_lines(result, text, inferred)  # 2.9.97
+    bill = _utility_bill(text)  # 2.9.97: EDL / water / telephone bills: base + 11% VAT + stamp and rounding
+    subtotal, vat, total = (result.get(k) for k in ("subtotal", "vat", "total"))
+    sensible = None not in (vat, total) and total >= 1000 and vat <= total * 0.12 and (subtotal is None or abs(subtotal + vat - total) <= max(1, total * 0.06))
+    if bill and sensible and vat is not None and abs(bill["vat"] - vat) <= 2 and bill["total"] > total: sensible = False  # same VAT, the bill's total adds the stamp
+    if bill and not sensible:
+        if True:
+            result.update(bill); inferred.append("amounts found by the 11% VAT check of a utility bill (base + VAT + stamp / rounding)")
+            if not result.get("currency"): result["currency"] = "LBP"
+    if re.search(r"(?i)\bedl\b|ed[li]\W{0,2}[gq]ov|électricité\s+du\s+liban|كهرباء\s+لبنان|\btranches?\b.*\bbranchement|\bbranchement\b.*\btranches?\b", text, re.S) \
+            and not (result.get("supplier_hint") or "").strip():
+        result["supplier_hint"] = "Electricité du Liban (EDL)"
     result["inferred"] = inferred
     result["notes"] = _invoice_notes(result, text)
     return result
+
+
+def _utility_bill(text):
+    """2.9.97: a utility bill in LBP (EDL): find base and VAT with VAT = 11% of the base (to the lira), then the total that adds
+    the stamp and the rounding (EDL: 1,816,850 + 199,854 + 100,000 stamp + 296 rounding = 2,117,000)."""
+    values = sorted({int(n.replace(",", "")) for n in re.findall(r"(?<![\d.,])\d{1,3}(?:,\d{3})+(?![\d,])|(?<![\d.,])\d{5,9}(?![\d.,])", text or "")})
+    values = [v for v in values if v >= 1000]
+    best = None
+    for base in values:
+        for vat in values:
+            if vat < base and abs(vat - base * 0.11) <= 2:
+                totals = [t for t in values if base + vat <= t <= base + vat + 250000]
+                total = totals[0] if totals else base + vat
+                if best is None or base > best[0]: best = (base, vat, total)
+    if not best: return None
+    base, vat, total = best
+    return {"subtotal": float(base), "vat": float(vat), "total": float(total), "taxable_subtotal": float(base),
+            "exempt_subtotal": float(total - base - vat), "acquisition_cost": float(base)}
+
+
+def _reconcile_with_lines(result, text, inferred):
+    """2.9.97: the item lines are the strongest evidence. When subtotal + VAT = total does not hold (a weight total such as
+    'TOTAL 27045' taken as the amount, the VAT in LBP taken as the VAT), look in the text for the amount that equals the sum of
+    the lines and for a total whose difference with it (the VAT) is also printed - and use them."""
+    items = result.get("items") or []
+    if len(items) < 2: return
+    lines = round(sum(float(i["total"]) for i in items), 2)
+    subtotal, vat, total = (result.get(k) for k in ("subtotal", "vat", "total"))
+    if None not in (subtotal, vat, total) and abs(subtotal + vat - total) <= 0.02 and abs(subtotal - lines) <= 0.02: return
+    amounts = sorted({_number(a) for a in re.findall(r"(?<![\d.,])\d{1,3}(?:,\d{3})*\.\d{2}(?!\d)|(?<![\d.,])\d+\.\d{2}(?!\d)", text)} - {None})
+    present = lambda value: any(abs(a - value) <= 0.02 for a in amounts)
+    best = None
+    for candidate in amounts:
+        difference = round(candidate - lines, 2)
+        if candidate > lines and 0 < difference <= lines * 0.12 and present(difference):
+            printed = min(amounts, key=lambda a: abs(a - difference))  # the VAT as printed (Diwan: 90.80 on a 90.81 difference)
+            best = (candidate, printed); break  # the smallest total above the lines whose VAT is printed
+    if best is None and present(lines) and (total is None or abs((vat or 0) + lines - total) > 0.02):
+        best = (lines, 0.0) if vat in (None, 0) else None
+    if best is None: return
+    new_total, new_vat = best
+    changed = [k for k, v in (("subtotal", lines), ("vat", new_vat), ("total", new_total)) if result.get(k) is None or abs(result[k] - v) > 0.02]
+    if not changed: return
+    result["subtotal"], result["vat"], result["total"] = lines, new_vat, new_total
+    result["acquisition_cost"] = lines
+    inferred.append("amounts checked against the item lines: " + ", ".join(changed))
 
 
 _ADDRESS = re.compile(r"\b(?:invoice|facture|date|tel|phone|fax|page|www|street|floor|flr|level|block|bldg|building|towers?|avenue|road|highway|"
@@ -1055,7 +1307,8 @@ def _merge_invoice_suggestions(primary, fallback):
     """Fill gaps from OCR while keeping values read from the PDF text layer preferred."""
     result = dict(primary)
     for key in ("invoice_number", "invoice_date", "party_name", "currency", "subtotal", "vat",
-                "total", "items", "suggested_type", "suggested_account", "asset_name", "acquisition_cost"):
+                "total", "items", "suggested_type", "suggested_account", "asset_name", "acquisition_cost",
+                "taxable_subtotal", "exempt_subtotal", "expense_category", "suggested_account_9", "suggested_account_name", "supplier_hint"):  # 2.9.97
         value = result.get(key)
         if value is None or value == "" or value == []:
             replacement = fallback.get(key)

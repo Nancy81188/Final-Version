@@ -120,6 +120,7 @@ class PurchasesMixin:
         tk.Button(r4, text="Auto Calculate", command=self.purchase_auto_calculate, bg=NAVY, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)  # 2.9.90
         tk.Button(r4, text="Save Purchase", command=self.save_purchase, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         tk.Button(r4, text="Delete", command=self.delete_purchase, bg=RED, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)
+        tk.Button(r4, text="Cancel Purchase", command=self.cancel_purchase, bg=RED, fg="white", border=0, padx=12, pady=6).pack(side="left", padx=3)  # 2.9.97
         tk.Button(r4, text="Return (goods back)", command=self.return_open_purchase, bg=NAVY, fg="white", border=0, padx=10, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(r5, "Upload PDF", self.choose_purchase_pdf).pack(side="left", padx=3)
         self.action_button(r5, "Free PDF Read", self.ai_read_purchase_pdf).pack(side="left", padx=3)
@@ -765,6 +766,30 @@ class PurchasesMixin:
         except Exception as exc: return messagebox.showerror("Purchases", str(exc))
         self.new_purchase(); self.load_purchases(); self.load_invoices(); self.load_journal(); self.load_trial()
 
+    def cancel_purchase(self):
+        """2.9.97: a saved purchase that came out wrong is CANCELLED: a reversing journal entry is posted, the purchase stays in
+        the list as Cancelled (its number and the reason are kept for the audit). Then enter it again correctly."""
+        row = self.selected_purchase() if not self.purchase_form["id"] else self.purchase_form["rows"].get(str(self.purchase_form["id"]))
+        if not row: return messagebox.showwarning("Cancel Purchase", "Select the purchase in the list first")
+        if str(row.get("status") or "") in ("cancelled", "deleted"): return messagebox.showwarning("Cancel Purchase", f"Purchase {row['invoice_number']} is already {row['status']}")
+        window = tk.Toplevel(self); window.title("Cancel Purchase"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
+        tk.Label(window, text=f"Cancel purchase {row['invoice_number']} ({row.get('party_name') or ''}, {row.get('currency') or ''} {row.get('total') or ''})",
+                 bg=LIGHT, fg=NAVY, font=("Segoe UI", 10, "bold")).grid(row=0, column=0, columnspan=2, padx=14, pady=(14, 4), sticky="w")
+        tk.Label(window, text="A reversing entry is posted; the purchase stays in the list as Cancelled. Then enter it again correctly.",
+                 bg=LIGHT, fg=MUTED).grid(row=1, column=0, columnspan=2, padx=14, sticky="w")
+        reason = tk.StringVar(value="Wrong total")
+        tk.Label(window, text="Reason", bg=LIGHT).grid(row=2, column=0, padx=14, pady=12, sticky="w")
+        entry = tk.Entry(window, textvariable=reason, width=45); entry.grid(row=2, column=1, padx=14, pady=12); entry.focus_set(); entry.select_range(0, "end")
+        def confirm():
+            if not reason.get().strip(): return messagebox.showwarning("Cancel Purchase", "Enter the reason", parent=window)
+            try: self.client.cancel_invoice(row["id"], reason.get().strip())
+            except Exception as exc: return messagebox.showerror("Cancel Purchase", str(exc), parent=window)
+            window.destroy(); self.new_purchase(); self.load_purchases(); self.load_invoices(); self.load_journal(); self.load_trial()
+            messagebox.showinfo("Cancel Purchase", f"Purchase {row['invoice_number']} cancelled: the reversing entry was posted.")
+        buttons = tk.Frame(window, bg=LIGHT); buttons.grid(row=3, column=0, columnspan=2, pady=(0, 12))
+        tk.Button(buttons, text="Confirm Cancellation", command=confirm, bg=RED, fg="white", border=0, padx=18, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
+        tk.Button(buttons, text="Keep the purchase", command=window.destroy, bg=NAVY, fg="white", border=0, padx=18, pady=7).pack(side="left", padx=4)
+
     def purchase_attachments(self):
         row = self.selected_purchase()
         if not row: return messagebox.showwarning("Purchases", "Select a purchase first")
@@ -775,17 +800,8 @@ class PurchasesMixin:
     def show_attachments_for(self, invoice_id, number):
         try: items = self.client.attachments(invoice_id)
         except Exception as exc: return messagebox.showerror("Attachments", str(exc))
-        if not items: return messagebox.showinfo("Attachments", f"No documents attached to {number}")
-        window = tk.Toplevel(self); window.title(f"Documents - {number}"); window.configure(bg=LIGHT); window.geometry("600x300"); window.transient(self)
-        tree = ttk.Treeview(window, columns=("file", "size", "uploaded"), show="headings")
-        for key, label, width in (("file", "File", 300), ("size", "Size", 90), ("uploaded", "Uploaded", 170)): tree.heading(key, text=label); tree.column(key, width=width)
-        tree.pack(fill="both", expand=True, padx=8, pady=8)
-        for item in items: tree.insert("", "end", iid=str(item["id"]), values=(item["file_name"], f'{item["size"] / 1024:,.0f} KB', str(item["uploaded_at"])[:16]))
-        def download():
-            if not tree.selection(): return
-            record = next(i for i in items if str(i["id"]) == tree.selection()[0]); path = filedialog.asksaveasfilename(initialfile=record["file_name"], parent=window)
-            if path: Path(path).write_bytes(self.client.download_attachment(record["id"])["content"])
-        self.action_button(window, "Download Selected", download).pack(pady=(0, 8))
+        from desktop_attachments import attachments_window  # 2.9.97: see the document inside the program
+        attachments_window(self, number, items, lambda record: self.client.download_attachment(record["id"])["content"])
 
     def landed_cost_payload(self):
         f = self.purchase_form; item = {k: v.get().strip() for k, v in f["lc"].items()}

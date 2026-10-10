@@ -91,19 +91,49 @@ class ExpensesMixin:
             if data.get("invoice_date"): v["date"].set(data["invoice_date"])
             elif v["date"].get() == self.fiscal_today(): v["date"].set("")
             if data.get("currency"): v["currency"].set(data["currency"])
-            if data.get("party_name") and not v["description"].get(): v["description"].set(data["party_name"])
-            subtotal=data.get("subtotal")
-            if subtotal is None and data.get("total") is not None and data.get("vat") is not None:
-                subtotal=round(data["total"]-data["vat"],2)
-            if subtotal is not None and not v["with_vat"].get(): v["with_vat"].set(f'{subtotal:.2f}')
-            if data.get("suggested_account") and not v["account"].get().strip():  # 2.9.87: rent -> 6263.1 ... (check it)
-                from desktop_common import account_label; v["account"].set(account_label(self, data["suggested_account"]))
+            supplier = data.get("supplier_hint") or data.get("party_name") or ""  # 2.9.97: the issuer (Pegasus), not the buyer named on it
+            if not v["description"].get():
+                v["description"].set(" - ".join(part for part in (data.get("expense_category"), supplier) if part) or data.get("party_name") or "")
+            amounts = ExpensesMixin.expense_amounts_from_pdf(data)
+            for key in ("with_vat", "without_vat"):
+                if amounts[key] is not None and not v[key].get(): v[key].set(f"{amounts[key]:.2f}")
+            if amounts["vat"] is not None: v["vat"].set(f"{amounts['vat']:.2f}")
+            account = ExpensesMixin.expense_account_from_pdf(self, data)  # 2.9.97: travel -> 626420000, electricity -> 626340000 (opened if missing)
+            if account:
+                from desktop_common import account_label
+                if not v["account"].get().strip(): v["account"].set(account_label(self, account))
+                if amounts["without_vat"] and not v["no_vat_account"].get().strip(): v["no_vat_account"].set(account_label(self, account))
             self.expense_amounts_changed("none")
             suggestion=f["pdf_suggested_type"]
             f["pdf_label"].config(text=f"{Path(path).name}: {data.get('notes', '')}" +
                                   (f"; Suggested Type: {suggestion} (review before Save)" if suggestion else
                                    "; Type unclear; confirm this is a paid Expense before Save"), fg=NAVY)
         else: f["pdf_label"].config(text=Path(path).name, fg=NAVY)
+
+    @staticmethod
+    def expense_amounts_from_pdf(data):
+        """2.9.97: {with_vat, without_vat, vat} from what the PDF reading found.
+        No VAT on the document (air tickets, commissions): the whole total is 'without VAT' and the VAT is 0.
+        A utility bill: the base with VAT, and the stamp / rounding without VAT."""
+        total, vat, subtotal = data.get("total"), data.get("vat"), data.get("subtotal")
+        if data.get("taxable_subtotal") is not None and data.get("exempt_subtotal") is not None and vat is not None:
+            return {"with_vat": data["taxable_subtotal"], "without_vat": data["exempt_subtotal"], "vat": vat}
+        if vat is None and total is not None:
+            return {"with_vat": None, "without_vat": round(total, 2), "vat": 0.0}
+        if subtotal is None and total is not None and vat is not None: subtotal = round(total - vat, 2)
+        return {"with_vat": subtotal, "without_vat": None, "vat": vat}
+
+    def expense_account_from_pdf(self, data):
+        """The 9-digit account of the expense category, opened under its chart account when it does not exist yet."""
+        nine, parent, name = data.get("suggested_account_9"), data.get("suggested_account"), data.get("suggested_account_name")
+        if not nine: return parent or ""
+        try:
+            known = {str(a.get("code")) for a in self.client.accounts()}
+            if nine not in known:
+                self.client.save_account({"code": nine, "name_en": name or f"Expense {nine}", "type": "expense", "parent_code": parent if parent in known else ""})
+            return nine
+        except Exception:
+            return parent or ""
 
     def expense_payload(self):
         v = self.expense_form["vars"]; f = self.expense_form
@@ -232,15 +262,8 @@ class ExpensesMixin:
         if not target: return messagebox.showwarning("Expenses", "Select an expense first")
         try: items = self.client.expense_attachments(target)
         except Exception as exc: return messagebox.showerror("Expenses", str(exc))
-        if not items: return messagebox.showinfo("Expenses", "No documents attached to this expense")
-        window = tk.Toplevel(self); window.title("Expense documents"); window.configure(bg=LIGHT); window.geometry("560x280"); window.transient(self)
-        tree = ttk.Treeview(window, columns=("file", "size"), show="headings"); tree.heading("file", text="File"); tree.heading("size", text="Size"); tree.pack(fill="both", expand=True, padx=8, pady=8)
-        for item in items: tree.insert("", "end", iid=str(item["id"]), values=(item["file_name"], f'{item["size"] / 1024:,.0f} KB'))
-        def download():
-            if not tree.selection(): return
-            record = next(i for i in items if str(i["id"]) == tree.selection()[0]); path = filedialog.asksaveasfilename(initialfile=record["file_name"], parent=window)
-            if path: Path(path).write_bytes(self.client.download_expense_attachment(record["id"])["content"])
-        self.action_button(window, "Download Selected", download).pack(pady=(0, 8))
+        from desktop_attachments import attachments_window  # 2.9.97: see the document inside the program
+        attachments_window(self, "this expense", items, lambda record: self.client.download_expense_attachment(record["id"])["content"])
 
     def import_expenses_excel(self):
         path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xlsm")])
