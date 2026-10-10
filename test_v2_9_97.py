@@ -128,6 +128,9 @@ class AuditTrailTest(unittest.TestCase):
         self.assertTrue(s["integrity_ok"]); self.assertEqual((s["late"], s["admin"], s["outside_hours"], s["manual_cash"]), (1, 1, 1, 1))
         late = report["sections"][3]["rows"][0]; self.assertEqual(late[-1], 55)  # 55 days after its date
         self.assertEqual(report["sections"][5]["rows"][0][-1], "Sun 23:30")  # Beirut winter time (UTC+2) of 21:30 UTC on Sunday 1 March
+        from datetime import datetime as _dt, timezone as _tz
+        self.assertEqual(audit_report._beirut_offset(_dt(2026, 3, 1, 21, 30, tzinfo=_tz.utc)), 2)   # winter (also without time-zone data)
+        self.assertEqual(audit_report._beirut_offset(_dt(2026, 7, 1, 12, 0, tzinfo=_tz.utc)), 3)    # summer
 
 
 

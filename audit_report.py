@@ -28,8 +28,18 @@ def _local(created_at):
     try:
         from zoneinfo import ZoneInfo
         return moment.astimezone(ZoneInfo("Asia/Beirut"))
-    except Exception:
-        return moment.astimezone(timezone(timedelta(hours=3)))
+    except Exception:  # 2.9.98: Windows without the time-zone data: Lebanon's rule (UTC+3 from the last Sunday of March
+        return moment.astimezone(timezone(timedelta(hours=_beirut_offset(moment))))  # to the last Sunday of October, else UTC+2)
+
+
+def _beirut_offset(moment):
+    utc = moment.astimezone(timezone.utc)
+    def last_sunday(month):
+        day = datetime(utc.year, month, 31 if month in (3, 10) else 30, tzinfo=timezone.utc)
+        return day - timedelta(days=(day.weekday() + 1) % 7)
+    summer_start = last_sunday(3) - timedelta(hours=2)   # 00:00 Beirut winter time
+    summer_end = last_sunday(10) - timedelta(hours=3)    # 00:00 Beirut summer time
+    return 3 if summer_start <= utc < summer_end else 2
 
 
 def _entry_day(value):

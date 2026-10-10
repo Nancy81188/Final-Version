@@ -10,3 +10,4 @@ pypdfium2==5.6.0
 pillow>=10
 cryptography>=42
 numpy>=1.26
+tzdata>=2024.1
