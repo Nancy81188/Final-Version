@@ -576,18 +576,23 @@ def _is_subheading(text):
 
 def _contents(sections):
     """The statements and notes of the pack, for the cover page."""
+    return [label for label, _index in _contents_entries(sections)]
+
+
+def _contents_entries(sections):
+    """2.9.97: (label, section index) of each item of the contents - the page of that section is printed next to it."""
     items = []
-    for section in sections:
+    for index, section in enumerate(sections):
         heading = str(section.get("heading") or "")
         if heading.startswith("PREPARER REVIEW"): continue
-        if heading.startswith("INDEPENDENT AUDITOR"): items.append("Independent auditor's report")
-        elif heading.startswith("STATEMENT OF"): items.append(heading.split(" as at ")[0].split(" for the ")[0].split(" (")[0].title().replace(" Or ", " or ").replace(" And ", " and ").replace(" Of ", " of ").replace(" In ", " in "))
+        if heading.startswith("INDEPENDENT AUDITOR"): items.append(("Independent auditor's report", index))
+        elif heading.startswith("STATEMENT OF"): items.append((heading.split(" as at ")[0].split(" for the ")[0].split(" (")[0].title().replace(" Or ", " or ").replace(" And ", " and ").replace(" Of ", " of ").replace(" In ", " in "), index))
         elif heading.startswith("NOTES TO THE FINANCIAL STATEMENTS"):
-            items.append("Notes to the financial statements"); break
+            items.append(("Notes to the financial statements", index)); break
     return items
 
 
-def _financial_cover(doc, styles, regular, bold_font, meta, sections):
+def _financial_cover(doc, styles, regular, bold_font, meta, sections, pages=None):
     """2.9.83: front page of the financial statements, centred on the page: company, title, period, currency, contents, auditor."""
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import PageBreak
@@ -603,12 +608,18 @@ def _financial_cover(doc, styles, regular, bold_font, meta, sections):
              pdf_paragraph("AND INDEPENDENT AUDITOR'S REPORT", centre("cover-sub", 12, bold_font, space=8*mm), True)]
     if period: story.append(pdf_paragraph(period.replace(" - with comparative figures", ""), centre("cover-period", 12, regular, space=2*mm)))
     if currency: story.append(pdf_paragraph(currency, centre("cover-currency", 10, regular, "#5F6B76", space=14*mm)))
-    contents = _contents(sections)
-    if contents:
-        rows = [[pdf_paragraph("CONTENTS", centre("cover-contents", 10, bold_font), True)]] + [[pdf_paragraph(item, centre(f"cover-item-{i}", 10, regular))] for i, item in enumerate(contents)]
-        table = Table(rows, colWidths=[doc.width * 0.6], hAlign="CENTER")
+    entries = _contents_entries(sections)
+    if entries:
+        # 2.9.97: the contents with the page of each part (pages found by a first pass of the PDF; "-" until then)
+        left = ParagraphStyle("cover-item-left", parent=styles["Normal"], fontName=regular, fontSize=10, leading=13)
+        right = ParagraphStyle("cover-item-right", parent=left, alignment=2)
+        rows = [[pdf_paragraph("CONTENTS", centre("cover-contents", 10, bold_font), True), pdf_paragraph("Page", ParagraphStyle("cover-page-head", parent=right, fontName=bold_font), True)]]
+        for label, index in entries:
+            rows.append([pdf_paragraph(label, left), pdf_paragraph(str((pages or {}).get(index, "-")), right)])
+        table = Table(rows, colWidths=[doc.width * 0.52, doc.width * 0.12], hAlign="CENTER")
         table.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), .6, colors.HexColor("#071B2E")), ("LINEBELOW", (0, 0), (-1, 0), .3, colors.grey),
-                                   ("LINEBELOW", (0, -1), (-1, -1), .6, colors.HexColor("#071B2E")), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+                                   ("LINEBELOW", (0, -1), (-1, -1), .6, colors.HexColor("#071B2E")), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                                   ("LINEBELOW", (0, 1), (-1, -2), .2, colors.HexColor("#D5DDE5"))]))
         story += [table, Spacer(1, 18*mm)]
     if auditor: story.append(pdf_paragraph(auditor, centre("cover-auditor", 11, bold_font), True))
     story.append(PageBreak())
@@ -616,8 +627,39 @@ def _financial_cover(doc, styles, regular, bold_font, meta, sections):
 
 
 def export_sections_pdf(path, title, meta, sections):
-    from reportlab.lib.styles import ParagraphStyle
+    """2.9.97: the financial statements are built twice - the first pass finds the page of each part for the contents."""
     sections = tidy_sections(sections)
+    if title.startswith("Financial Statements,"):
+        import io
+        pages = {}
+        _build_sections_pdf(io.BytesIO(), title, meta, sections, pages, {})
+        return _build_sections_pdf(path, title, meta, sections, {}, pages)
+    return _build_sections_pdf(path, title, meta, sections, {}, {})
+
+
+def _page_marker(store, key):
+    """A zero-size flowable that writes down the page it lands on."""
+    from reportlab.platypus import Flowable
+    class Marker(Flowable):
+        def wrap(self, *_args): return 0, 0
+        def draw(self): store[key] = self.canv.getPageNumber()
+    return Marker()
+
+
+def _logo_flowable(encoded, max_width, max_height):
+    import base64, io
+    from reportlab.lib.utils import ImageReader
+    try:
+        data = base64.b64decode(encoded); reader = ImageReader(io.BytesIO(data)); width, height = reader.getSize()
+        scale = min(max_width / width, max_height / height)
+        logo = Image(io.BytesIO(data), width=width * scale, height=height * scale); logo.hAlign = "CENTER"
+        return logo
+    except Exception:
+        return None
+
+
+def _build_sections_pdf(path, title, meta, sections, found_pages, contents_pages):
+    from reportlab.lib.styles import ParagraphStyle
     financial = title.startswith("Financial Statements,")
     page = A4 if financial else landscape(A4)
     doc = SimpleDocTemplate(str(path), pagesize=page, rightMargin=8*mm, leftMargin=8*mm, topMargin=10*mm, bottomMargin=12*mm, title=title)
@@ -634,7 +676,7 @@ def export_sections_pdf(path, title, meta, sections):
     # 2.9.83: totals and headings with the bold font itself (<b> has no effect on the Arabic-capable fonts)
     cell_bold = ParagraphStyle("cell-bold", parent=cell_style, fontName=bold_font); number_bold = ParagraphStyle("cell-number-bold", parent=number_style, fontName=bold_font)
     if financial:
-        story = _financial_cover(doc, styles, regular, bold_font, meta, sections)  # 2.9.83: centred front page
+        story = _financial_cover(doc, styles, regular, bold_font, meta, sections, contents_pages)  # 2.9.83: centred front page
     else:
         story = [pdf_paragraph(title, styles["Title"], True)]
         for line in list(meta or []) + [f"Generated: {datetime.now():%d-%m-%Y %H:%M}"]: story.append(pdf_paragraph(line, styles["Normal"]))
@@ -643,11 +685,15 @@ def export_sections_pdf(path, title, meta, sections):
     subheading = ParagraphStyle("sub-heading", parent=styles["Normal"], fontName=bold_font, spaceBefore=4)
     # ReportLab frames add 6pt padding on each side of doc.width.
     available = doc.width - 12
-    for section in sections:
+    for section_index, section in enumerate(sections):
         after_cover = financial and story and type(story[-1]).__name__ == "PageBreak"
         if not after_cover and ((financial and (section["heading"].startswith(("Statement of", "Notes: account")) or section["heading"].endswith("DRAFT - Addressee"))) or (section.get("page_break") and story)):
             from reportlab.platypus import PageBreak
             story.append(PageBreak())
+        story.append(_page_marker(found_pages, section_index))  # 2.9.97: the page of this part, for the contents
+        if financial and section.get("logo_b64"):  # 2.9.97: the auditor's logo on top of the Independent Auditor's Report
+            logo = _logo_flowable(section["logo_b64"], doc.width * 0.35, 22*mm)
+            if logo: story += [logo, Spacer(1, 3*mm)]
         story.append(pdf_paragraph(section["heading"], centred if financial and section.get("center") else styles["Heading3"], True))
         if section.get("narrative"):
             start = len(story)

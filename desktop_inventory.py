@@ -759,7 +759,7 @@ class InventoryMixin:
         self.pc_find_box.bind("<Return>", lambda _e: self.open_count())
         bottom = tk.Frame(page, bg=LIGHT); bottom.pack(side="bottom", fill="x", padx=8, pady=6)
         self.action_button(bottom, "Save Count", lambda: self.save_count(False)).pack(side="left", padx=(0, 3))
-        tk.Button(bottom, text="Post Differences to Stock", command=lambda: self.save_count(True), bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Button(bottom, text="Apply Count to Stock + Journal", command=lambda: self.save_count(True), bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(bottom, "Print / PDF", lambda: self.count_document("preview")).pack(side="left", padx=3)
         self.action_button(bottom, "Excel Count Sheet", self.export_count_excel).pack(side="left", padx=3)
         self.action_button(bottom, "Upload Counts (Excel)", self.upload_count_excel).pack(side="left", padx=3)
@@ -814,12 +814,17 @@ class InventoryMixin:
     def save_count(self, post):
         lines = [{"item_id": r["item_id"], "sku": r["sku"], "counted": r["counted"]} for r in self.pc_sheet.ordered() if r.get("counted") not in ("", None)]
         if not lines: return messagebox.showwarning("Physical Inventory", "Enter at least one physical count")
-        if post and not messagebox.askyesno("Physical Inventory", "Post the differences? Adjustment + / - documents are made so the stock equals the physical count."): return
+        if post and not messagebox.askyesno("Physical Inventory", "Apply the physical count?\n\n- The stock quantities become the counted quantities (adjustment + / - documents).\n"
+                                            "- The difference is posted in the journal (JV): surplus Dr stock 37 / Cr stock variation, shortage the other way,\n  valued at the item cost on the count date."): return
         try: saved = self.client.save_physical_count({"count_date": self.pc_vars["date"].get(), "warehouse_id": self.warehouse_id_of(self.pc_vars["warehouse"].get())}, lines, self.pc_id, post)
         except Exception as exc: return messagebox.showerror("Physical Inventory", str(exc))
         self.pc_id = saved["id"]
-        messagebox.showinfo("Physical Inventory", f'{saved["number"]} saved' + (f' and posted: {saved.get("adjustment_numbers") or "no difference"}' if post else " (draft)"))
+        messagebox.showinfo("Physical Inventory", f'{saved["number"]} saved' + (f' and applied: {saved.get("adjustment_numbers") or "no difference"}\n(the JV is in the General Journal)' if post else " (draft)"))
         self.load_inventory(); self.load_counts()
+        if post:
+            for refresh in ("load_journal", "load_trial"):
+                try: getattr(self, refresh)()
+                except Exception: pass  # the screen refreshes when it is opened
 
     def load_counts(self):
         try: counts = self.client.physical_counts()

@@ -327,7 +327,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 year = int(self._query(parsed,"year",self.headers.get("X-Fiscal-Year")))
                 target = self.company_manager.database(self.headers.get("X-Company-ID"),year)
                 others = list(self.company_manager.year_databases(self.headers.get("X-Company-ID")).values())  # 2.9.83
-                return self._json(200,financial_statements.config(target,others))
+                return self._json(200,financial_statements.config(target,others,self.master_db))  # 2.9.97: + the auditor profile
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/reports/business":
             try:
@@ -345,7 +345,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                         years = financial_statements.years_from(options.get("years"))
                         databases = {year:self.company_manager.database(self.headers.get("X-Company-ID"),year) for year in years}
                     others = list(self.company_manager.year_databases(self.headers.get("X-Company-ID")).values())  # 2.9.83
-                    result = financial_statements.build(databases,options,others)
+                    result = financial_statements.build(databases,options,others,self.master_db)
                 else:
                     result=business_reports.build(self.db,report,options)
                 return self._json(200,ledger_reports.json_ready(result))
@@ -526,6 +526,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                                            int(self._query(parsed,"limit","5000") or 5000))
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,result)
+        if path == "/api/tax-review":  # 2.9.98: the payroll and VAT rules applied, for the tax adviser
+            import tax_review
+            try: return self._json(200,tax_review.build(self.db,self._query(parsed,"date","")))
+            except Exception as exc: return self._json(400,{"error":str(exc)})
         if path in ("/api/audit-report","/api/audit-verify"):  # 2.9.97: audit report and audit-trail integrity (administrator)
             if user["role"]!="admin": return self._json(403,{"error":"Administrator permission required"})
             import audit_chain, audit_report
@@ -673,7 +677,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 import financial_statements
                 target = self.company_manager.database(self.headers.get("X-Company-ID"),int(body["year"]))
                 others = list(self.company_manager.year_databases(self.headers.get("X-Company-ID")).values())  # 2.9.83: entered once for every year
-                return self._json(200,financial_statements.save_config(target,body["config"],user["id"],others))
+                return self._json(200,financial_statements.save_config(target,body["config"],user["id"],others,self.master_db))
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path == "/api/asset-categories":
             try:

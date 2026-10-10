@@ -112,6 +112,7 @@ class SettingsMixin:
             self.action_button(backup_controls,"Save Backup As... (USB / Drive)",self.save_backup_as).pack(side="left",padx=4)
             self.action_button(backup_controls,"Open Backup Folder",self.open_backup_folder).pack(side="left",padx=4)
             self.action_button(backup_controls,"Open Log Folder",self.open_log_folder).pack(side="left",padx=4)
+            self.action_button(backup_controls,"Network Check",self.network_check).pack(side="left",padx=4)  # 2.9.98
             if is_admin: tk.Button(backup_controls,text="Restore Selected",command=self.restore_selected_backup,bg="#8B1E1E",fg="white",border=0,padx=15,pady=7).pack(side="left",padx=4)
             if is_admin:
                 lock_bar=tk.LabelFrame(backups,text="Close the books (period lock)",bg=LIGHT,padx=8,pady=6); lock_bar.pack(fill="x",padx=10,pady=(0,6))
@@ -299,6 +300,34 @@ class SettingsMixin:
         if self.second_copy_folder.get().strip() and messagebox.askyesno("Backups","Saved. Make a backup now to check the second copy?"):
             self.create_backup()
         self.refresh_second_copy_status()
+
+    def network_check(self):
+        """2.9.98: how this PC reaches the data service: address, encryption, office certificate and answer time (10 requests),
+        with the steps for an office network of 2-3 PCs."""
+        import time, statistics, app_runtime, office_tls
+        url = self.client.base_url; local = bool(app_runtime.LOCAL_URL) and url == str(app_runtime.LOCAL_URL).rstrip("/")
+        times = []; error = ""
+        for _ in range(10):
+            started = time.perf_counter()
+            try: self.client.request("GET", "/api/companies")  # not kept on this PC: every request goes to the data service
+            except Exception as exc: error = str(exc); break
+            times.append((time.perf_counter() - started) * 1000)
+        lines = [f"Data service: {url}" + (" (the private service of this PC)" if local else "")]
+        if not local:
+            lines.append("Encryption: " + ("HTTPS - passwords and data are encrypted on the network" if url.startswith("https") else
+                                          "NONE (http) - use the office certificate: run_server.py --make-certificate"))
+            trusted = office_tls.trusted_certificate()
+            lines.append("Office certificate on this PC: " + (str(trusted) if trusted else "not found (copy server-cert.pem as office-server-cert.pem into the Saber data folder)"))
+        if times:
+            average = statistics.mean(times)
+            verdict = "excellent" if average < 30 else "good" if average < 120 else "slow - check the cable / Wi-Fi of this PC and of the server"
+            lines.append(f"Answer time: {min(times):.0f} / {average:.0f} / {max(times):.0f} ms (fastest / average / slowest of 10) - {verdict}")
+        if error: lines.append(f"Could not reach the data service: {error}")
+        lines += ["", "Office network (2-3 PCs):", "1. On the server PC: python run_server.py --make-certificate SERVER-NAME,SERVER-IP",
+                  "2. Start it: run_server.py --host 0.0.0.0 --tls-cert server-cert.pem --tls-key server-key.pem",
+                  "3. Copy server-cert.pem (never the key) to each PC's Saber data folder as office-server-cert.pem",
+                  "4. On each PC sign in with https://SERVER-NAME:8765, then press Network Check here."]
+        (messagebox.showwarning if error else messagebox.showinfo)("Network Check", "\n".join(lines))
 
     def open_log_folder(self):
         """Error log of this computer (logs/saber.log in the Saber data folder) - send it when reporting a problem."""

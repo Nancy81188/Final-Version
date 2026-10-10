@@ -153,7 +153,7 @@ class FinalFeaturesMixin:
         tk.Label(controls, text="Group", bg=LIGHT).grid(row=1, column=0, padx=4, pady=6, sticky="w")
         ttk.Combobox(controls, textvariable=self.pr_group, values=["Employees and Managers (separate)", "Employees only", "Managers only"], state="readonly", width=31).grid(row=1, column=1, padx=4, pady=6)
         tk.Checkbutton(controls, text="Include draft payroll (preview only)", variable=self.pr_drafts, bg=LIGHT).grid(row=1, column=2, columnspan=3, sticky="w", padx=4)
-        buttons = tk.Frame(controls, bg=LIGHT); buttons.grid(row=1, column=5, columnspan=4, sticky="e")
+        buttons = tk.Frame(controls, bg=LIGHT); buttons.grid(row=3, column=0, columnspan=9, sticky="w", pady=(2, 0))  # 2.9.98: own row (it pushed the page off a laptop screen)
         tk.Button(buttons, text="Generate", command=self.generate_payroll_report, bg=GOLD, fg=NAVY, border=0, padx=16, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(buttons, "Export Excel", lambda: self.export_payroll_report("xlsx")).pack(side="left", padx=3)
         self.action_button(buttons, "Export PDF", lambda: self.export_payroll_report("pdf")).pack(side="left", padx=3)

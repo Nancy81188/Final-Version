@@ -83,6 +83,47 @@ INFO_FIELDS = {
  'report_city': 'City of the report',
  'report_date': "Date of the auditor's report",
 }
+# 2.9.97: the auditor's details (and logo) are the AUDITOR's, the same for every company he audits: saved once in the main file.
+AUDITOR_KEYS = ('auditor_firm', 'auditor_partner', 'auditor_license', 'auditor_address', 'report_city')
+PROFILE_KEY = 'auditor_profile'
+
+
+def auditor_profile(master):
+    if master is None: return {}
+    try:
+        with master.connect() as conn:
+            row = conn.execute('SELECT value FROM app_settings WHERE key=?', (PROFILE_KEY,)).fetchone()
+        return json.loads(row['value']) if row and row['value'] else {}
+    except Exception:
+        return {}
+
+
+def save_auditor_profile(master, info, logo=None):
+    """info: the auditor fields typed (empty ones are kept as they were); logo: base64 PNG/JPEG, '' to remove, None to keep."""
+    if master is None: return {}
+    profile = auditor_profile(master)
+    for key in AUDITOR_KEYS:
+        if str((info or {}).get(key) or '').strip(): profile[key] = str(info[key]).strip()
+    if logo is not None:
+        if logo and len(logo) > 2_000_000: raise ValueError('The logo is too large (keep it under about 1.5 MB)')
+        profile['logo_b64'] = logo
+    with master.connect() as conn:
+        conn.execute('INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (PROFILE_KEY, json.dumps(profile)))
+    return profile
+
+
+def _with_profile(cfg, master):
+    """The company's report settings with the auditor's details filled from the profile where the company has none."""
+    profile = auditor_profile(master)
+    if not profile: return cfg
+    cfg = dict(cfg); info = dict(cfg.get('info') or {})
+    for key in AUDITOR_KEYS:
+        if not str(info.get(key) or '').strip() and profile.get(key): info[key] = profile[key]
+    cfg['info'] = info
+    if profile.get('logo_b64'): cfg['auditor_logo'] = profile['logo_b64']
+    return cfg
+
+
 # Saved once for the company: copied to every fiscal-year file (each year is its own database).
 SHARED_KEYS = ('info', 'notes', 'audit', 'mapping')
 # The placeholders of 2.9.68 and before: a section still holding one of them gets the full text above.
@@ -131,10 +172,14 @@ def years_from(value):
     if len(years) > 2 or any(y < 2000 or y > 2100 for y in years): raise ValueError('Choose one or two years between 2000 and 2100')
     return years
 
-def config(db, others=()):
+def config(db, others=(), master=None):
     """Report settings of one fiscal-year file. 2.9.83: a shared part (information, texts, mapping) missing in this year
-    is taken from the other years of the company, so what was entered once is never asked again."""
+    is taken from the other years of the company, so what was entered once is never asked again.
+    2.9.97: the auditor's details and logo come from the main file (the same for every company)."""
     cfg = json.loads(db.settings().get(KEY) or '{}')
+    if master is not None:
+        base = config(db, others)
+        return _with_profile(base, master)
     for other in others or ():
         if other is None or other is db: continue
         try: theirs = json.loads(other.settings().get(KEY) or '{}')
@@ -143,8 +188,11 @@ def config(db, others=()):
             if not cfg.get(key) and theirs.get(key): cfg[key] = theirs[key]
     return cfg
 
-def save_config(db, data, user_id, others=()):
+def save_config(db, data, user_id, others=(), master=None):
     if not isinstance(data, dict): raise ValueError('Invalid financial report settings')
+    data = dict(data); logo = data.pop('auditor_logo', None)
+    if master is not None:  # 2.9.97: the auditor's details and logo are saved once, for every company
+        save_auditor_profile(master, data.get('info') or {}, logo)
     if str(data.get('basis','USD')).upper() not in db.currency_codes(): raise ValueError('Choose a currency of the company')
     for field in ('mapping','supplements'):
         if not isinstance(data.get(field,{}),dict): raise ValueError('Invalid '+field)
@@ -327,7 +375,7 @@ def info_values(cfg, settings):
     return {key: (str(info.get(key) or '').strip() or f'[{label}]') for key, label in INFO_FIELDS.items()}
 
 
-def build(databases, options, others=()):
+def build(databases, options, others=(), master=None):
     basis = str(options.get('basis') or 'USD').upper()
     # 2.9.84: any currency of the company (EUR books...): lines are translated through their USD value at the entry date
     if basis not in ('USD', 'LBP') and not any(basis in d.currency_codes() for d in databases.values()):
@@ -337,7 +385,7 @@ def build(databases, options, others=()):
     if missing: raise ValueError('Fiscal year not found: ' + ', '.join(missing))
     # 2.9.83: what is shared (information, texts, mapping) comes from any year of the company where it was entered
     pool = list(databases.values()) + [o for o in (others or ()) if o is not None]
-    data = [period_data(databases[y], s, e, basis, label, config(databases[y], pool)) for y, s, e, label in periods]
+    data = [period_data(databases[y], s, e, basis, label, config(databases[y], pool, master)) for y, s, e, label in periods]
     current = data[0]; settings = databases[periods[0][0]].settings(); cfg = current['config']
     company = settings.get('company_name') or '[Company name]'
     full_year = current['start'][5:] == '01-01' and current['end'][5:] == '12-31'
@@ -365,7 +413,7 @@ def build(databases, options, others=()):
         audit_rows += [[line] for line in text.splitlines() if line.strip()]
     signature = [line for line in _text(cfg, 'audit', 'Signature, address and report date', AUDIT, values).splitlines() if line.strip()]
     sections.append(dict(heading="INDEPENDENT AUDITOR'S REPORT", headers=['Text'], rows=audit_rows, total_rows=[], narrative=True, page_break=True, center=True,
-                         keep_last=len(signature)))
+                         keep_last=len(signature), logo_b64=cfg.get('auditor_logo') or ''))  # 2.9.97: the auditor's logo on top of his report
 
     # ---- note numbers for the statement lines that have amounts
     note_no = {}; next_note = [5]

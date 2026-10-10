@@ -334,6 +334,26 @@ class V22Mixin:
             row, column = 1 + index // 2, (index % 2) * 2
             ttk.Label(page, text=label).grid(row=row, column=column, sticky="w", padx=(10, 4), pady=4)
             info_vars[key] = tk.StringVar(); ttk.Entry(page, textvariable=info_vars[key], width=42).grid(row=row, column=column + 1, sticky="w", padx=(0, 14), pady=4)
+        # 2.9.97: the auditor's logo (on top of the Independent Auditor's Report) - with the audit firm details, saved once for every company
+        logo_state = {"value": None}  # None = unchanged, "" = removed, base64 = new logo
+        logo_row = 2 + len(INFO_FIELDS) // 2
+        logo_label = ttk.Label(page, text="Auditor logo: -")
+        logo_label.grid(row=logo_row, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 4))
+        def choose_logo():
+            path = filedialog.askopenfilename(parent=window, filetypes=[("Images", "*.png *.jpg *.jpeg")])
+            if not path: return
+            import base64
+            data = Path(path).read_bytes()
+            if len(data) > 1_500_000: return messagebox.showwarning("Auditor logo", "Choose a smaller image (under 1.5 MB)", parent=window)
+            logo_state["value"] = base64.b64encode(data).decode("ascii"); logo_label.config(text=f"Auditor logo: {Path(path).name} (saved with Save)")
+        def remove_logo():
+            logo_state["value"] = ""; logo_label.config(text="Auditor logo: removed (saved with Save)")
+        buttons = ttk.Frame(page); buttons.grid(row=logo_row, column=2, columnspan=2, sticky="w", pady=(10, 4))
+        ttk.Button(buttons, text="Choose logo...", command=choose_logo).pack(side="left", padx=3)
+        ttk.Button(buttons, text="Remove logo", command=remove_logo).pack(side="left", padx=3)
+        ttk.Label(page, text="The audit firm, partner, licence, address, city and logo are saved ONCE for every company you audit; "
+                  "the company fields (legal form, register number ...) are saved for this company.", wraplength=900, foreground="#5f6b76").grid(
+                  row=logo_row + 1, column=0, columnspan=4, sticky="w", padx=10, pady=(2, 8))
         for kind, definitions in (("notes",NARRATIVES),("audit",AUDIT)):
             page = ttk.Frame(notebook); notebook.add(page,text="Notes" if kind=="notes" else "Auditor's report")
             inner = ttk.Notebook(page); inner.pack(fill="both", expand=True)
@@ -365,6 +385,7 @@ class V22Mixin:
                     if str(value).strip() in OLD_DEFAULTS or str(value).strip() in PREVIOUS_DEFAULTS: value=default  # older standard texts get the current one
                     widget.delete("1.0","end"); widget.insert("1.0",value)
             for key,var in info_vars.items(): var.set((saved.get("info") or {}).get(key,""))
+            logo_label.config(text="Auditor logo: saved" if saved.get("auditor_logo") else "Auditor logo: none yet (Choose logo...)")
             saved_basis=saved.get("basis",self.br["basis"].get())
             for key,var in entries.items(): var.set(saved.get("supplements",{}).get(key,"") if saved_basis==self.br["basis"].get() else "")
             mapping.delete("1.0","end"); mapping.insert("1.0","\n".join(f"{k} = {v}" for k,v in saved.get("mapping",{}).items()))
@@ -379,6 +400,7 @@ class V22Mixin:
                 cfg={kind:{name:(lambda text,default: "" if text==default.strip() else text)(widget.get("1.0","end-1c").strip(),default) for name,(widget,default) in fields.items()} for kind,fields in text_fields.items()}
                 cfg.update(mapping=overrides,supplements={k:v.get().strip() for k,v in entries.items()},basis=self.br["basis"].get(),
                            info={k:v.get().strip() for k,v in info_vars.items() if v.get().strip()})
+                if logo_state["value"] is not None: cfg["auditor_logo"]=logo_state["value"]  # 2.9.97
                 self.client.save_financial_config(loaded[0],cfg)
                 self.business_result=None
                 messagebox.showinfo("Financial Statements",f"Saved. Information, texts and mapping now apply to every year; cash flow / OCI amounts saved for {loaded[0]}. Journal entries were not changed.",parent=window)
@@ -477,15 +499,15 @@ class V22Mixin:
         self.bk_info.pack(fill="x", padx=10, pady=(2, 2))
         panes = tk.Frame(page, bg=LIGHT); panes.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.bk_trees = {}
-        for index, (key, title, columns) in enumerate((("statement", "Bank statement", (("date", "Date", 85), ("ref", "Reference", 90), ("desc", "Description", 190), ("amount", "Amount", 95), ("match", "Matched", 95))),
-                                                       ("books", "Books (account movements)", (("date", "Date", 85), ("voucher", "Voucher", 115), ("desc", "Description", 180), ("amount", "Amount", 95), ("match", "Matched", 70))))):
+        for index, (key, title, columns) in enumerate((("statement", "Bank statement", (("date", "Date", 82), ("ref", "Reference", 80), ("desc", "Description", 140), ("amount", "Amount", 95), ("match", "Matched", 75))),  # 2.9.98: both panes fit a laptop
+                                                       ("books", "Books (account movements)", (("date", "Date", 82), ("voucher", "Voucher", 95), ("desc", "Description", 130), ("amount", "Amount", 95), ("match", "Matched", 70))))):
             frame = tk.LabelFrame(panes, text=title, bg=LIGHT, padx=4, pady=2); frame.grid(row=0, column=index, sticky="nsew", padx=3)
             tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", selectmode="browse")
             for col, label, width in columns: tree.heading(col, text=label); tree.column(col, width=width, anchor="e" if col == "amount" else "w")
             scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview); tree.configure(yscrollcommand=scroll.set)
             tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y"); add_search_bar(tree)  # 2.9.78
             tree.tag_configure("matched", foreground="#2E7D5B"); tree.tag_configure("open", foreground="#8B1E1E"); self.bk_trees[key] = tree
-        for col in range(2): panes.grid_columnconfigure(col, weight=1)
+        for col in range(2): panes.grid_columnconfigure(col, weight=1, uniform="bank_panes")
         panes.grid_rowconfigure(0, weight=1)
         try: self.bk_account_box["values"] = [f'{a["code"]} - {a["name_en"]}' for a in self.client.accounts() if str(a["code"]).startswith(("511", "512", "519", "53"))]
         except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)

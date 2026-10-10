@@ -88,6 +88,11 @@ class PayrollMixin:
         self.action_button(settings_page,"Load Settings",self.load_payroll_settings).grid(row=12,column=0,padx=10,pady=10)
         self.action_button(settings_page,"Save Settings",self.save_payroll_settings).grid(row=12,column=1,padx=10,pady=10)
         tk.Button(settings_page,text="Load Lebanese Law 2024-2026",command=self.apply_lebanese_payroll_rules,bg=GOLD,fg=NAVY,border=0,padx=14,pady=7,font=("Segoe UI",9,"bold")).grid(row=12,column=2,columnspan=2,padx=10,pady=10)
+        # 2.9.98: the rules applied, for the tax adviser to confirm (PDF / Excel)
+        adviser=tk.Frame(settings_page,bg=LIGHT); adviser.grid(row=13,column=0,columnspan=6,padx=10,pady=(0,10),sticky="w")
+        tk.Label(adviser,text="For the tax adviser:",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")).pack(side="left",padx=(0,6))
+        for label,fmt in (("Rules to Confirm (PDF)","pdf"),("Rules to Confirm (Excel)","xlsx")):
+            self.action_button(adviser,label,lambda f=fmt:self.export_tax_review(f)).pack(side="left",padx=3)
         self.build_payroll_periods_panel(settings_page,13)
         import lebanese_payroll
         family_reference=tk.LabelFrame(settings_page,text="Family allowance reference · 2024–2026 (monthly LBP)",bg=LIGHT,padx=8,pady=6)
@@ -475,6 +480,12 @@ class PayrollMixin:
         for key,var in self.payroll_employee_accounts.items(): var.set(settings.get("employee_account_map",{}).get(key,""))
         for key,var in self.payroll_manager_accounts.items(): var.set(settings.get("manager_account_map",{}).get(key,""))
         self.payroll_brackets.delete("1.0","end"); self.payroll_brackets.insert("1.0",json.dumps(settings.get("tax_brackets",[])))
+
+    def export_tax_review(self, fmt):  # 2.9.98
+        day = f"31-12-{getattr(self, 'current_fiscal_year', '') or datetime.now().year}"
+        try: review = self.client.tax_review(day)
+        except Exception as exc: return messagebox.showerror("Rules for the Tax Adviser", str(exc))
+        self.save_sections(review["title"], review["meta"], review["sections"], "Rules_for_the_Tax_Adviser", fmt)
 
     def apply_lebanese_payroll_rules(self):
         if not messagebox.askyesno("Lebanese Payroll Rules","Replace ALL Tax & NSSF periods with the configured Lebanese payroll rules from 01-01-2024?\n\n"

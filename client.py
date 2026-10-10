@@ -440,6 +440,7 @@ class ApiClient:
     def save_production_order(self,header,lines,order_id=None): return self.request("POST","/api/production/orders",{"header":header,"lines":lines,"id":order_id})
     def production_report(self,date_from,date_to): return self.request("GET","/api/production/report?"+urlencode({"from":date_from,"to":date_to}))
     def audit_report(self,date_from,date_to,late_days=30): return self.request("GET","/api/audit-report?"+urlencode({"date_from":date_from,"date_to":date_to,"late_days":late_days}))  # 2.9.97
+    def tax_review(self,date): return self.request("GET","/api/tax-review?"+urlencode({"date":date}))  # 2.9.98
     def verify_audit_trail(self): return self.request("GET","/api/audit-verify")
     def vat_ledgers(self): return self.request("GET","/api/vat-ledgers")  # 2.9.97
     def save_vat_ledgers(self,item): return self.request("POST","/api/vat-ledgers",item)

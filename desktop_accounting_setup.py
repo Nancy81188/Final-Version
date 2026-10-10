@@ -41,11 +41,11 @@ class AccountingSetupMixin:
         for row, item in enumerate(values.get("defaults") or []):
             tk.Label(accounts, text=item["label"], bg=LIGHT, anchor="w").grid(row=row, column=0, sticky="w", pady=1)
             variable = tk.StringVar(value=account_label(self, item["account"])); self.setup_default_vars[item["key"]] = variable
-            box = self.account_search_box(accounts, variable, 44); box.grid(row=row, column=1, sticky="w", padx=8, pady=1)
+            box = self.account_search_box(accounts, variable, 38); box.grid(row=row, column=1, sticky="w", padx=8, pady=1)
             if not is_admin: box.configure(state="disabled")
             default = f'default {item["default"]}' + (f' - {item["default_name"]}' if item.get("default_name") else "")
-            tk.Label(accounts, text=f'{item["used_for"]}  ({default})', bg=LIGHT, fg=MUTED, anchor="w").grid(row=row, column=2, sticky="w")
-        tk.Label(accounts, text=values.get("payroll_note") or "", bg=LIGHT, fg=NAVY, anchor="w", justify="left", wraplength=1000).grid(row=len(self.setup_default_vars), column=0, columnspan=3, sticky="w", pady=(6, 0))
+            tk.Label(accounts, text=f'{item["used_for"]}  ({default})', bg=LIGHT, fg=MUTED, anchor="w", justify="left", wraplength=420).grid(row=row, column=2, sticky="w")  # 2.9.98: wraps
+        tk.Label(accounts, text=values.get("payroll_note") or "", bg=LIGHT, fg=NAVY, anchor="w", justify="left", wraplength=900).grid(row=len(self.setup_default_vars), column=0, columnspan=3, sticky="w", pady=(6, 0))
         if is_admin:
             bar = tk.Frame(accounts, bg=LIGHT); bar.grid(row=len(self.setup_default_vars) + 1, column=0, columnspan=3, sticky="w", pady=(6, 0))
             tk.Button(bar, text="Save Default Accounts", command=self.save_default_accounts, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
@@ -74,8 +74,8 @@ class AccountingSetupMixin:
         state = "normal" if is_admin else "disabled"
         self.vat_by_party = tk.BooleanVar(value=bool(values.get("enabled"))); self.vat_auto_close = tk.BooleanVar(value=bool(values.get("auto_close", True)))
         top = tk.Frame(box, bg=LIGHT); top.pack(fill="x")
-        tk.Checkbutton(top, text="Every customer / supplier has its own VAT account (supplier 401100025 -> VAT 442100025)", variable=self.vat_by_party, bg=LIGHT, state=state).pack(side="left")
-        tk.Checkbutton(top, text="Close the VAT automatically when the quarterly return is saved", variable=self.vat_auto_close, bg=LIGHT, state=state).pack(side="left", padx=(16, 0))
+        tk.Checkbutton(top, text="Every customer / supplier has its own VAT account (supplier 401100025 -> VAT 442100025)", variable=self.vat_by_party, bg=LIGHT, state=state).pack(anchor="w")
+        tk.Checkbutton(top, text="Close the VAT automatically when the quarterly return is saved", variable=self.vat_auto_close, bg=LIGHT, state=state).pack(anchor="w")
         grid = tk.Frame(box, bg=LIGHT); grid.pack(anchor="w", pady=(6, 2))
         for column, title in enumerate(("Ledger", "VAT", "Main", "Closing", "")):
             tk.Label(grid, text=title, bg=LIGHT, fg=NAVY, font=("Segoe UI", 9, "bold")).grid(row=0, column=column, padx=4, sticky="w")
@@ -197,7 +197,7 @@ class AccountingSetupMixin:
         tk.Label(auditor, text="days after their date", bg=LIGHT).pack(side="left", padx=2)
         frame = tk.Frame(page, bg=LIGHT); frame.pack(fill="both", expand=True, padx=8, pady=4)
         self.audit_tree = ttk.Treeview(frame, columns=("when", "user", "action", "entity", "id", "details"), show="headings")
-        for key, label, width in (("when", "Date / time (UTC)", 150), ("user", "User", 100), ("action", "Action", 90), ("entity", "Record", 120), ("id", "No.", 60), ("details", "Details", 600)):
+        for key, label, width in (("when", "Date / time (UTC)", 150), ("user", "User", 100), ("action", "Action", 90), ("entity", "Record", 120), ("id", "No.", 60), ("details", "Details", 460)):
             self.audit_tree.heading(key, text=label); self.audit_tree.column(key, width=width, anchor="w", stretch=key == "details")
         scroll = ttk.Scrollbar(frame, orient="vertical", command=self.audit_tree.yview); self.audit_tree.configure(yscrollcommand=scroll.set)
         self.audit_tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y")

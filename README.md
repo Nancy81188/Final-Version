@@ -1,5 +1,17 @@
 # Saber Accounting MVP
 
+## Version 2.9.98 (physical count in the journal, audited statements pack, tax adviser pack, network check, laptop screens)
+- Physical Inventory > "Apply Count to Stock + Journal": the stock quantities become the counted quantities (adjustment documents, as before) AND the difference is now posted in the journal (JV, type 06): surplus Dr stock 37 / Cr stock variation 6052, shortage the other way, valued at the item cost on the count date, per stock account. The month-end Stock Variation starts from the ledger, so nothing is counted twice. Example (tested): 40 panels at 80 counted 37 and 10 glue at 5 counted 12 -> JV with shortage 240 and surplus 10.
+- Audited financial statements (PDF):
+  - CONTENTS with the page of each part (Independent auditor's report 2, Statement of Financial Position 4 ...): the PDF is built twice, the first pass finds the pages.
+  - The auditor's LOGO on top of the Independent Auditor's Report (Edit Texts > Company & Auditor > Choose logo...).
+  - The auditor's details (firm, partner, licence, address, city) and logo are saved ONCE for every company you audit (main file); the company's own fields stay with the company.
+- Payroll > Tax & NSSF Settings > "Rules to Confirm (PDF / Excel)": every payroll and VAT rule the program applies, with the value in this company's settings, its source and its status (law confirmed / to confirm with the tax adviser / announced, not applied), and a sign-off block for the adviser.
+- Settings > Backup & Restore > "Network Check": the data service address, encryption (HTTPS), the office certificate on this PC, the answer time of 10 requests (excellent / good / slow) and the 4 steps of an office network.
+- Screens: every screen and every inner tab now fits a 1366 x 768 laptop (Payroll Reports buttons on their own row, Bank Reconciliation panes, Accounting Settings, Audit Trail).
+- Re-checked as an accountant: the full-year company (78 procedures) agrees with the books; the 3 exceptions are by design (documents of a filed VAT quarter are refused; the deduction ratio is per quarter).
+- Changed files: inventory.py, desktop_inventory.py, financial_statements.py, report_export.py, desktop_v22.py, tax_review.py (new), desktop_payroll.py, desktop_settings.py, desktop_final.py, desktop_accounting_setup.py, server.py, client.py, build-windows-installer.yml, app_runtime.py, installer.iss, README.md. Tests added to test_v2_9_97.py.
+
 ## Version 2.9.97 (exact money, VAT account per customer / supplier, audit trail, PDFs, attachments)
 - Exact money: totals were added as floating-point numbers - 3,000 small vouchers showed 600.0000000000002 in the trial balance. Money is now added exactly (a new DSUM in every report query, Decimal in the trial balance, P&L and cash flow).
 - Trial balance fix: a CANCELLED invoice lost its entry from the trial balance while its reversing entry stayed (a cancelled purchase showed as a negative balance). Both entries now count, as in the financial statements and the ledger. The year-end exchange-difference calculations had the same rule and are fixed too.

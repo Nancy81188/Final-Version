@@ -259,5 +259,88 @@ class ExpensePdfTest(unittest.TestCase):
         self.assertEqual(account["code"] if isinstance(account, dict) else account, "626420000")
 
 
+
+class PhysicalCountTest(unittest.TestCase):
+    """2.9.97: the physical count applies the counted quantities and posts the difference in the journal."""
+
+    def test_count_posts_quantities_and_voucher(self):
+        import inventory
+        folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.addCleanup(folder.cleanup)
+        db = Database(Path(folder.name) / "i.db"); db.initialize("secret12345"); self.addCleanup(db.release)
+        db.save_exchange_rate({"date_from": "01-01-2026", "date_to": "31-12-2026", "from_currency": "USD", "to_currency": "LBP", "rate": "89500"}, 1)
+        panel = inventory.find_or_create_item(db, "HPL Panel 8mm", "panel", None, 1)
+        glue = inventory.find_or_create_item(db, "Glue 1L", "unit", None, 1)
+        inventory.save_document(db, {"doc_type": "receipt", "doc_date": "01-03-2026", "warehouse_id": "MAIN"},
+                                [{"sku": panel["sku"], "quantity": 40, "unit_cost": 80}, {"sku": glue["sku"], "quantity": 10, "unit_cost": 5}], 1)
+        count = inventory.save_count(db, {"count_date": "31-03-2026", "warehouse_id": 1},
+                                     [{"item_id": panel["id"], "sku": panel["sku"], "counted": 37}, {"item_id": glue["id"], "sku": glue["sku"], "counted": 12}], 1, post=True)
+        quantities = {i["sku"]: i["quantity"] for i in inventory.list_items(db)}
+        self.assertEqual((quantities[panel["sku"]], quantities[glue["sku"]]), (37, 12))  # the counted quantities are the stock
+        voucher = [n for n in count["adjustment_numbers"].split(", ") if n.startswith("JV-")]
+        self.assertEqual(len(voucher), 1)
+        lines = [l for l in db.journal() if l["entry_number"] == voucher[0]]
+        stock = sum(Decimal(str(l["debit"])) - Decimal(str(l["credit"])) for l in lines if l["account_code"].startswith("37"))
+        self.assertEqual(stock, Decimal("-230.00"))  # shortage 3 x 80 = 240, surplus 2 x 5 = 10
+        self.assertEqual(sum(Decimal(str(l["debit"])) - Decimal(str(l["credit"])) for l in lines), 0)
+        self.assertTrue(any(l["account_code"].startswith("605") for l in lines))  # against the stock variation account
+
+
+
+class AuditedStatementsTest(unittest.TestCase):
+    """2.9.97: the auditor's details and logo entered once for every company; contents with page numbers; logo on the report."""
+
+    def test_profile_logo_and_contents_pages(self):
+        import base64, io, re
+        import financial_statements, report_export
+        from PIL import Image
+        folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.addCleanup(folder.cleanup)
+        root = Path(folder.name)
+        master = Database(root / "main.db"); master.initialize("secret12345"); self.addCleanup(master.release)
+        first = Database(root / "a.db"); first.initialize("secret12345"); self.addCleanup(first.release)
+        second = Database(root / "b.db"); second.initialize("secret12345"); self.addCleanup(second.release)
+        for db in (first, second):
+            db.save_exchange_rate({"date_from": "01-01-2026", "date_to": "31-12-2026", "from_currency": "USD", "to_currency": "LBP", "rate": "89500"}, 1)
+            db.save_journal_voucher({"entry_date": "05-01-2026", "description": "Capital", "currency": "USD", "voucher_type": "01"},
+                                    [{"account_code": "512", "debit": "10000"}, {"account_code": "101", "credit": "10000"}], 1)
+        buffer = io.BytesIO(); Image.new("RGB", (300, 100), "#102A43").save(buffer, "PNG"); logo = base64.b64encode(buffer.getvalue()).decode()
+        financial_statements.save_config(first, {"basis": "USD", "info": {"auditor_firm": "Saber Audit", "auditor_license": "LACPA 1234", "legal_form": "S.A.L."},
+                                                 "auditor_logo": logo}, 1, (), master)
+        cfg = financial_statements.config(second, (), master)  # another company: the auditor is already known
+        self.assertEqual((cfg["info"]["auditor_firm"], cfg["info"]["auditor_license"]), ("Saber Audit", "LACPA 1234"))
+        self.assertNotIn("legal_form", cfg["info"])  # the company's own fields stay with the company
+        result = financial_statements.build({2026: second}, {"years": "2026", "basis": "USD"}, (), master)
+        report = next(sec for sec in result["sections"] if sec["heading"].startswith("INDEPENDENT AUDITOR"))
+        self.assertEqual(report["logo_b64"], logo)
+        path = root / "fs.pdf"
+        report_export.export_sections_pdf(path, "Financial Statements, Notes and Audit Report", result["meta"], result["sections"])
+        from pypdf import PdfReader
+        pages = [page.extract_text() or "" for page in PdfReader(str(path)).pages]
+        cover = pages[0]
+        listed = dict(re.findall(r"(Independent auditor's report|Statement of [A-Za-z ,]+?)\s+(\d+)\s*(?:\n|$)", cover))
+        self.assertIn("Independent auditor's report", listed)
+        self.assertNotIn("-", cover.split("CONTENTS", 1)[1].split("\n")[1])  # page numbers filled in
+        auditor_page = int(listed["Independent auditor's report"])
+        self.assertIn("INDEPENDENT AUDITOR", pages[auditor_page - 1])  # the number points to the right page
+        position = next((n for n in listed if n.startswith("Statement of Financial Position") or n.startswith("Statement of financial position")), None)
+        if position: self.assertIn("STATEMENT OF FINANCIAL POSITION", pages[int(listed[position]) - 1].upper())
+        self.assertTrue(PdfReader(str(path)).pages[auditor_page - 1].images)  # the logo is drawn on the auditor's report page
+
+
+
+class TaxReviewTest(unittest.TestCase):
+    """2.9.98: the rules applied, for the tax adviser - from this company's settings."""
+
+    def test_rules_list(self):
+        import tax_review
+        folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.addCleanup(folder.cleanup)
+        db = Database(Path(folder.name) / "t.db"); db.initialize("secret12345"); self.addCleanup(db.release)
+        db.apply_lebanese_payroll_rules(1)
+        review = tax_review.build(db, "31-12-2026")
+        rows = {row[1]: row for row in review["sections"][0]["rows"]}
+        self.assertEqual(rows["Transport allowance exempt / working day"][2], "450,000")
+        self.assertIn("2%", rows["Annual brackets"][2]); self.assertEqual(rows["VAT at 12%"][4], tax_review.PENDING)
+        self.assertGreater(review["to_confirm"], 5)
+
+
 if __name__ == "__main__":
     unittest.main()

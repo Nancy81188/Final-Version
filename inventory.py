@@ -1039,8 +1039,36 @@ def save_count(database, header, lines, user_id, count_id=None, post=False):
         with database.connect() as db: number = db.execute("SELECT number FROM physical_counts WHERE id=?", (saved,)).fetchone()["number"]
         if gains: numbers.append(save_document(database, {"doc_type": "adjustment_in", "doc_date": date, "warehouse_id": warehouse, "reference": number, "notes": f"Physical count {number}"}, gains, user_id)["number"])
         if losses: numbers.append(save_document(database, {"doc_type": "adjustment_out", "doc_date": date, "warehouse_id": warehouse, "reference": number, "notes": f"Physical count {number}"}, losses, user_id)["number"])
+        voucher = _post_count_voucher(database, number, date, system, clean, user_id)  # 2.9.97: the count difference in the journal
+        if voucher: numbers.append(voucher)
         with database.connect() as db: db.execute("UPDATE physical_counts SET status='posted',adjustment_numbers=? WHERE id=?", (", ".join(numbers), saved))
     return get_count(database, saved)
+
+
+def _post_count_voucher(database, number, date, system, lines, user_id):
+    """2.9.97: the physical count in the journal. Only the DIFFERENCE found by the count, valued at the item's cost on the
+    count date, per stock account: counted more -> Dr stock (37...) / Cr stock variation (6052...); counted less -> Dr stock
+    variation / Cr stock. The month-end Stock Variation later starts from the ledger, so nothing is counted twice."""
+    with database.connect() as db:
+        accounts = {row["id"]: (row["stock_account"] or STOCK_ACCOUNT) for row in db.execute("SELECT id,stock_account FROM inventory_items")}
+    by_account = {}
+    for line in lines:
+        before = system.get(line["item_id"], {})
+        difference = _d(line["counted"]) - _d(before.get("system_qty", 0))
+        value = (difference * _d(before.get("unit_cost", 0))).quantize(Decimal("0.01"))
+        if value: by_account[accounts.get(line["item_id"], STOCK_ACCOUNT)] = by_account.get(accounts.get(line["item_id"], STOCK_ACCOUNT), ZERO) + value
+    currency = settings(database)["currency"]; entries = []
+    for stock, value in sorted(by_account.items()):
+        if not value: continue
+        variation = stock_link(stock)[2]
+        debit, credit = (stock, variation) if value > 0 else (variation, stock)
+        entries += [{"account_code": debit, "line_currency": currency, "side": "D", "amount": str(abs(value)), "description": f"Physical count {number}"},
+                    {"account_code": credit, "line_currency": currency, "side": "C", "amount": str(abs(value)), "description": f"Physical count {number}"}]
+    if not entries: return None
+    gain = sum((v for v in by_account.values() if v > 0), ZERO); loss = -sum((v for v in by_account.values() if v < 0), ZERO)
+    voucher = database.save_journal_voucher({"entry_date": display_date(date), "voucher_type": "06", "currency": currency,
+                                             "description": f"PHYSICAL COUNT {number}: surplus {gain:,.2f} / shortage {loss:,.2f} {currency}"}, entries, user_id)
+    return voucher["voucher"]["entry_number"]
 
 
 def get_count(database, count_id):
