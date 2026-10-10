@@ -323,7 +323,7 @@ class AuditedStatementsTest(unittest.TestCase):
         self.assertEqual(set(os.listdir(".")) - before, set())  # the first pass is in memory: no stray file next to the program
         from pypdf import PdfReader
         pages = [page.extract_text() or "" for page in PdfReader(str(path)).pages]
-        cover = pages[0]
+        cover = pages[1]  # 2.9.100: the contents are on a page of their own
         listed = dict(re.findall(r"(Independent auditor's report|Statement of [A-Za-z ,]+?)\s+(\d+)\s*(?:\n|$)", cover))
         self.assertIn("Independent auditor's report", listed)
         self.assertNotIn("-", cover.split("CONTENTS", 1)[1].split("\n")[1])  # page numbers filled in

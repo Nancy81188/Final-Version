@@ -3,6 +3,7 @@
 ## Version 2.9.100 (selective approval, adviser confirmation, settings print, clearer menu)
 - Accounting Setup > Approval: each company chooses which documents need approval - sales / purchase invoices, journal vouchers, receipts and payments, expenses. A document of a chosen kind saved by a user without "Can approve" waits in "Pending approvals" and is in no report until another user approves it (never the one who prepared it).
 - Payroll > Tax & NSSF Settings: Print Settings and Settings PDF (values in force, salary brackets, NSSF periods, family allowance, posting accounts). "Adviser confirmation..." records the tax adviser who checked the rules (name, licence, date); the Rules pack then shows "Confirmed by the tax adviser".
+- Financial statements: the contents (with page numbers) are on a page of their own, after the front page - in the PDF and in the printed Excel cover.
 - The side menu is as wide as its longest item, so no item is cut off.
 - Release check (release_check.py, run by the tests on every push): no symbolic links, no file names Windows cannot have, no cache files, the same version everywhere, every module compiles. A code-health test stops long lines and star imports from growing.
 

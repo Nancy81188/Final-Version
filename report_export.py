@@ -425,13 +425,16 @@ def export_financial_excel(path, title, meta, sections):
     centred(cover, row, "AND INDEPENDENT AUDITOR'S REPORT", 4, 12, True, height=20); row += 2
     if period: centred(cover, row, period, 4, 12); row += 1
     if currency: centred(cover, row, currency, 4, 10, colour="5F6B76"); row += 1
-    row += 2; centred(cover, row, "CONTENTS", 4, 11, True); cover.cell(row, 2).border = Border(top=thin); cover.cell(row, 3).border = Border(top=thin)
+    if auditor: row += 4; centred(cover, row, auditor, 4, 11, True)
+    from openpyxl.worksheet.pagebreak import Break
+    cover.row_breaks.append(Break(id=row + 1)); row += 8  # 2.9.100: the contents on a printed page of its own
+    centred(cover, row, company.upper(), 4, 14, True, height=24); row += 2
+    centred(cover, row, "CONTENTS", 4, 11, True); cover.cell(row, 2).border = Border(top=thin); cover.cell(row, 3).border = Border(top=thin)
     for item in _contents(sections):
         row += 1; cover.cell(row, 2, item).font = Font(size=10)
         cover.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
         cover.cell(row, 2).alignment = Alignment(horizontal="center")
     cover.cell(row, 2).border = Border(bottom=thin); cover.cell(row, 3).border = Border(bottom=thin)
-    if auditor: row += 4; centred(cover, row, auditor, 4, 11, True)
 
     for section in tidy_sections(sections):
         name = _financial_sheet_name(section.get("heading"))
@@ -620,9 +623,12 @@ def _financial_cover(doc, styles, regular, bold_font, meta, sections, pages=None
         table.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), .6, colors.HexColor("#071B2E")), ("LINEBELOW", (0, 0), (-1, 0), .3, colors.grey),
                                    ("LINEBELOW", (0, -1), (-1, -1), .6, colors.HexColor("#071B2E")), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                                    ("LINEBELOW", (0, 1), (-1, -2), .2, colors.HexColor("#D5DDE5"))]))
-        story += [table, Spacer(1, 18*mm)]
-    if auditor: story.append(pdf_paragraph(auditor, centre("cover-auditor", 11, bold_font), True))
+        contents = [Spacer(1, doc.height * 0.12), pdf_paragraph(company.upper(), centre("contents-company", 14, bold_font, space=8*mm), True), table]
+    else:
+        contents = []
+    if auditor: story += [Spacer(1, 18*mm), pdf_paragraph(auditor, centre("cover-auditor", 11, bold_font), True)]
     story.append(PageBreak())
+    if contents: story += contents + [PageBreak()]  # 2.9.100: the contents on a page of its own, after the front page
     return story
 
 

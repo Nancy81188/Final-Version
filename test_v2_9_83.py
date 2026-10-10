@@ -101,7 +101,7 @@ class AuditPackTest(unittest.TestCase):
         pack = fs.build(self.dbs, {"years": "2024,2025", "basis": "USD"})
         pdf = Path(self.folder.name) / "pack.pdf"; xlsx = Path(self.folder.name) / "pack.xlsx"
         export_sections_pdf(pdf, pack["title"], pack["meta"], pack["sections"]); export_sections_excel(xlsx, pack["title"], pack["meta"], pack["sections"])
-        cover = PdfReader(pdf).pages[0].extract_text()
+        cover = PdfReader(pdf).pages[0].extract_text() + PdfReader(pdf).pages[1].extract_text()  # 2.9.100: contents on page 2
         for words in ("FINANCIAL STATEMENTS", "CONTENTS", "Statement of Cash Flows", "Saber for Audit"): self.assertIn(words, cover)
         self.assertNotIn("OPINION", cover)  # the auditor's report starts on the next page
         wb = load_workbook(xlsx)
