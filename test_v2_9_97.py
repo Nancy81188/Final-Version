@@ -214,7 +214,9 @@ class PdfReadingTest(unittest.TestCase):
 
     def test_table_lines_removed(self):
         from PIL import Image, ImageDraw
-        import numpy as np, pdf_import
+        try: import numpy as np
+        except ImportError: self.skipTest("numpy is installed with the program (requirements.txt)")
+        import pdf_import
         image = Image.new("RGB", (400, 200), "white"); draw = ImageDraw.Draw(image)
         draw.line((0, 50, 399, 50), fill="black", width=2); draw.line((100, 0, 100, 199), fill="black", width=2)
         draw.rectangle((200, 100, 210, 110), fill="black")  # a "letter" stays
@@ -312,7 +314,10 @@ class AuditedStatementsTest(unittest.TestCase):
         report = next(sec for sec in result["sections"] if sec["heading"].startswith("INDEPENDENT AUDITOR"))
         self.assertEqual(report["logo_b64"], logo)
         path = root / "fs.pdf"
+        import os
+        before = set(os.listdir("."))
         report_export.export_sections_pdf(path, "Financial Statements, Notes and Audit Report", result["meta"], result["sections"])
+        self.assertEqual(set(os.listdir(".")) - before, set())  # the first pass is in memory: no stray file next to the program
         from pypdf import PdfReader
         pages = [page.extract_text() or "" for page in PdfReader(str(path)).pages]
         cover = pages[0]

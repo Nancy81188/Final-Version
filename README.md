@@ -10,7 +10,8 @@
 - Settings > Backup & Restore > "Network Check": the data service address, encryption (HTTPS), the office certificate on this PC, the answer time of 10 requests (excellent / good / slow) and the 4 steps of an office network.
 - Screens: every screen and every inner tab now fits a 1366 x 768 laptop (Payroll Reports buttons on their own row, Bank Reconciliation panes, Accounting Settings, Audit Trail).
 - Re-checked as an accountant: the full-year company (78 procedures) agrees with the books; the 3 exceptions are by design (documents of a filed VAT quarter are refused; the deduction ratio is per quarter).
-- Changed files: inventory.py, desktop_inventory.py, financial_statements.py, report_export.py, desktop_v22.py, tax_review.py (new), desktop_payroll.py, desktop_settings.py, desktop_final.py, desktop_accounting_setup.py, server.py, client.py, build-windows-installer.yml, app_runtime.py, installer.iss, README.md. Tests added to test_v2_9_97.py.
+- Fix before release: the first (page-finding) pass of the financial statements PDF wrote stray files named "<_io.BytesIO ...>" next to the program; it now stays in memory (a test checks no file appears). numpy added to the requirements (the scan clean-up of 2.9.97 uses it).
+- Changed files: inventory.py, desktop_inventory.py, financial_statements.py, report_export.py, requirements.txt, desktop_v22.py, tax_review.py (new), desktop_payroll.py, desktop_settings.py, desktop_final.py, desktop_accounting_setup.py, server.py, client.py, build-windows-installer.yml, app_runtime.py, installer.iss, README.md. Tests added to test_v2_9_97.py.
 
 ## Version 2.9.97 (exact money, VAT account per customer / supplier, audit trail, PDFs, attachments)
 - Exact money: totals were added as floating-point numbers - 3,000 small vouchers showed 600.0000000000002 in the trial balance. Money is now added exactly (a new DSUM in every report query, Decimal in the trial balance, P&L and cash flow).

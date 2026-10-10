@@ -662,7 +662,8 @@ def _build_sections_pdf(path, title, meta, sections, found_pages, contents_pages
     from reportlab.lib.styles import ParagraphStyle
     financial = title.startswith("Financial Statements,")
     page = A4 if financial else landscape(A4)
-    doc = SimpleDocTemplate(str(path), pagesize=page, rightMargin=8*mm, leftMargin=8*mm, topMargin=10*mm, bottomMargin=12*mm, title=title)
+    doc = SimpleDocTemplate(path if hasattr(path, "write") else str(path), pagesize=page,  # 2.9.98: the first pass writes to memory, not to a file named "<_io.BytesIO ...>"
+                             rightMargin=8*mm, leftMargin=8*mm, topMargin=10*mm, bottomMargin=12*mm, title=title)
     styles = getSampleStyleSheet()
     regular, bold_font = arabic_fonts() if financial else (None, None)
     regular = regular or "Helvetica"; bold_font = bold_font or "Helvetica-Bold"
