@@ -198,7 +198,8 @@ class ProductionMixin:
         self.action_button(bottom, "New", self.new_production_order).pack(side="left", padx=(0, 3))
         self.action_button(bottom, "Materials from Recipe", self.production_from_recipe).pack(side="left", padx=3)
         self.action_button(bottom, "Add Material", lambda: self.add_production_line()).pack(side="left", padx=3)
-        tk.Button(bottom, text="Delete Line", command=lambda: (self.po_sheet.delete_selected(), self.update_production_total()), bg=RED, fg="white", border=0, padx=12, pady=7).pack(side="left", padx=3)
+        tk.Button(bottom, text="Delete Line", command=lambda: (self.po_sheet.delete_selected(), self.update_production_total()), bg=RED, fg="white", border=0,
+                padx=12, pady=7).pack(side="left", padx=3)
         tk.Button(bottom, text="Save Production", command=self.save_production_order, bg=GOLD, fg=NAVY, border=0, padx=18, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(12, 3))
         tk.Button(bottom, text="Delete Order", command=self.delete_production_order, bg=RED, fg="white", border=0, padx=12, pady=7).pack(side="left", padx=3)
         self.po_total = tk.Label(bottom, text="", bg=LIGHT, fg=NAVY, font=("Segoe UI", 10, "bold")); self.po_total.pack(side="left", padx=12)

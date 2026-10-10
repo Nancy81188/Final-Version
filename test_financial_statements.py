@@ -40,7 +40,8 @@ class FinancialStatementsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'not found'): fs.build({2025:self.db},{'years':'2024,2025'})
     def test_saved_text_mapping_currency_and_cash_reconciliation(self):
         self.voucher(100)
-        cfg=dict(basis='USD',mapping={'531':'current_assets'},notes={'Entity and activities':'Company-specific text'},audit={'Addressee':'Shareholders'},supplements={'oci':'0','cf_operating':'100','cf_investing':'0','cf_financing':'0','cf_fx':'0'})
+        cfg=dict(basis='USD',mapping={'531':'current_assets'},notes={'Entity and activities':'Company-specific text'},audit={'Addressee':'Shareholders'},
+                supplements={'oci':'0','cf_operating':'100','cf_investing':'0','cf_financing':'0','cf_fx':'0'})
         fs.save_config(self.db,cfg,1)
         self.assertEqual(fs.config(self.db),cfg)
         self.assertEqual(fs.year_data(self.db,2025,'USD')['totals']['current_assets'],100)

@@ -177,11 +177,13 @@ class ApiClient:
     def unused_accounts(self,scope="all"): return self.request("GET","/api/accounts/unused?"+urlencode({"scope":scope}))["items"]
     def delete_accounts(self,codes): return self.request("POST","/api/accounts/delete",{"codes":list(codes)})
     def move_account(self,source,target,merge_party=False): return self.request("POST","/api/accounts/move",{"from":source,"to":target,"merge_party":merge_party})
-    def account_lines(self,code,date_from=None,date_to=None): return self.request("GET","/api/accounts/lines?"+urlencode({k:v for k,v in {"code":code,"from":date_from,"to":date_to}.items() if v}))["items"]
+    def account_lines(self,code,date_from=None,date_to=None): return self.request("GET","/api/accounts/lines?"+urlencode({k:v for k,v in {"code":code,
+            "from":date_from,"to":date_to}.items() if v}))["items"]
     def sales_account_problems(self): return self.request("GET","/api/invoices/account-check")["items"]
     def fix_sales_accounts(self,invoice_ids): return self.request("POST","/api/invoices/account-fix",{"invoice_ids":list(invoice_ids)})
     def set_invoices_account(self,invoice_ids,field,account): return self.request("POST","/api/invoices/set-account",{"invoice_ids":list(invoice_ids),"field":field,"account":account})
-    def move_account_lines(self,source,target,line_ids,change_party=True): return self.request("POST","/api/accounts/move-lines",{"from":source,"to":target,"line_ids":list(line_ids),"change_party":change_party})
+    def move_account_lines(self,source,target,line_ids,change_party=True): return self.request("POST","/api/accounts/move-lines",{"from":source,"to":target,
+            "line_ids":list(line_ids),"change_party":change_party})
     def transfer_account_balance(self,source,target,date,description=""): return self.request("POST","/api/accounts/transfer-balance",{"from":source,"to":target,"date":date,"description":description})
     def update_account(self,code,item): return self.request("PUT",f"/api/accounts/{code}",item)["account"]
     def parties(self): return self.request("GET", "/api/parties")["items"]
@@ -197,7 +199,8 @@ class ApiClient:
         return self.request("POST", f"/api/invoices/{invoice_id}/items", {"item":item})["invoice"]
     def trial_balance(self, from_date=None, to_date=None, account=None, include_subaccounts=True, account_from=None, account_to=None, branch_id=None, posting_status="posted"):
         query = urlencode({key: value for key, value in {
-            "from_date": from_date, "to_date": to_date,"account":account,"include_subaccounts":"true" if include_subaccounts else "false","account_from":account_from,"account_to":account_to,"branch_id":branch_id,"posting_status":posting_status
+            "from_date": from_date, "to_date": to_date,"account":account,"include_subaccounts":"true" if include_subaccounts else "false",
+                    "account_from":account_from,"account_to":account_to,"branch_id":branch_id,"posting_status":posting_status
         }.items() if value})
         path = "/api/trial-balance" + (f"?{query}" if query else "")
         return self.request("GET", path)["items"]
@@ -216,7 +219,8 @@ class ApiClient:
     def delete_journal_voucher(self,entry_id): return self.request("DELETE",f"/api/journal/{entry_id}")
     def delete_opening_voucher(self,entry_id): return self.request("DELETE",f"/api/opening-vouchers/{entry_id}")
     def journal_voucher(self,entry_id): return self.request("GET",f"/api/journal-vouchers/{entry_id}")
-    def save_journal_voucher(self,voucher,lines,entry_id=None): return self.request("PUT" if entry_id else "POST",f"/api/journal-vouchers/{entry_id}" if entry_id else "/api/journal-vouchers",{"voucher":voucher,"lines":lines})
+    def save_journal_voucher(self,voucher,lines,entry_id=None): return self.request("PUT" if entry_id else "POST",
+            f"/api/journal-vouchers/{entry_id}" if entry_id else "/api/journal-vouchers",{"voucher":voucher,"lines":lines})
     def fixed_assets(self): return self.request("GET","/api/fixed-assets")["items"]
     def asset_schedule(self,asset_id): return self.request("GET",f"/api/fixed-assets/{asset_id}/schedule")["items"]
     def asset_rollforward(self,year): return self.request("GET",f"/api/fixed-assets/rollforward?year={year}")
@@ -298,7 +302,8 @@ class ApiClient:
         query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency}.items() if v})
         return self.request("GET","/api/vat-report"+(f"?{query}" if query else ""))
     def cash_flow(self,from_date=None,to_date=None,currency=None,convert=False):
-        query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency,"convert":"1" if convert else None}.items() if v}); return self.request("GET","/api/cash-flow"+(f"?{query}" if query else ""))["items"]
+        query=urlencode({k:v for k,v in {"from_date":from_date,"to_date":to_date,"currency":currency,
+                "convert":"1" if convert else None}.items() if v}); return self.request("GET","/api/cash-flow"+(f"?{query}" if query else ""))["items"]
     def aging(self,as_of_date=None,kind=None,currency=None):
         query=urlencode({k:v for k,v in {"as_of_date":as_of_date,"kind":kind,"currency":currency}.items() if v}); return self.request("GET","/api/aging"+(f"?{query}" if query else ""))["items"]
     def comparative_reports(self,from_date,to_date,currency=None):
@@ -352,7 +357,8 @@ class ApiClient:
     def leave_balances(self,date): return self.request("GET",f"/api/payroll/leave-balances?{urlencode({'date':date})}")
     def payslips(self,month_end): return self.request("GET",f"/api/payroll/payslips?{urlencode({'month_end':month_end})}")["sections"]
     def management_pack(self,month_end,currency="USD"): return self.request("GET",f"/api/management-pack?{urlencode({'month_end':month_end,'currency':currency})}")
-    def budget_alerts(self,year,month,currency="USD",threshold=10): return self.request("GET",f"/api/budget-alerts?{urlencode({'year':year,'month':month,'currency':currency,'threshold':threshold})}")["items"]
+    def budget_alerts(self,year,month,currency="USD",threshold=10): return self.request("GET",
+            f"/api/budget-alerts?{urlencode({'year':year,'month':month,'currency':currency,'threshold':threshold})}")["items"]
     def accounting_setup(self): return self.request("GET","/api/accounting-setup")
     def save_accounting_setup(self,item): return self.request("POST","/api/accounting-setup",item)
     def save_my_hidden(self,hidden): return self.request("POST","/api/accounting-setup/user",{"hidden":list(hidden)})["user_hidden"]
@@ -362,7 +368,8 @@ class ApiClient:
             "payable_account":payable_account,"credit_account":credit_account,"non_deductible_account":non_deductible_account}.items() if v not in (None,"")})
         return self.request("GET",f"/api/vat-return/check?{query}")
     def post_vat_settlement(self,year,quarter,payable_account=None,credit_account=None,non_deductible_account=None):
-        return self.request("POST","/api/vat-return/settle",{"year":year,"quarter":quarter,"payable_account":payable_account,"credit_account":credit_account,"non_deductible_account":non_deductible_account})
+        return self.request("POST","/api/vat-return/settle",{"year":year,"quarter":quarter,"payable_account":payable_account,"credit_account":credit_account,
+                "non_deductible_account":non_deductible_account})
     def add_vat_adjustment(self,item): return self.request("POST","/api/vat-return/adjustments",item)
     def delete_vat_adjustment(self,adjustment_id): return self.request("DELETE",f"/api/vat-return/adjustments/{adjustment_id}")
     def save_vat_return(self,year,quarter,credit_brought_forward=None,refund_requested=None):
@@ -434,7 +441,8 @@ class ApiClient:
     def production_recipe(self,item): return self.request("GET","/api/production/recipe?"+urlencode({"item":item}))
     def save_production_recipe(self,item): return self.request("POST","/api/production/recipes",item)
     def delete_production_recipe(self,sku): return self.request("DELETE","/api/production/recipes/"+quote(str(sku),safe=""))
-    def production_plan(self,item,quantity,warehouse=None,date=None): return self.request("GET","/api/production/plan?"+urlencode({k:v for k,v in {"item":item,"quantity":quantity,"warehouse":warehouse,"date":date}.items() if v not in (None,"")}))
+    def production_plan(self,item,quantity,warehouse=None,date=None): return self.request("GET","/api/production/plan?"+urlencode({k:v for k,v in {"item":item,
+            "quantity":quantity,"warehouse":warehouse,"date":date}.items() if v not in (None,"")}))
     def production_orders(self): return self.request("GET","/api/production/orders")["items"]
     def production_order(self,order_id): return self.request("GET",f"/api/production/orders/{order_id}")
     def save_production_order(self,header,lines,order_id=None): return self.request("POST","/api/production/orders",{"header":header,"lines":lines,"id":order_id})
@@ -456,8 +464,10 @@ class ApiClient:
     def test_vat_accounts(self): return self.request("GET","/api/vat-ledgers/test")
     def approve_invoices(self,ids): return self.request("POST","/api/invoices/approve",{"ids":list(ids)})  # 2.9.93
     def set_item_details(self,items): return self.request("POST","/api/inventory/item-details",{"items":list(items)})  # 2.9.101
-    def set_item_accounts(self,item_ids,cost_account=None,sales_account=None): return self.request("POST","/api/inventory/item-accounts",{"item_ids":list(item_ids),"cost_account":cost_account,"sales_account":sales_account})  # 2.9.90
-    def find_or_create_item(self,name,unit="unit",sku=None,supplier_id=None): return self.request("POST","/api/inventory/find-or-create",{"name":name,"unit":unit,"sku":sku,"supplier_id":supplier_id})["item"]
+    def set_item_accounts(self,item_ids,cost_account=None,sales_account=None): return self.request("POST","/api/inventory/item-accounts",
+            {"item_ids":list(item_ids),"cost_account":cost_account,"sales_account":sales_account})  # 2.9.90
+    def find_or_create_item(self,name,unit="unit",sku=None,supplier_id=None): return self.request("POST","/api/inventory/find-or-create",{"name":name,
+            "unit":unit,"sku":sku,"supplier_id":supplier_id})["item"]
     def delete_fiscal_year(self,year): return self.request("POST","/api/fiscal-years/delete",{"year":year})
     def download_backup(self,name):
         result=self.request("GET","/api/backups/download?"+urlencode({"name":name})); result["content"]=base64.b64decode(result["content"]); return result

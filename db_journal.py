@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from JournalStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, display_date, iso_date, json, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -76,15 +78,18 @@ class JournalStore:
                 self._assert_period_open(existing["entry_date"]); voucher_number=str(item.get("entry_number") or existing["entry_number"]).strip()
                 duplicate=db.execute("SELECT 1 FROM journal_entries WHERE entry_number=? AND id<>?",(voucher_number,int(entry_id))).fetchone()
                 if duplicate: raise ValueError("Voucher number already exists")
-                db.execute("UPDATE journal_entries SET entry_number=?,entry_date=?,description=?,currency=?,branch_id=?,voucher_type=? WHERE id=?",(voucher_number,date,description,currency,branch_id,voucher_type,int(entry_id)))
+                db.execute("UPDATE journal_entries SET entry_number=?,entry_date=?,description=?,currency=?,branch_id=?,voucher_type=? WHERE id=?",
+                        (voucher_number,date,description,currency,branch_id,voucher_type,int(entry_id)))
                 db.execute("DELETE FROM journal_lines WHERE entry_id=?",(int(entry_id),)); saved_id=int(entry_id); action="update"
             else:
                 voucher_number=str(item.get("entry_number") or "").strip()
                 if not voucher_number:
-                    year=self._date_year(date); prefix=f"JV-{year}-"; row=db.execute("SELECT entry_number FROM journal_entries WHERE entry_number LIKE ? ORDER BY entry_number DESC LIMIT 1",(prefix+"%",)).fetchone()
+                    year=self._date_year(date); prefix=f"JV-{year}-"; row=db.execute("SELECT entry_number FROM journal_entries WHERE entry_number LIKE ? ORDER BY entry_number DESC LIMIT 1",
+                            (prefix+"%",)).fetchone()
                     sequence=int(row["entry_number"].rsplit("-",1)[-1])+1 if row else 1; voucher_number=f"{prefix}{sequence:06d}"
                 if db.execute("SELECT 1 FROM journal_entries WHERE entry_number=?",(voucher_number,)).fetchone(): raise ValueError("Voucher number already exists")
-                saved_id=db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,currency,branch_id,created_by,created_at,voucher_type) VALUES(?,?,?,?,?,?,?,?,?)",(voucher_number,date,description,"journal_voucher",currency,branch_id,user_id,utcnow(),voucher_type)).lastrowid; action="create"
+                saved_id=db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,currency,branch_id,created_by,created_at,voucher_type) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (voucher_number,date,description,"journal_voucher",currency,branch_id,user_id,utcnow(),voucher_type)).lastrowid; action="create"
             for code,line_description,debit,credit,extra,raw_line in normalized:
                 department_id,project_id=self._dimension_ids(db,{"department":raw_line.get("department") or item.get("department"),"project":raw_line.get("project") or item.get("project"),
                     "department_id":raw_line.get("department_id") or item.get("department_id"),"project_id":raw_line.get("project_id") or item.get("project_id")})
@@ -93,11 +98,13 @@ class JournalStore:
                 party=db.execute("SELECT id FROM parties WHERE account_number=?",(code,)).fetchone()
                 db.execute("""INSERT INTO journal_lines(entry_id,account_id,party_id,description,debit,credit,line_currency,amount,amount_lbp,amount_usd,rate_lbp,rate_usd,due_date,reference,revalue_currency,revalue_amount)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(saved_id,account["id"],party["id"] if party else None,line_description,str(debit),str(credit),
-                    *( (extra["line_currency"],str(extra["amount"]),str(extra["amount_lbp"]),str(extra["amount_usd"]),str(extra["rate_lbp"]),str(extra["rate_usd"]),extra["due_date"],extra["reference"],
+                    *( (extra["line_currency"],str(extra["amount"]),str(extra["amount_lbp"]),str(extra["amount_usd"]),str(extra["rate_lbp"]),
+                            str(extra["rate_usd"]),extra["due_date"],extra["reference"],
                         extra.get("revalue_currency"),extra.get("revalue_amount")) if extra else (None,)*10 )))
                 if department_id or project_id:
                     db.execute("UPDATE journal_lines SET department_id=?,project_id=? WHERE id=last_insert_rowid()",(department_id,project_id))
-            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",(user_id,action,"journal_voucher",saved_id,json.dumps({"entry_number":voucher_number,"debit":str(total_debit),"credit":str(total_credit)}),utcnow()))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",(user_id,action,"journal_voucher",
+                    saved_id,json.dumps({"entry_number":voucher_number,"debit":str(total_debit),"credit":str(total_credit)}),utcnow()))
         return self.journal_voucher_detail(saved_id)
 
     def suggested_rates(self,currency,date=None):

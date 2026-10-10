@@ -5,7 +5,10 @@ from desktop_common import add_search_bar  # 2.9.78
 from desktop_common import search_arrows  # 2.9.78
 import logging
 
-from desktop_brains_common import *  # noqa: F401,F403
+from desktop_brains_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    currency_from_prefix, datetime, Decimal, export_sections_pdf, GOLD, InvalidOperation, LIGHT, messagebox, MUTED,
+    NAVY, os, RED, sys, tempfile, tk, ttk, VOUCHER_TYPES
+)
 from desktop_common import main_currency  # 2.9.71
 from desktop_common import account_label  # 2.9.79
 from desktop_common import default_account_code  # 2.9.81
@@ -199,7 +202,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
         bar = tk.Frame(page, bg=NAVY); bar.pack(fill="x", padx=10, pady=(8, 0))
         tk.Label(bar, text="General Voucher", bg=NAVY, fg="white", font=("Segoe UI", 11, "bold")).pack(side="left", padx=10, pady=5)
         for text, step in (("|<", "first"), ("<", "previous"), (">", "next"), (">|", "last")):
-            tk.Button(bar, text=text, command=lambda s=step: self.navigate_voucher(s), bg="#1E4268", fg="white", activebackground="#2E5277", activeforeground="white", border=0, width=3, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
+            tk.Button(bar, text=text, command=lambda s=step: self.navigate_voucher(s), bg="#1E4268", fg="white", activebackground="#2E5277",
+                    activeforeground="white", border=0, width=3, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="New", command=self.new_manual_voucher, bg="white", fg=NAVY, border=0, padx=12).pack(side="left", padx=(12, 2), pady=4)
         tk.Button(bar, text="Edit...", command=self.choose_voucher_to_edit, bg="white", fg=NAVY, border=0, padx=12, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
         tk.Button(bar, text="Save", command=self.save_manual_invoice, bg=GOLD, fg=NAVY, border=0, padx=14, font=("Segoe UI", 9, "bold")).pack(side="left", padx=2, pady=4)
@@ -252,7 +256,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
         branch_box.bind("<Return>", self.focus_voucher_entries)
         self.manual_currency.trace_add("write", lambda *_a: self.update_manual_totals())
         self.manual_date.trace_add("write", lambda *_a: self.voucher_date_changed())
-        columns = [("line", "#", 45, "center"), ("account", "Account No. - Name", 230, "w"), ("description", "Line Detail", 330, "w"), ("line_currency", "Currency", 70, "center"), ("side", "D/C", 45, "center"),
+        columns = [("line", "#", 45, "center"), ("account", "Account No. - Name", 230, "w"), ("description", "Line Detail", 330, "w"), ("line_currency",
+                "Currency", 70, "center"), ("side", "D/C", 45, "center"),
                    ("amount", "Amount (Account Currency)", 165, "e"), ("amount_lbp", "Amount LBP", 145, "e"), ("amount_usd", "Amount USD", 120, "e"),
                    ("due_date", "Due Date", 95, "center"), ("reference", "Reference", 110, "w"), ("department", "Dep.", 60, "center"), ("project", "Project", 85, "center"),
                    ("rate_lbp", "Rate LBP", 95, "e"), ("rate_usd", "Rate USD", 95, "e")]
@@ -315,7 +320,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
 
     def new_voucher_line(self, account=""):
         currency = self.manual_currency.get() or "USD"; rates = self.voucher_rates_for(currency)
-        return self.recalculate_voucher_line({"account": account, "description": "", "_description_inherited": True, "line_currency": currency, "side": "D", "amount": "", "due_date": self.manual_date.get(), "reference": "", "department": "", "project": "",
+        return self.recalculate_voucher_line({"account": account, "description": "", "_description_inherited": True, "line_currency": currency, "side": "D",
+                "amount": "", "due_date": self.manual_date.get(), "reference": "", "department": "", "project": "",
                                               "rate_lbp": rates["rate_lbp"], "rate_usd": rates["rate_usd"]})
 
     def recalculate_voucher_line(self, row):
@@ -466,7 +472,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
         for key in totals:
             debit, credit = totals[key]["D"], totals[key]["C"]; balance = debit - credit
             self.voucher_total_labels[("Debit", key)].config(text=_fmt(debit)); self.voucher_total_labels[("Credit", key)].config(text=_fmt(credit))
-            self.voucher_total_labels[("Balance", key)].config(text="MIXED" if key == "voucher" and mixed else _fmt(balance), fg=NAVY if abs(balance) < 0.005 and not (key == "voucher" and mixed) else RED)
+            self.voucher_total_labels[("Balance", key)].config(text="MIXED" if key == "voucher" and mixed else _fmt(balance),
+                    fg=NAVY if abs(balance) < 0.005 and not (key == "voucher" and mixed) else RED)
         self.manual_items = self.voucher_lines()
         return totals["voucher"]["D"], totals["voucher"]["C"]
 
@@ -587,7 +594,8 @@ class BrainsScreensMixin(BalanceReportsMixin):
         for line in detail["lines"]:
             side = "D" if float(line.get("debit") or 0) else "C"
             if line.get("line_currency"):
-                row = {"account": line["account_code"], "account_name": line["account_name"], "description": line.get("description") or "", "line_currency": line["line_currency"], "side": side, "amount": line["amount"],
+                row = {"account": line["account_code"], "account_name": line["account_name"], "description": line.get("description") or "",
+                        "line_currency": line["line_currency"], "side": side, "amount": line["amount"],
                        "rate_lbp": line["rate_lbp"], "rate_usd": line["rate_usd"], "due_date": line.get("due_date") or "", "reference": line.get("reference") or "",
                        "department": line.get("department") or "", "project": line.get("project") or ""}
             else:
@@ -736,10 +744,12 @@ class BrainsScreensMixin(BalanceReportsMixin):
         lines = self.voucher_lines(); debit, credit = self.update_manual_totals()
         if len(lines) < 2: return messagebox.showwarning("Journal Voucher", "Enter at least two lines with an account and an amount")
         if any(self.voucher_value(row) is None for row in lines):
-            return messagebox.showerror("Journal Voucher", f"A {self.manual_currency.get()} voucher can only contain {self.manual_currency.get()} lines. Choose USD or LBP as the voucher currency to mix currencies.")
+            return messagebox.showerror("Journal Voucher",
+                    f"A {self.manual_currency.get()} voucher can only contain {self.manual_currency.get()} lines. Choose USD or LBP as the voucher currency to mix currencies.")
         if abs(debit - credit) >= 0.005:
             needed = f"Credit {debit - credit:,.2f}" if debit > credit else f"Debit {credit - debit:,.2f}"
-            return messagebox.showerror("Unbalanced Journal Voucher", f"Debit: {debit:,.2f}\nCredit: {credit:,.2f}\nStill needed: {needed} {self.manual_currency.get()}\n\nDebit must equal Credit before saving.")
+            return messagebox.showerror("Unbalanced Journal Voucher",
+                    f"Debit: {debit:,.2f}\nCredit: {credit:,.2f}\nStill needed: {needed} {self.manual_currency.get()}\n\nDebit must equal Credit before saving.")
         details = "\n".join(str(row.get("description") or "").strip() for row in lines if str(row.get("description") or "").strip())
         if not details: details = self.manual_details.get("1.0", "end").strip() or f"Journal Voucher {self.manual_no.get().strip()}"
         detail_lines=details.splitlines()

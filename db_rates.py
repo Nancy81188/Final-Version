@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from RatesStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, iso_date, json, logging, timedelta, urllib, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 

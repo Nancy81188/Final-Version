@@ -266,7 +266,8 @@ def report(database, date_from, date_to):
     items, _warehouses = inventory._names(database); currency = inventory.settings(database)["currency"]
     q = lambda value, places="0.01": value.quantize(Decimal(places))
     order_rows = [[d, n, items[i]["sku"], items[i]["name"], qty, q(cost, "0.0001"), q(extra), q(qty * cost)] for d, n, i, qty, cost, extra in orders.values()]
-    made_rows = [[items[i]["sku"], items[i]["name"], items[i]["unit"], qty, q(value / qty, "0.0001") if qty else ZERO, q(value)] for i, (qty, value) in sorted(made.items(), key=lambda p: items[p[0]]["sku"])]
+    made_rows = [[items[i]["sku"], items[i]["name"], items[i]["unit"], qty, q(value / qty, "0.0001") if qty else ZERO, q(value)] for i, (qty,
+            value) in sorted(made.items(), key=lambda p: items[p[0]]["sku"])]
     used_rows = [[items[i]["sku"], items[i]["name"], items[i]["unit"], qty, q(value)] for i, (qty, value) in sorted(used.items(), key=lambda p: items[p[0]]["sku"])]
     total = lambda rows, column: sum((r[column] for r in rows), ZERO)
     if made_rows: made_rows.append(["TOTAL", "", "", "", "", total(made_rows, 5)])

@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from InvoicesStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, DEFAULT_LEBANESE_ACCOUNTS, EXPENSE_NO_VAT_ACCOUNT_9, hashlib, iso_date, json, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -46,7 +48,8 @@ class InvoicesStore:
                 db.execute(f"DELETE FROM journal_entries WHERE id IN ({marks})", entry_ids)
             deleted = db.execute("SELECT COUNT(*) n FROM invoices").fetchone()["n"]
             db.execute("DELETE FROM invoices")
-            db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)", (user_id,"replace","invoice_import",json.dumps({"deleted":deleted,"backup":backup_path}),utcnow()))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)", (user_id,"replace","invoice_import",
+                    json.dumps({"deleted":deleted,"backup":backup_path}),utcnow()))
             return {"deleted": deleted, "backup": backup_path}
 
     def import_invoice(self, item, user_id):
@@ -64,7 +67,8 @@ class InvoicesStore:
             vat = Decimal(str(item.get("vat") or 0)); total = Decimal(str(item.get("total") or subtotal + vat))
             currency_issue = str(item.get("currency_issue") or "")
             requested_status=str(item.get("status") or "").strip().lower()
-            status=requested_status if requested_status in ("posted","review") else ("posted" if total == subtotal + vat and not currency_issue.startswith(("conflicting:", "unsupported:")) else "review")
+            status=requested_status if requested_status in ("posted",
+                    "review") else ("posted" if total == subtotal + vat and not currency_issue.startswith(("conflicting:", "unsupported:")) else "review")
             default_party_account=DEFAULT_LEBANESE_ACCOUNTS["accounts_receivable"] if kind=="sale" else DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"]
             supplier_account = str(item.get("supplier_account") or default_party_account).strip()
             party_account=self._ensure_party_account(db,party)
@@ -94,7 +98,8 @@ class InvoicesStore:
             account_definitions = [
                 (supplier_account, "Client Account" if kind=="sale" else "Supplier Account", "asset" if kind=="sale" else "liability"),
                 (vat_account, "Output VAT Account" if kind=="sale" else "VAT Account", "liability" if kind=="sale" else "asset"),
-                (expense_account, "Sales Revenue Account" if kind=="sale" else ("Asset Account" if entry_type=="assets" else "Expense Account"), "income" if kind=="sale" else ("asset" if entry_type=="assets" else "expense")),
+                (expense_account, "Sales Revenue Account" if kind=="sale" else ("Asset Account" if entry_type=="assets" else "Expense Account"),
+                        "income" if kind=="sale" else ("asset" if entry_type=="assets" else "expense")),
                 (expense_no_vat_account,"Expenses without VAT","expense"),
             ]
             for code, name, account_type in account_definitions:
@@ -118,10 +123,12 @@ class InvoicesStore:
                 item.get("source_file"), item.get("source_row"), due_date, payment_status, str(amount_paid), user_id, utcnow()))
             invoice_id = cur.lastrowid
             branch_id=self._branch_id(db,item)
-            db.execute("UPDATE invoices SET payment_method=?,description=?,branch_id=? WHERE id=?",(str(item.get("payment_method") or "").strip() or None,str(item.get("description") or "").strip() or None,branch_id,invoice_id))
+            db.execute("UPDATE invoices SET payment_method=?,description=?,branch_id=? WHERE id=?",(str(item.get("payment_method") or "").strip() or None,
+                    str(item.get("description") or "").strip() or None,branch_id,invoice_id))
             entry_number = f"INV-{invoice_id}"
             entry = db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,branch_id,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                (entry_number, item.get("invoice_date"), f"{entry_type.replace('_',' ').title()} {item['invoice_number']}", "invoice", invoice_id, item.get("currency", "USD"),branch_id, user_id, utcnow()))
+                (entry_number, item.get("invoice_date"), f"{entry_type.replace('_',' ').title()} {item['invoice_number']}", "invoice", invoice_id,
+                        item.get("currency", "USD"),branch_id, user_id, utcnow()))
             if kind == "sale":
                 revenue=[(str(a).strip(),Decimal(str(v))) for a,v in (item.get("revenue_splits") or [])]
                 if revenue and abs(sum(v for _a,v in revenue)-Decimal(str(subtotal)))<Decimal("0.01"):  # 2.9.90
@@ -138,9 +145,11 @@ class InvoicesStore:
                         if not value: continue
                         db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(code,"Expense Account","expense"))
                         expense_lines.append(self._line_for_side(code,value,expense_side))
-                    lines = expense_lines+[self._line_for_side(expense_no_vat_account,non_deductible,expense_no_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(supplier_account,total,supplier_side)]
+                    lines = expense_lines+[self._line_for_side(expense_no_vat_account,non_deductible,expense_no_vat_side),self._line_for_side(vat_account,vat,
+                            vat_side),self._line_for_side(supplier_account,total,supplier_side)]
                 else:
-                    lines = [self._line_for_side(expense_account,deductible,expense_side),self._line_for_side(expense_no_vat_account,non_deductible,expense_no_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(supplier_account,total,supplier_side)]
+                    lines = [self._line_for_side(expense_account,deductible,expense_side),self._line_for_side(expense_no_vat_account,non_deductible,
+                            expense_no_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(supplier_account,total,supplier_side)]
             lines=[line for line in lines if Decimal(str(line[1])) or Decimal(str(line[2]))]
             difference = sum(x[1] for x in lines) - sum(x[2] for x in lines)
             if kind=="sale" and any(item.get(key) for key in ("supplier_side","expense_side","vat_side")) and difference:
@@ -150,7 +159,8 @@ class InvoicesStore:
             elif difference < 0:
                 lines.append((DEFAULT_LEBANESE_ACCOUNTS["import_variance"], -difference, 0))
             for code, debit, credit in lines:
-                db.execute("INSERT INTO journal_lines(entry_id,account_id,party_id,debit,credit) VALUES(?,?,?,?,?)", (entry.lastrowid, self._account_id(db, code), party["id"], str(debit), str(credit)))
+                db.execute("INSERT INTO journal_lines(entry_id,account_id,party_id,debit,credit) VALUES(?,?,?,?,?)", (entry.lastrowid, self._account_id(db,
+                        code), party["id"], str(debit), str(credit)))
             debit_total = sum(x[1] for x in lines); credit_total = sum(x[2] for x in lines)
             if debit_total != credit_total:
                 raise ValueError(f"Unbalanced journal entry for invoice {item['invoice_number']}")
@@ -160,7 +170,8 @@ class InvoicesStore:
             if department_id or project_id:
                 db.execute("UPDATE invoices SET department_id=?,project_id=? WHERE id=?",(department_id,project_id,invoice_id))
                 db.execute("UPDATE journal_lines SET department_id=?,project_id=? WHERE entry_id=?",(department_id,project_id,entry.lastrowid))
-            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "import", "invoice", invoice_id, json.dumps({"source_file": item.get("source_file"), "source_row": item.get("source_row")}), utcnow()))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "import", "invoice",
+                    invoice_id, json.dumps({"source_file": item.get("source_file"), "source_row": item.get("source_row")}), utcnow()))
             self._post_invoice_payment(db, invoice_id, user_id, item.get("cash_account"))
             return invoice_id
 
@@ -296,7 +307,8 @@ class InvoicesStore:
             raw_lines=[self._line_for_side(invoice.get("expense_account") or defaults["purchases"],deductible_total,self._side(invoice.get("expense_side"),"D")),
                 self._line_for_side(invoice.get("expense_no_vat_account") or defaults["purchases_no_vat"],non_deductible_total,self._side(invoice.get("expense_no_vat_side"),"D")),
                 self._line_for_side(invoice.get("vat_account") or defaults["purchase_vat"],vat_total,self._side(invoice.get("vat_side"),"D")),
-                self._line_for_side(invoice.get("supplier_account") or DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"],deductible_total+non_deductible_total+vat_total,self._side(invoice.get("supplier_side"),"C"))]
+                self._line_for_side(invoice.get("supplier_account") or DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"],
+                        deductible_total+non_deductible_total+vat_total,self._side(invoice.get("supplier_side"),"C"))]
             debit=sum(Decimal(str(line[1])) for line in raw_lines); credit=sum(Decimal(str(line[2])) for line in raw_lines)
             if abs(debit-credit)>=Decimal("0.005"):
                 needed=f"Credit {debit-credit}" if debit>credit else f"Debit {credit-debit}"
@@ -400,7 +412,8 @@ class InvoicesStore:
             with self.connect() as db:
                 db.execute("UPDATE invoices SET status='posted' WHERE id=? AND status='review'", (invoice_id,))
                 db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
-                           (user["id"], "approve", "invoice", invoice_id, json.dumps({"invoice_number": row["invoice_number"], "prepared_by": row["created_by"], "before": "review", "after": "posted"}), utcnow()))
+                           (user["id"], "approve", "invoice", invoice_id, json.dumps({"invoice_number": row["invoice_number"], "prepared_by": row["created_by"],
+                                   "before": "review", "after": "posted"}), utcnow()))
             approved.append(row["invoice_number"])
         return {"approved": approved, "skipped": skipped}
 
@@ -417,7 +430,8 @@ class InvoicesStore:
         if not changed: return
         with self.connect() as db:
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
-                       (user_id, "change", "invoice", int(entity_id or invoice_id), json.dumps({"invoice_number": after.get("invoice_number") or before.get("invoice_number"), "changes": changed}), utcnow()))
+                       (user_id, "change", "invoice", int(entity_id or invoice_id),
+                               json.dumps({"invoice_number": after.get("invoice_number") or before.get("invoice_number"), "changes": changed}), utcnow()))
 
     def update_invoice(self, invoice_id, item, user_id):
         before = self._invoice_snapshot(invoice_id)
@@ -462,10 +476,12 @@ class InvoicesStore:
         supplier_account = str(item.get("supplier_account") or DEFAULT_LEBANESE_ACCOUNTS["accounts_payable"]).strip()
         import chart_extra
         defaults=self.default_accounts()  # 2.9.81
-        vat_account = str(item.get("vat_account") or (defaults["output_vat"] if str(item.get("kind","")).lower() in ("sale","sales") else defaults["expense_vat"] if self._entry_type(item)=="expenses" else defaults["purchase_vat"])).strip()
+        vat_account = str(item.get("vat_account") or (defaults["output_vat"] if str(item.get("kind","")).lower() in ("sale",
+                "sales") else defaults["expense_vat"] if self._entry_type(item)=="expenses" else defaults["purchase_vat"])).strip()
         expense_account = str(item.get("expense_account") or defaults["purchases"]).strip()
         expense_no_vat_account=str(item.get("expense_no_vat_account") or defaults["purchases_no_vat"]).strip()
-        supplier_side=self._side(item.get("supplier_side"),"C"); vat_side=self._side(item.get("vat_side"),"D"); expense_side=self._side(item.get("expense_side"),"D"); expense_no_vat_side=self._side(item.get("expense_no_vat_side"),"D")
+        supplier_side=self._side(item.get("supplier_side"),"C"); vat_side=self._side(item.get("vat_side"),
+                "D"); expense_side=self._side(item.get("expense_side"),"D"); expense_no_vat_side=self._side(item.get("expense_no_vat_side"),"D")
         debit_override=Decimal(str(item.get("debit") or 0)); credit_override=Decimal(str(item.get("credit") or 0))
         if debit_override<0 or credit_override<0: raise ValueError("D and C cannot be negative")
         status = str(item.get("status") or "posted").strip().lower()
@@ -499,7 +515,8 @@ class InvoicesStore:
             for code, name, account_type in (
                 (supplier_account, "Client Account" if kind=="sale" else "Supplier Account", "asset" if kind=="sale" else "liability"),
                 (vat_account, "Output VAT Account" if kind=="sale" else "VAT Account", "liability" if kind=="sale" else "asset"),
-                (expense_account, "Sales Revenue Account" if kind=="sale" else ("Asset Account" if entry_type=="assets" else "Expense Account"), "income" if kind=="sale" else ("asset" if entry_type=="assets" else "expense")),
+                (expense_account, "Sales Revenue Account" if kind=="sale" else ("Asset Account" if entry_type=="assets" else "Expense Account"),
+                        "income" if kind=="sale" else ("asset" if entry_type=="assets" else "expense")),
                 (expense_no_vat_account,"Expenses without VAT","expense"),
             ):
                 db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)", (code, name, account_type))
@@ -509,7 +526,9 @@ class InvoicesStore:
                 debit_override=?,credit_override=?,supplier_side=?,vat_side=?,expense_side=?,expense_no_vat_account=?,expense_no_vat_side=?,due_date=?,payment_status=?,amount_paid=?,payment_method=?,description=?,branch_id=? WHERE id=?""",
                 (str(item["invoice_number"]).strip(), kind, str(item["invoice_date"]).strip(), party["id"], currency,
                  str(subtotal),str(deductible),str(non_deductible),str(vat), str(total), status, supplier_account, vat_account, expense_account,
-                 entry_type,str(debit_override),str(credit_override),supplier_side,vat_side,expense_side,expense_no_vat_account,expense_no_vat_side,due_date, payment_status, str(amount_paid),str(item.get("payment_method") or "").strip() or None,str(item.get("description") or "").strip() or None,branch_id, invoice_id))
+                 entry_type,str(debit_override),str(credit_override),supplier_side,vat_side,expense_side,expense_no_vat_account,expense_no_vat_side,due_date,
+                         payment_status, str(amount_paid),str(item.get("payment_method") or "").strip() or None,
+                         str(item.get("description") or "").strip() or None,branch_id, invoice_id))
             entry = db.execute("SELECT id FROM journal_entries WHERE source_type IN ('invoice','journal_voucher') AND source_id=?", (invoice_id,)).fetchone()
             description = f"{entry_type.replace('_',' ').title()} {str(item['invoice_number']).strip()}"
             if entry:
@@ -525,7 +544,8 @@ class InvoicesStore:
             if kind == "sale":
                 lines = [(supplier_account, total, Decimal("0")), (expense_account, Decimal("0"), subtotal), (vat_account, Decimal("0"), vat)]
             else:
-                lines=[self._line_for_side(expense_account,deductible,expense_side),self._line_for_side(expense_no_vat_account,non_deductible,expense_no_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(supplier_account,total,supplier_side)]
+                lines=[self._line_for_side(expense_account,deductible,expense_side),self._line_for_side(expense_no_vat_account,non_deductible,
+                        expense_no_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(supplier_account,total,supplier_side)]
             lines=[line for line in lines if Decimal(str(line[1])) or Decimal(str(line[2]))]
             difference=sum(line[1] for line in lines)-sum(line[2] for line in lines)
             if difference>0: lines.append((DEFAULT_LEBANESE_ACCOUNTS["import_variance"],Decimal("0"),difference))
@@ -580,7 +600,8 @@ class InvoicesStore:
             "supplier_account": invoice["supplier_account"], "vat_account": invoice["vat_account"],
             "expense_account": invoice["expense_account"], "status": "posted",
             "expense_no_vat_account":invoice.get("expense_no_vat_account",EXPENSE_NO_VAT_ACCOUNT_9),
-            "supplier_side":invoice.get("supplier_side","C"),"vat_side":invoice.get("vat_side","D"),"expense_side":invoice.get("expense_side","D"),"expense_no_vat_side":invoice.get("expense_no_vat_side","D"),"payment_method":invoice.get("payment_method",""),
+            "supplier_side":invoice.get("supplier_side","C"),"vat_side":invoice.get("vat_side","D"),"expense_side":invoice.get("expense_side","D"),
+                    "expense_no_vat_side":invoice.get("expense_no_vat_side","D"),"payment_method":invoice.get("payment_method",""),
             "due_date": invoice.get("due_date"), "amount_paid": invoice.get("amount_paid", 0),"debit":invoice.get("debit",0),"credit":invoice.get("credit",0),
         }
         updated = self.update_invoice(invoice_id, updated_values, user_id)
@@ -635,7 +656,8 @@ class InvoicesStore:
             items = [dict(item) for item in db.execute("SELECT * FROM invoice_items WHERE invoice_id=? ORDER BY id", (invoice_id,))]
         new_number = self.next_invoice_number(source["kind"], source["invoice_date"])
         payload = {key:source.get(key) for key in ("invoice_date","party_name","kind","entry_type","currency","exchange_rate",
-            "subtotal","vat","total","supplier_account","vat_account","expense_account","expense_no_vat_account","supplier_side","vat_side","expense_side","expense_no_vat_side","due_date","payment_method")}
+            "subtotal","vat","total","supplier_account","vat_account","expense_account","expense_no_vat_account","supplier_side","vat_side","expense_side",
+                    "expense_no_vat_side","due_date","payment_method")}
         payload.update({"debit":source.get("debit_override"),"credit":source.get("credit_override")})
         payload.update({"invoice_number":new_number,"amount_paid":0,"source_file":"Duplicated invoice","source_row":None})
         new_id = self.import_invoice(payload, user_id)
@@ -953,7 +975,8 @@ class InvoicesStore:
     def landed_costs(self, purchase_id):
         with self.connect() as db:
             return [dict(r) for r in db.execute("""SELECT i.id,i.invoice_number,i.invoice_date,p.name party_name,i.currency,CAST(i.subtotal AS REAL) subtotal,
-                CAST(i.vat AS REAL) vat,CAST(i.total AS REAL) total FROM invoices i LEFT JOIN parties p ON p.id=i.party_id WHERE i.linked_invoice_id=? AND i.status NOT IN ('cancelled','deleted') ORDER BY i.id""", (int(purchase_id),))]
+                CAST(i.vat AS REAL) vat,CAST(i.total AS REAL) total FROM invoices i LEFT JOIN parties p ON p.id=i.party_id WHERE i.linked_invoice_id=? AND i.status NOT IN ('cancelled','deleted') ORDER BY i.id""",
+                        (int(purchase_id),))]
 
     # ---------------------------------------------------------------- invoice format, notes, allocations
     def _store_invoice_format(self, invoice_id, item, line_items):

@@ -34,8 +34,10 @@ class AssetDepreciationTest(unittest.TestCase):
     def test_net_value_never_negative_and_validation(self):
         late = fixed_assets.monthly_table(self.db, "31-12-2035")["groups"][0]
         self.assertTrue(all(float(a["net"]) >= 0 and float(a["current"]) == 0 for a in late["assets"]))
-        with self.assertRaisesRegex(ValueError, "between 0 and 100"): fixed_assets.save_category(self.db, {"account_code": "2244", "name": "X", "annual_rate": "150", "depreciation_account": "681", "accumulated_account": "2824"})
-        with self.assertRaisesRegex(ValueError, "not in the chart"): fixed_assets.save_category(self.db, {"account_code": "9999999", "name": "X", "annual_rate": "10", "depreciation_account": "681", "accumulated_account": "2824"})
+        with self.assertRaisesRegex(ValueError, "between 0 and 100"): fixed_assets.save_category(self.db, {"account_code": "2244", "name": "X",
+                "annual_rate": "150", "depreciation_account": "681", "accumulated_account": "2824"})
+        with self.assertRaisesRegex(ValueError, "not in the chart"): fixed_assets.save_category(self.db, {"account_code": "9999999", "name": "X",
+                "annual_rate": "10", "depreciation_account": "681", "accumulated_account": "2824"})
         with self.assertRaisesRegex(ValueError, "still use"): fixed_assets.delete_category(self.db, "2244")
 
 

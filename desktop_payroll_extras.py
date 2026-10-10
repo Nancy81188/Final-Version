@@ -61,7 +61,8 @@ class PayrollExtrasMixin:
         self.px_leave_tree.delete(*self.px_leave_tree.get_children())
         labels = {v: k for k, v in LEAVE_TYPES.items()}
         for r in records:
-            self.px_leave_tree.insert("", "end", iid=str(r["id"]), values=(r["full_name"], _display_day(r["date_from"]), _display_day(r["date_to"]), r["days"], labels.get(r["leave_type"], r["leave_type"]), r.get("note") or ""))
+            self.px_leave_tree.insert("", "end", iid=str(r["id"]), values=(r["full_name"], _display_day(r["date_from"]), _display_day(r["date_to"]), r["days"],
+                    labels.get(r["leave_type"], r["leave_type"]), r.get("note") or ""))
 
     def add_leave(self):
         employee = getattr(self, "_px_employees", {}).get(self.px_leave["employee"].get())

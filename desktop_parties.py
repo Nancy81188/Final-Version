@@ -1,7 +1,10 @@
 """Customers / suppliers screen. (moved out of desktop.py in 2.9.41, unchanged)."""
 from __future__ import annotations
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, filedialog, formatted_user_date, GOLD, LIGHT, messagebox, mimetypes, NAVY, Path, similar_parties, tk,
+    ttk
+)
 from desktop_common import main_currency  # 2.9.71
 
 
@@ -15,7 +18,8 @@ class PartiesMixin:
         self.party_account_hint.grid(row=0,column=2,columnspan=6,sticky="w",padx=4)
         account_entry.bind("<KeyRelease>",self.party_account_typed)
         tk.Label(form,text="Type",bg=LIGHT).grid(row=1,column=0,sticky="w",padx=4,pady=4)
-        kind_box=ttk.Combobox(form,textvariable=self.party_kind,values=["client","supplier","asset_supplier","other_payable"],state="readonly",width=15); kind_box.grid(row=1,column=1,sticky="w",padx=4)
+        kind_box=ttk.Combobox(form,textvariable=self.party_kind,values=["client","supplier","asset_supplier","other_payable"],state="readonly",
+                width=15); kind_box.grid(row=1,column=1,sticky="w",padx=4)
         kind_box.bind("<<ComboboxSelected>>",lambda _event:self.suggest_party_prefix())
         tk.Label(form,text="Name",bg=LIGHT).grid(row=1,column=2,sticky="w",padx=4); tk.Entry(form,textvariable=self.party_name,width=32).grid(row=1,column=3,sticky="w",padx=4)
         tk.Label(form,text="Currency",bg=LIGHT).grid(row=1,column=4,sticky="w",padx=4)
@@ -32,7 +36,9 @@ class PartiesMixin:
         self.action_button(buttons,"Legal Documents",self.party_documents_dialog).pack(side="left",padx=3)
         self.action_button(buttons,"Customer / Supplier Ageing",self.open_party_ageing).pack(side="left",padx=3)
         self.action_button(buttons,"Client Items: Qty & Value",self.open_client_items_report).pack(side="left",padx=3)
-        self.parties_tree=self.table(self.parties_tab,[("id","ID",55),("account","9-Digit Account",115),("name","Name",180),("kind","Type",85),("tax","Tax Number",110),("mof","MOF Number",110),("address","Address",180),("contact","Contact",110),("currency","Currency",70),("due_days","Due Days",80)])
+        self.parties_tree=self.table(self.parties_tab,[("id","ID",55),("account","9-Digit Account",115),("name","Name",180),("kind","Type",85),("tax",
+                "Tax Number",110),("mof","MOF Number",110),("address","Address",180),("contact","Contact",110),("currency","Currency",70),("due_days",
+                "Due Days",80)])
         self.parties_tree.bind("<Double-1>",lambda _event:self.edit_selected_party())
         self.load_parties_page()
 
@@ -52,7 +58,8 @@ class PartiesMixin:
             self.party_account_number.set(prefix); self.party_account_typed()
 
     def new_party_account(self):
-        self.edit_party_id=None; self.party_name.set(""); self.party_kind.set("client"); self.party_account_number.set(""); self.party_tax.set(""); self.party_mof.set(""); self.party_address.set(""); self.party_contact.set(""); self.party_currency.set(main_currency(self, 1)); self.party_due_days.set("0")
+        self.edit_party_id=None; self.party_name.set(""); self.party_kind.set("client"); self.party_account_number.set(""); self.party_tax.set(""); self.party_mof.set(""); self.party_address.set(""); self.party_contact.set(""); self.party_currency.set(main_currency(self,
+                1)); self.party_due_days.set("0")
         self.suggest_party_prefix()
 
     def save_party(self):
@@ -85,13 +92,16 @@ class PartiesMixin:
     def edit_selected_party(self):
         selected=self.parties_tree.selection()
         if not selected: return messagebox.showwarning("Customers / Suppliers","Select a customer or supplier first")
-        values=self.parties_tree.item(selected[0],"values"); self.edit_party_id=int(values[0]); self.party_account_number.set(values[1]); self.party_name.set(values[2]); self.party_kind.set(values[3]); self.party_tax.set(values[4]); self.party_mof.set(values[5]); self.party_address.set(values[6]); self.party_contact.set(values[7]); self.party_currency.set(values[8]); self.party_due_days.set(values[9])
+        values=self.parties_tree.item(selected[0],
+                "values"); self.edit_party_id=int(values[0]); self.party_account_number.set(values[1]); self.party_name.set(values[2]); self.party_kind.set(values[3]); self.party_tax.set(values[4]); self.party_mof.set(values[5]); self.party_address.set(values[6]); self.party_contact.set(values[7]); self.party_currency.set(values[8]); self.party_due_days.set(values[9])
 
     def load_parties_page(self):
         try: rows=self.client.parties()
         except Exception as exc: return messagebox.showerror("Customers / Suppliers",str(exc))
         self.party_rows=rows; self.parties_tree.delete(*self.parties_tree.get_children())
-        for row in rows: self.parties_tree.insert("","end",values=(row["id"],row.get("account_number") or "",row["name"],row.get("account_category") or row["kind"],row.get("tax_number") or "",row.get("mof_number") or "",row.get("address") or "",row.get("contact_number") or "",row["currency"],row.get("due_days") or 0))
+        for row in rows: self.parties_tree.insert("","end",values=(row["id"],row.get("account_number") or "",row["name"],
+                row.get("account_category") or row["kind"],row.get("tax_number") or "",row.get("mof_number") or "",row.get("address") or "",
+                row.get("contact_number") or "",row["currency"],row.get("due_days") or 0))
 
     def open_party_ageing(self):
         self.select_main_tab(self.inventory_tab)
@@ -123,7 +133,8 @@ class PartiesMixin:
         tk.Label(controls,text="Expiry",bg=LIGHT).pack(side="left"); self.date_entry(controls,expiry,11).pack(side="left",padx=3)
         tk.Label(controls,text="Notes",bg=LIGHT).pack(side="left"); tk.Entry(controls,textvariable=notes,width=22).pack(side="left",padx=3)
         status=tk.Label(window,text="New document: fill in the fields and press Save (attaching a file is optional).",bg=LIGHT,fg=NAVY,anchor="w"); status.pack(fill="x",padx=10)
-        tree=self.table(window,[("type","Document Type",170),("applies","Applies",70),("state","Status",130),("issue","Issue Date",95),("expiry","Expiry Date",95),("file","File",200),("notes","Notes",160)])
+        tree=self.table(window,[("type","Document Type",170),("applies","Applies",70),("state","Status",130),("issue","Issue Date",95),("expiry","Expiry Date",
+                95),("file","File",200),("notes","Notes",160)])
         records={}
         def document_state(row):
             if not row.get("active",1): return "Not applicable"
@@ -150,7 +161,8 @@ class PartiesMixin:
             row=records.get(chosen[0])
             if not row: return
             editing["id"]=row["id"]; pending_file["path"]=None
-            doc_type.set(row["document_type"]); active.set(bool(row.get("active",1))); issue.set(row.get("issue_date") or ""); expiry.set(row.get("expiry_date") or ""); notes.set(row.get("notes") or "")
+            doc_type.set(row["document_type"]); active.set(bool(row.get("active",
+                    1))); issue.set(row.get("issue_date") or ""); expiry.set(row.get("expiry_date") or ""); notes.set(row.get("notes") or "")
             status.config(text=f'Editing: {row["document_type"]}. Change the tick or dates and press Save.')
         tree.bind("<<TreeviewSelect>>",selected_changed,add="+")
         def fields():

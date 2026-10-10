@@ -36,7 +36,8 @@ def add_statement_lines(database, account, currency, rows, user_id):
                 continue  # 2.9.87: the same statement imported twice is not doubled
             db.execute("INSERT INTO bank_statement_lines(account_code,currency,line_date,description,reference,amount,created_at) VALUES(?,?,?,?,?,?,?)",
                 (account, currency, iso_date(row.get("date"), "Date"), str(row.get("description") or "").strip(), str(row.get("reference") or "").strip(), str(amount), utcnow())); added += 1
-        db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)", (user_id, "import", "bank_statement", json.dumps({"account": account, "lines": added}), utcnow()))
+        db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)", (user_id, "import", "bank_statement",
+                json.dumps({"account": account, "lines": added}), utcnow()))
     return added
 
 
@@ -206,7 +207,8 @@ def post_statement_line(database, statement_id, account_code, user_id):
     amount = _d(line["amount"]); other = str(account_code or "").split(" - ", 1)[0].strip()
     if not other: raise ValueError("Choose the account (for example 6278 bank charges)")
     bank_side, other_side = ("D", "C") if amount > 0 else ("C", "D")
-    voucher = database.save_journal_voucher({"entry_date": display_date(line["line_date"]), "description": f"Bank: {line['description'] or 'statement line'}", "currency": line["currency"], "voucher_type": "03"},
+    voucher = database.save_journal_voucher({"entry_date": display_date(line["line_date"]), "description": f"Bank: {line['description'] or 'statement line'}",
+            "currency": line["currency"], "voucher_type": "03"},
         [{"account_code": line["account_code"], "line_currency": line["currency"], "side": bank_side, "amount": str(abs(amount)), "reference": line["reference"], "description": line["description"]},
          {"account_code": other, "line_currency": line["currency"], "side": other_side, "amount": str(abs(amount)), "reference": line["reference"], "description": line["description"]}], user_id)
     with database.connect() as db:
@@ -239,11 +241,14 @@ def reconciliation(database, account, currency, date_from, date_to, statement_ba
             ["Add / less: statement items not yet booked (charges, interest...)", bank_only.quantize(Decimal("0.01"))],
             ["EXPECTED BALANCE PER BANK STATEMENT", expected.quantize(Decimal("0.01"))]]
     if difference is not None: rows += [["Balance per bank statement (entered)", _d(statement_balance).quantize(Decimal("0.01"))], ["DIFFERENCE (should be 0)", difference.quantize(Decimal("0.01"))]]
-    sections = [{"heading": f"Bank reconciliation - account {account} ({currency})", "headers": ["Item", f"Amount ({currency})"], "rows": rows, "total_rows": [4] + ([6] if difference is not None else [])},
+    sections = [{"heading": f"Bank reconciliation - account {account} ({currency})", "headers": ["Item", f"Amount ({currency})"], "rows": rows,
+            "total_rows": [4] + ([6] if difference is not None else [])},
                 {"heading": "Book items not yet on the statement", "headers": ["Date", "Voucher", "Description", "Amount"],
-                 "rows": [[display_date(b["iso_date"]), b["entry_number"], b["description"] or "", b["amount"].quantize(Decimal("0.01"))] for b in outstanding] or [["None", "", "", ""]], "total_rows": []},
+                 "rows": [[display_date(b["iso_date"]), b["entry_number"], b["description"] or "",
+                         b["amount"].quantize(Decimal("0.01"))] for b in outstanding] or [["None", "", "", ""]], "total_rows": []},
                 {"heading": "Statement items not yet booked", "headers": ["Date", "Reference", "Description", "Amount"],
-                 "rows": [[display_date(s["line_date"]), s["reference"] or "", s["description"] or "", _d(s["amount"]).quantize(Decimal("0.01"))] for s in not_booked] or [["None", "", "", ""]], "total_rows": []}]
+                 "rows": [[display_date(s["line_date"]), s["reference"] or "", s["description"] or "",
+                         _d(s["amount"]).quantize(Decimal("0.01"))] for s in not_booked] or [["None", "", "", ""]], "total_rows": []}]
     company = database.settings()
     return {"title": "Bank Reconciliation", "meta": [f"Company: {company.get('company_name') or '-'}   Account {account}   Period {display_date(date_from)} to {display_date(date_to)}"],
             "sections": sections, "difference": float(difference) if difference is not None else None, "expected": float(expected), "book_balance": float(book_balance),

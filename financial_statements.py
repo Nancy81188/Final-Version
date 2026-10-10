@@ -404,7 +404,8 @@ def build(databases, options, others=(), master=None):
     # ---- Independent auditor's report
     audit_rows = [[_text(cfg, 'audit', 'Addressee', AUDIT, values)]]
     for name, title in (('Opinion', 'Opinion'), ('Basis for opinion', 'Basis for Opinion'), ('Going concern / key audit matters', 'Key Audit Matters'),
-                        ('Other information', 'Other Information'), ('Management and governance responsibilities', 'Responsibilities of Management and Those Charged with Governance for the Financial Statements'),
+                        ('Other information', 'Other Information'), ('Management and governance responsibilities',
+                                'Responsibilities of Management and Those Charged with Governance for the Financial Statements'),
                         ('Auditor responsibilities', "Auditor's Responsibilities for the Audit of the Financial Statements"),
                         ('Other legal and regulatory requirements', 'Report on Other Legal and Regulatory Requirements'), ('Signature, address and report date', '')):
         text = _text(cfg, 'audit', name, AUDIT, values).strip()

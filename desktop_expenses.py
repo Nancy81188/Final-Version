@@ -1,7 +1,10 @@
 """Expenses page (moved out of desktop_stage3.py in 2.9.42, unchanged)."""
 from __future__ import annotations
 
-from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_stage3_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    bulk_action, filedialog, GOLD, LIGHT, messagebox, mimetypes, MUTED, NAVY, Path, prepare_pdf_reading, PURCHASE_USES,
+    read_invoice_pdf, RED, tk, ttk
+)
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
@@ -185,13 +188,15 @@ class ExpensesMixin:
                 accounts = self.client.accounts()
                 def in_range(code): code = str(code); return code[:3] in ("626", "627", "628", "629") or code[:2] in ("63", "64", "65", "66", "67", "68", "69")
                 self._expense_accounts = [f'{a["code"]} - {a["name_en"]}' for a in accounts if in_range(a["code"]) and str(a["code"]).isdigit()]
-                self._cash_accounts = self._cash_accounts if getattr(self, "_cash_accounts", None) else [f'{a["code"]} - {a["name_en"]}' for a in accounts if str(a["code"]).startswith(("511", "512", "519", "53"))]
+                self._cash_accounts = self._cash_accounts if getattr(self, "_cash_accounts",
+                        None) else [f'{a["code"]} - {a["name_en"]}' for a in accounts if str(a["code"]).startswith(("511", "512", "519", "53"))]
             except Exception: self._expense_accounts = []
         f["account_box"]["values"] = self._expense_accounts; f["no_vat_account_box"]["values"] = self._expense_accounts; f["payment_account_box"]["values"] = getattr(self, "_cash_accounts", [])
         for r in rows:
             f["tree"].insert("", "end", iid=str(r["id"]), values=(r.get("expense_number") or f"EXP-{r['id']}", _dd(r["expense_date"]), r["description"], r.get("category") or "", r["currency"],
                 f'{r.get("with_vat_subtotal") or 0:,.2f}', f'{r.get("without_vat_subtotal") or 0:,.2f}', f'{r["vat"]:,.2f}', f'{r["total"]:,.2f}',
-                "Yes" if r.get("vat_recoverable", 1) else "NO", r.get("attachment_count") or "", " / ".join(x for x in (departments.get(r.get("department_id")), projects.get(r.get("project_id"))) if x)))
+                "Yes" if r.get("vat_recoverable", 1) else "NO", r.get("attachment_count") or "", " / ".join(x for x in (departments.get(r.get("department_id")),
+                        projects.get(r.get("project_id"))) if x)))
 
     def suggest_expense_account(self):
         from ai_mapper import suggest_account

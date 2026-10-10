@@ -226,7 +226,9 @@ def build_account_report(db, options):
         heading_currency = currency if first == "account" else f"{parts[0]} equivalent" + (f" | {parts[1]}" if len(parts) > 1 else "")
         if detailed:
             for account in group:
-                headers = ["Date", "Voucher", "Description"] + (["Reference"] if show_ref else []) + (["Due Date"] if by_due else []) + (["Branch"] if show_branch else []) + (["Department", "Project"] if show_dimensions else []) + money_headers()
+                headers = ["Date", "Voucher",
+                        "Description"] + (["Reference"] if show_ref else []) + (["Due Date"] if by_due else []) + (["Branch"] if show_branch else []) + (["Department",
+                        "Project"] if show_dimensions else []) + money_headers()
                 pad = len(headers) - len(money_headers())
                 rows = []; totals = []
                 opening_debit = {c: max(account["opening"][c], ZERO) for c in columns}; opening_credit = {c: max(-account["opening"][c], ZERO) for c in columns}

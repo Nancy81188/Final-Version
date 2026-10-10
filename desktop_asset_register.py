@@ -2,7 +2,10 @@
 from __future__ import annotations
 from desktop_common import add_search_bar  # 2.9.78
 
-from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_stage3_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    asset_pdf_details, export_excel, export_pdf, filedialog, GOLD, LIGHT, messagebox, MUTED, NAVY, os, Path,
+    read_invoice_pdf, RED, subprocess, sys, tempfile, tk, ttk
+)
 from desktop_stage3_common import _dd, _num
 
 
@@ -122,8 +125,10 @@ class AssetRegisterMixin:
                 [{"description":asset.get("name") or "Fixed asset","quantity":1,"unit_price":float(cost),"deductible_subtotal":float(cost),"vat_rate":rate,"vat":float(vat)}])["invoice_id"]
             try: self.client.upload_attachment(invoice_id,Path(path).name,"application/pdf",Path(path).read_bytes())
             except Exception: pass
-            fields={k:asset.get(k) for k in ("asset_code","name","acquired_on","start_on","currency","cost","residual","useful_months","frequency","asset_account","depreciation_account","accumulated_account","annual_rate","opening_date")}
-            fields.update(acquired_on=_dd(fields["acquired_on"]),start_on=_dd(fields["start_on"]),opening_date=_dd(fields.get("opening_date")) if fields.get("opening_date") else "",invoice_id=invoice_id)
+            fields={k:asset.get(k) for k in ("asset_code","name","acquired_on","start_on","currency","cost","residual","useful_months","frequency",
+                    "asset_account","depreciation_account","accumulated_account","annual_rate","opening_date")}
+            fields.update(acquired_on=_dd(fields["acquired_on"]),start_on=_dd(fields["start_on"]),
+                    opening_date=_dd(fields.get("opening_date")) if fields.get("opening_date") else "",invoice_id=invoice_id)
             try: self.client.save_asset(fields,asset["id"])
             except Exception: pass  # the invoice is booked; the link is optional
         except Exception as exc:

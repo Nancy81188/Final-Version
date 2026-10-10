@@ -3,7 +3,11 @@ from __future__ import annotations
 from desktop_common import search_arrows  # 2.9.78
 import logging
 
-from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_stage3_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    ask_new_item_details, asked_item_details, auto_upload_on, bulk_action, filedialog, GOLD, LIGHT, messagebox,
+    mimetypes, MUTED, NAVY, notify_new_items, Path, prepare_pdf_reading, PURCHASE_USES, read_customs_costs,
+    read_invoice_pdf, RED, resolve_item, run_with_progress, simpledialog, tk, ttk
+)
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
@@ -39,7 +43,8 @@ class PurchasesMixin:
     # ---- purchases
     def build_purchases_page(self, page, totals_parent=None, cost_parent=None):
         f = {"id": None, "pdf": None, "vars": {k: tk.StringVar() for k in ("supplier", "number", "date", "due", "currency", "type", "taxable", "exempt", "rate", "vat", "account", "vat_account")}}
-        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["type"].set("Purchases"); v["rate"].set(f"{vat_rate(self):g}"); v["account"].set("601100000"); v["vat_account"].set("44210")
+        v = f["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self,
+                1)); v["type"].set("Purchases"); v["rate"].set(f"{vat_rate(self):g}"); v["account"].set("601100000"); v["vat_account"].set("44210")
         f["department"] = tk.StringVar(); f["project"] = tk.StringVar(); f["vat_typed"] = False; self.purchase_form = f
         f["use"] = tk.StringVar(value="Mixed (partial deduction)"); f["reverse"] = tk.BooleanVar(value=False)
         f["discount_percent"] = tk.StringVar(value="0"); f["discount_amount"] = tk.StringVar(value="0"); f["discount_mode"] = "percent"
@@ -104,13 +109,16 @@ class PurchasesMixin:
         if totals_parent is not None: totals_box.pack(fill="x", padx=8, pady=(2,4))
         else: totals_box.pack(fill="x", padx=8, pady=(2,4), after=items)
         wh = tk.Frame(items, bg=LIGHT); wh.pack(fill="x"); f["warehouse"] = tk.StringVar()
-        tk.Label(wh, text="Warehouse", bg=LIGHT).pack(side="left"); f["warehouse_box"] = ttk.Combobox(wh, textvariable=f["warehouse"], state="readonly", width=20); f["warehouse_box"].pack(side="left", padx=4)
+        tk.Label(wh, text="Warehouse", bg=LIGHT).pack(side="left"); f["warehouse_box"] = ttk.Combobox(wh, textvariable=f["warehouse"], state="readonly",
+                width=20); f["warehouse_box"].pack(side="left", padx=4)
         self.action_button(wh, "Add Item Line", lambda: self.purchase_item_line()).pack(side="left", padx=6)
-        tk.Button(wh, text="Delete Line", command=lambda: (f["items_sheet"].delete_selected(), self.purchase_items_changed()), bg="#8B1E1E", fg="white", border=0, padx=10, pady=5).pack(side="left", padx=2)
+        tk.Button(wh, text="Delete Line", command=lambda: (f["items_sheet"].delete_selected(), self.purchase_items_changed()), bg="#8B1E1E", fg="white",
+                border=0, padx=10, pady=5).pack(side="left", padx=2)
         from desktop_brains import EditableSheet
         f["items_sheet"] = EditableSheet(self, items, [("line", "#", 35, "center"), ("item_code", "Item", 125, "w"), ("name", "Description", 410, "w"), ("quantity", "Qty", 70, "e"),
             ("unit", "Unit", 60, "center"), ("unit_cost", "Unit Price", 95, "e"), ("discount_percent", "Discount %", 85, "e"), ("vat_flag", "VAT", 50, "center"), ("total", "Net", 105, "e")],
-            ["item_code", "name", "quantity", "unit", "unit_cost", "discount_percent", "vat_flag"], self.purchase_item_changed, height=8)  # 2.9.87: VAT Yes / No per line; 2.9.94: 8 rows so the totals show on a laptop screen
+            ["item_code", "name", "quantity", "unit", "unit_cost", "discount_percent", "vat_flag"], self.purchase_item_changed,
+                    height=8)  # 2.9.87: VAT Yes / No per line; 2.9.94: 8 rows so the totals show on a laptop screen
         f["items_sheet"].tree.bind("<F2>", lambda _e: self.purchase_item_lookup())
         f["items_sheet"].tree.master.pack_configure(expand=True,fill="both")
         r4 = tk.Frame(actions, bg=LIGHT); r4.pack(side="top", anchor="w", pady=(2, 0))
@@ -222,7 +230,8 @@ class PurchasesMixin:
         def fill(*_a):
             tree.delete(*tree.get_children()); text = search.get().casefold()
             for i in getattr(self, "inventory_rows", []):
-                if i["active"] and (not text or text in f'{i["sku"]} {i["name"]} {i.get("category") or ""}'.casefold()): tree.insert("", "end", values=(i["sku"], i["name"], i["unit"], f'{i["average_cost"]:,.4f}'))
+                if i["active"] and (not text or text in f'{i["sku"]} {i["name"]} {i.get("category") or ""}'.casefold()): tree.insert("", "end",
+                        values=(i["sku"], i["name"], i["unit"], f'{i["average_cost"]:,.4f}'))
         def choose(_e=None):
             if tree.selection(): self.purchase_item_changed(iid, "item_code", tree.item(tree.selection()[0], "values")[0]); self.purchase_form["items_sheet"].refresh(iid); window.destroy()
         search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill(); search_arrows(entry, tree, choose, search)  # 2.9.78
@@ -284,7 +293,8 @@ class PurchasesMixin:
                 self.load_inventory()
             except Exception as exc: errors.append(f"{invoice['invoice_number']}: {exc}")
         notify_new_items(self, "Import Purchases")  # 2.9.86: which items were new
-        (messagebox.showwarning if errors else messagebox.showinfo)("Import Purchases", f"{done} purchase(s) imported and received into stock; {created} new item(s) created." + ("\n" + "\n".join(errors[:12]) if errors else ""))
+        (messagebox.showwarning if errors else messagebox.showinfo)("Import Purchases",
+                f"{done} purchase(s) imported and received into stock; {created} new item(s) created." + ("\n" + "\n".join(errors[:12]) if errors else ""))
         self.load_purchases(); self.load_invoices(); self.load_journal(); self.load_trial()
 
     def filter_suppliers(self):
@@ -512,7 +522,8 @@ class PurchasesMixin:
         discount=self.purchase_discount(taxable)
         net_taxable=round(taxable-discount,2)
         party = f.get("supplier_map", {}).get(v["supplier"].get())
-        invoice = {"invoice_number": v["number"].get().strip(), "invoice_date": v["date"].get().strip(), "due_date": v["due"].get().strip(), "party_name": party["name"] if party else v["supplier"].get().strip(),
+        invoice = {"invoice_number": v["number"].get().strip(), "invoice_date": v["date"].get().strip(), "due_date": v["due"].get().strip(),
+                "party_name": party["name"] if party else v["supplier"].get().strip(),
                    "kind": "assets" if v["type"].get() == "Assets" else "purchases", "currency": v["currency"].get(), "status": "posted", "source_file": "Purchase Invoice",
                    "expense_account": asset_account or "601100000", "vat_account": v["vat_account"].get().split(" - ", 1)[0].strip() or "442660000",
                    "department": self.dimension_code(f["department"].get()), "project": self.dimension_code(f["project"].get()),
@@ -558,7 +569,8 @@ class PurchasesMixin:
             if any(line["deductible_subtotal"]<0 or line["vat"]<0 for line in lines) or (vat and not taxed):
                 raise ValueError("Item totals do not match the purchase amount and VAT. Check the item lines")
             extra_exempt = round(exempt - exempt_rows, 2)
-            if extra_exempt > 0.004: lines.append({"description": "Exempt part", "quantity": 1, "unit_price": extra_exempt, "deductible_subtotal": 0, "non_deductible_subtotal": extra_exempt, "vat_rate": 0, "vat": 0})
+            if extra_exempt > 0.004: lines.append({"description": "Exempt part", "quantity": 1, "unit_price": extra_exempt, "deductible_subtotal": 0,
+                    "non_deductible_subtotal": extra_exempt, "vat_rate": 0, "vat": 0})
             return invoice, lines
         line = {"description": f"Supplier invoice {invoice['invoice_number']}".strip(), "quantity": 1, "unit_price": net_taxable, "deductible_subtotal": net_taxable,
                 "non_deductible_subtotal": exempt, "vat_rate": rate, "vat": vat}
@@ -751,7 +763,8 @@ class PurchasesMixin:
         lists = self.dimension_lists()
         f["department"].set(next((f'{d["code"]} - {d["name"]}' for d in lists["departments"] if d["id"] == row.get("department_id")), "(none)"))
         f["project"].set(next((f'{p["code"]} - {p["name"]}' for p in lists["projects"] if p["id"] == row.get("project_id")), "(none)"))
-        f["use"].set(next((k for k, val in PURCHASE_USES.items() if val == (row.get("vat_use") or "mixed")), "Mixed (partial deduction)")); f["reverse"].set(row.get("vat_treatment") == "reverse_charge")
+        f["use"].set(next((k for k, val in PURCHASE_USES.items() if val == (row.get("vat_use") or "mixed")),
+                "Mixed (partial deduction)")); f["reverse"].set(row.get("vat_treatment") == "reverse_charge")
         if "paid_by" in f:
             paid = float(row.get("amount_paid") or 0); method = row.get("payment_method") or ""
             f["paid_by"].set(method if paid and method in PAID_BY else PAID_BY[0]); f["paid_account"].set(row.get("payment_account") or "")
@@ -827,7 +840,8 @@ class PurchasesMixin:
             row = tk.Frame(window, bg=LIGHT); row.pack(fill="x", padx=12, pady=3)
             tk.Label(row, text=key.replace("_", " ").title(), width=18, anchor="w", bg=LIGHT).pack(side="left")
             self.account_search_box(row, var, 24).pack(side="left")
-        self.action_button(window, "Restore defaults", lambda: [var.set(chart_extra.LANDED_COST_ACCOUNTS[key]) for key, var in self.purchase_form["lc_accounts"].items()]).pack(side="left", padx=12, pady=12)
+        self.action_button(window, "Restore defaults", lambda: [var.set(chart_extra.LANDED_COST_ACCOUNTS[key]) for key,
+                var in self.purchase_form["lc_accounts"].items()]).pack(side="left", padx=12, pady=12)
         self.action_button(window, "Done", window.destroy).pack(side="right", padx=12, pady=12)
 
     def save_landed_cost(self):

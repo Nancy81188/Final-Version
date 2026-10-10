@@ -103,7 +103,8 @@ class DimensionsMixin:
         self.departments_tree = self.table(departments, [("code", "Code", 90), ("name", "Department", 300), ("active", "Active", 70)])
         self.departments_tree.bind("<Double-1>", lambda _e: self.edit_department())
         self.proj_id = None
-        self.proj_vars = {k: tk.StringVar() for k in ("code", "name", "party", "start_date", "end_date", "notes")}; self.proj_status = tk.StringVar(value="open"); self.proj_active = tk.BooleanVar(value=True)
+        self.proj_vars = {k: tk.StringVar() for k in ("code", "name", "party", "start_date", "end_date",
+                "notes")}; self.proj_status = tk.StringVar(value="open"); self.proj_active = tk.BooleanVar(value=True)
         form = tk.LabelFrame(projects, text="Project", bg=LIGHT, padx=8, pady=6); form.pack(fill="x", padx=10, pady=10)
         entries = (("code", "Code (blank = automatic)", 12), ("name", "Project Name", 30), ("start_date", "Start Date", 11), ("end_date", "End Date", 11), ("notes", "Notes", 30))
         for index, (key, label, width) in enumerate(entries):
@@ -118,7 +119,8 @@ class DimensionsMixin:
         buttons = tk.Frame(form, bg=LIGHT); buttons.grid(row=2, column=3, columnspan=3, sticky="w")
         self.action_button(buttons, "New", self.new_project).pack(side="left", padx=3)
         tk.Button(buttons, text="Save", command=self.save_project, bg=GOLD, fg=NAVY, border=0, padx=16, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
-        self.projects_tree = self.table(projects, [("code", "Code", 95), ("name", "Project", 230), ("party", "Customer", 180), ("start", "Start", 90), ("end", "End", 90), ("status", "Status", 90), ("active", "Active", 60)])
+        self.projects_tree = self.table(projects, [("code", "Code", 95), ("name", "Project", 230), ("party", "Customer", 180), ("start", "Start", 90), ("end",
+                "End", 90), ("status", "Status", 90), ("active", "Active", 60)])
         self.projects_tree.bind("<Double-1>", lambda _e: self.edit_project())
         self.load_dimensions_pages()
 
@@ -129,7 +131,8 @@ class DimensionsMixin:
         for d in lists["departments"]: self.departments_tree.insert("", "end", iid=str(d["id"]), values=(d["code"], d["name"], "Yes" if d["active"] else "No"))
         self.projects_tree.delete(*self.projects_tree.get_children())
         for p in lists["projects"]:
-            self.projects_tree.insert("", "end", iid=str(p["id"]), values=(p["code"], p["name"], p.get("party_name") or "", self._dd(p.get("start_date")), self._dd(p.get("end_date")), p["status"].title(), "Yes" if p["active"] else "No"))
+            self.projects_tree.insert("", "end", iid=str(p["id"]), values=(p["code"], p["name"], p.get("party_name") or "", self._dd(p.get("start_date")),
+                    self._dd(p.get("end_date")), p["status"].title(), "Yes" if p["active"] else "No"))
         try: self.proj_party_box["values"] = [p["name"] for p in self.client.parties() if p["kind"] in ("customer", "both")]
         except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
@@ -343,7 +346,8 @@ class DimensionsMixin:
         except Exception as exc: return messagebox.showerror("Budget from a year", str(exc))
         lines = budget_from_year(monthly, types, base_year, target_year, self.budget_revenue_pct.get(), self.budget_expense_pct.get())
         if not lines: return messagebox.showwarning("Budget from a year", f"No posted income or expense in {base_year} ({currency}) to build the budget from")
-        if any(r["account"] for r in self.budget_sheet.ordered()) and not messagebox.askyesno("Budget from a year", "Replace the lines on the screen? Nothing is saved until you press Save Budget."): return
+        if any(r["account"] for r in self.budget_sheet.ordered()) and not messagebox.askyesno("Budget from a year",
+                "Replace the lines on the screen? Nothing is saved until you press Save Budget."): return
         self.budget_sheet.clear()
         for code, _kind, months, annual in lines: self.budget_sheet.insert(self.budget_row(code, names[code], annual, months))
         self.update_budget_total()
@@ -379,7 +383,8 @@ class DimensionsMixin:
         start=f"{future[0][0]}-{future[0][1]:02d}"; end=f"{future[-1][0]}-{future[-1][1]:02d}"
         self.budget_forecast_result={"title":f"Budget actual {year} and {self.budget_forecast_horizon.get()} forecast",
             "meta":[f"Currency: {currency}",f"Actual: Jan–{last:02d} {year}",f"Forecast: {start} to {end}","Forecast uses each account's last 3 complete months; company-wide actuals."],
-            "sections":[{"heading":"Account actuals and forecast","headers":["Account","Account Name","Type","Actual year to date","Forecast period","Actual + forecast"],"rows":summary,"total_rows":[]},
+            "sections":[{"heading":"Account actuals and forecast","headers":["Account","Account Name","Type","Actual year to date","Forecast period",
+                    "Actual + forecast"],"rows":summary,"total_rows":[]},
                         {"heading":"Projected months","headers":["Month","Account","Account Name","Type","Amount"],"rows":detail,"total_rows":[]}]}
         self.show_sections(self.budget_viewer,self.budget_forecast_result["sections"])
 
@@ -418,7 +423,8 @@ class DimensionsMixin:
                 detail.append([entry["year"],entry["date_to"],code,names.get(code,code),types.get(code,"").title(),entry["source"].title(),round(amount,2)])
         self.budget_forecast_result={"title":f"Budget {base_year} to {target_date[8:10]}-{target_date[5:7]}-{target_date[0:4]} (5-Year Projection)",
             "meta":[f"Currency: {currency}",f"Base year actuals: {base_year}",f"Target date: {self.budget_long_target.get().strip()}",
-                    f"Growth rate: {growth_rate*100:.2f}% per year where no saved budget exists for that year"]+(["Per-year growth overrides: "+", ".join(f"{y}={r*100:.2f}%" for y,r in sorted(growth_by_year.items()))] if growth_by_year else []),
+                    f"Growth rate: {growth_rate*100:.2f}% per year where no saved budget exists for that year"]+(["Per-year growth overrides: "+", ".join(f"{y}={r*100:.2f}%" for y,
+                            r in sorted(growth_by_year.items()))] if growth_by_year else []),
             "sections":[{"heading":"Net income / expense by year","headers":["Year","Up to","Source","Income","Expense","Net"],"rows":net_rows,"total_rows":[]},
                         {"heading":"By account","headers":["Year","Up to","Account","Account Name","Type","Source","Amount"],"rows":detail,"total_rows":[]}]}
         self.show_sections(self.budget_viewer,self.budget_forecast_result["sections"])
@@ -434,7 +440,8 @@ class DimensionsMixin:
         lines = [{"account_code": r["account"], "annual": _num(r["annual"]) or 0, "months": [_num(r[m.lower()]) or 0 for m in MONTHS]} for r in self.budget_sheet.ordered() if r["account"]]
         for r in lines:
             if r["annual"] and any(r["months"]) and abs(sum(r["months"]) - r["annual"]) > 0.01:
-                if not messagebox.askyesno("Budget", f"Account {r['account_code']}: the months add up to {sum(r['months']):,.2f}, not the annual {r['annual']:,.2f}. The monthly amounts will be used. Continue?"): return
+                if not messagebox.askyesno("Budget",
+                        f"Account {r['account_code']}: the months add up to {sum(r['months']):,.2f}, not the annual {r['annual']:,.2f}. The monthly amounts will be used. Continue?"): return
         try: self.client.save_budget({"year": year, "currency": currency, "department": department, "project": project, "lines": lines})
         except Exception as exc: return messagebox.showerror("Budget", str(exc))
         self.load_budget(); messagebox.showinfo("Budget", f"Budget {year} ({currency}) saved for {len(lines)} account(s)")

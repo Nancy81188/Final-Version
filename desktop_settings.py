@@ -1,7 +1,9 @@
 """Chart of accounts and settings screens. (moved out of desktop.py in 2.9.41, unchanged)."""
 from __future__ import annotations
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, filedialog, flow_toolbars, GOLD, LIGHT, messagebox, NAVY, os, Path, tk, tr, ttk
+)
 
 
 class SettingsMixin:
@@ -54,7 +56,8 @@ class SettingsMixin:
         values=self.accounts_tree.item(selected[0],"values"); code=str(values[0])
         window=tk.Toplevel(self); window.title(f"Edit account {code}"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
         fields={"name_en":tk.StringVar(value=values[2]),"name_fr":tk.StringVar(value=values[3]),"name_ar":tk.StringVar(value=values[4]),"type":tk.StringVar(value=values[5])}
-        tk.Label(window,text=f"Account {code}"+(f"   (parent {values[1]})" if values[1] else ""),bg=LIGHT,fg=NAVY,font=("Segoe UI",11,"bold")).grid(row=0,column=0,columnspan=2,padx=14,pady=(12,6),sticky="w")
+        tk.Label(window,text=f"Account {code}"+(f"   (parent {values[1]})" if values[1] else ""),bg=LIGHT,fg=NAVY,font=("Segoe UI",11,"bold")).grid(row=0,
+                column=0,columnspan=2,padx=14,pady=(12,6),sticky="w")
         for row,(key,label) in enumerate((("name_en","English name"),("name_fr","French name"),("name_ar","Arabic name | الاسم بالعربية")),1):
             tk.Label(window,text=label,bg=LIGHT).grid(row=row,column=0,padx=14,pady=5,sticky="w")
             entry=tk.Entry(window,textvariable=fields[key],width=44,justify="right" if key=="name_ar" else "left"); entry.grid(row=row,column=1,padx=14,pady=5)
@@ -123,7 +126,8 @@ class SettingsMixin:
                 self.action_button(lock_bar,"Unlock",self.unlock_books).pack(side="left",padx=4)
                 self.books_lock_label=tk.Label(lock_bar,text="",bg=LIGHT,fg=NAVY,font=("Segoe UI",9,"bold")); self.books_lock_label.pack(side="left",padx=12)
             if is_admin: self.build_second_copy_box(backups)
-            tk.Label(backups,text="An automatic backup of this company and year is made every day when you open it (the newest 30 automatic copies are kept; manual and safety copies are never deleted). Keep a copy outside the computer too: Save Backup As... (USB / Drive).",bg=LIGHT,fg="#5f6b76",wraplength=1050,justify="left").pack(fill="x",padx=14)
+            tk.Label(backups,text="An automatic backup of this company and year is made every day when you open it (the newest 30 automatic copies are kept; manual and safety copies are never deleted). Keep a copy outside the computer too: Save Backup As... (USB / Drive).",
+                    bg=LIGHT,fg="#5f6b76",wraplength=1050,justify="left").pack(fill="x",padx=14)
             self.backups_tree=self.table(backups,[("name","Backup File",400),("kind","Type",100),("checked","Checked",90),("size","Size",100),("modified","Created",170)])
         rate_controls=tk.Frame(rates,bg=LIGHT); rate_controls.pack(fill="x",padx=10,pady=10)
         self.rate_date=tk.StringVar(value=datetime.now().strftime("%d-%m-%Y")); self.rate_date_to=tk.StringVar(value=datetime.now().strftime("%d-%m-%Y")); self.rate_from=tk.StringVar(value="USD"); self.rate_to=tk.StringVar(value="LBP"); self.rate_value=tk.StringVar(value="1")
@@ -148,18 +152,23 @@ class SettingsMixin:
         self.rates_tree=self.table(rates,[("date","Date",110),("from","From",80),("to","To",80),("rate","Daily Average",150),("samples","Entries",75),("created","Saved",180)])
         self.rates_tree.bind("<Double-1>",lambda _event:self.edit_selected_exchange_rate())
         branch_controls=tk.Frame(branches,bg=LIGHT); branch_controls.pack(fill="x",padx=10,pady=10)
-        self.new_branch_name=tk.StringVar(); tk.Label(branch_controls,text="New Branch Name",bg=LIGHT).pack(side="left"); tk.Entry(branch_controls,textvariable=self.new_branch_name,width=32).pack(side="left",padx=6)
+        self.new_branch_name=tk.StringVar(); tk.Label(branch_controls,text="New Branch Name",bg=LIGHT).pack(side="left"); tk.Entry(branch_controls,
+                textvariable=self.new_branch_name,width=32).pack(side="left",padx=6)
         self.action_button(branch_controls,"Save Branch",self.save_branch).pack(side="left",padx=4)
         self.branches_tree=self.table(branches,[("id","ID",80),("name","Branch Name",320),("active","Active",90)])
         self.base_currency=tk.StringVar(value="USD"); self.second_currency=tk.StringVar(value="LBP"); self.backup_hours=tk.StringVar(value="24")
         self.company_fields={key:tk.StringVar() for key in ("company_name","company_address","company_phone","company_mof","company_nssf","company_email","company_website","company_logo")}
         tk.Label(general,text="Main Currency 1 (base)",bg=LIGHT).grid(row=0,column=0,padx=14,pady=(14,4),sticky="w")
-        self.base_currency_box=ttk.Combobox(general,textvariable=self.base_currency,values=self.currency_codes,state="readonly",width=15); self.base_currency_box.grid(row=0,column=1,padx=14,pady=(14,4),sticky="w")
+        self.base_currency_box=ttk.Combobox(general,textvariable=self.base_currency,values=self.currency_codes,state="readonly",
+                width=15); self.base_currency_box.grid(row=0,column=1,padx=14,pady=(14,4),sticky="w")
         # 2.9.71: the second main currency (USD + LBP, EUR + USD, AED + USD ...): the default of new documents and of the report columns
         tk.Label(general,text="Main Currency 2",bg=LIGHT).grid(row=1,column=0,padx=14,pady=4,sticky="w")
-        self.second_currency_box=ttk.Combobox(general,textvariable=self.second_currency,values=self.currency_codes,state="readonly",width=15); self.second_currency_box.grid(row=1,column=1,padx=14,pady=4,sticky="w")
+        self.second_currency_box=ttk.Combobox(general,textvariable=self.second_currency,values=self.currency_codes,state="readonly",
+                width=15); self.second_currency_box.grid(row=1,column=1,padx=14,pady=4,sticky="w")
 
-        for row,(key,label) in enumerate((("company_name","Company Name"),("company_address","Address"),("company_phone","Phone"),("company_mof","MOF / VAT Number"),("company_nssf","NSSF Employer Number"),("company_email","Email"),("company_website","Website"),("company_logo","Logo File Path")),2):
+        for row,(key,label) in enumerate((("company_name","Company Name"),("company_address","Address"),("company_phone","Phone"),("company_mof",
+                "MOF / VAT Number"),("company_nssf","NSSF Employer Number"),("company_email","Email"),("company_website","Website"),("company_logo",
+                "Logo File Path")),2):
             tk.Label(general,text=label,bg=LIGHT).grid(row=row,column=0,padx=14,pady=7,sticky="w")
             tk.Entry(general,textvariable=self.company_fields[key],width=42).grid(row=row,column=1,padx=14,pady=7,sticky="w")
         self.company_vat_registered=tk.StringVar(value="Yes"); self.company_vat_date=tk.StringVar()
@@ -188,7 +197,8 @@ class SettingsMixin:
         try:
             settings=self.client.settings(); rates=self.client.exchange_rates()
             self.refresh_books_lock()
-            self.base_currency.set(settings.get("base_currency","USD")); self.second_currency.set(settings.get("second_currency","LBP")); self.backup_hours.set(settings.get("backup_interval_hours","24"))
+            self.base_currency.set(settings.get("base_currency","USD")); self.second_currency.set(settings.get("second_currency",
+                    "LBP")); self.backup_hours.set(settings.get("backup_interval_hours","24"))
             for box in (getattr(self,"base_currency_box",None),getattr(self,"second_currency_box",None)):
                 if box is not None: box.configure(values=self.currency_codes)
             for key,var in self.company_fields.items(): var.set(settings.get(key,"Saber for Audit" if key=="company_name" else ""))
@@ -213,7 +223,8 @@ class SettingsMixin:
             except Exception: users=[]
             self.users_tree.delete(*self.users_tree.get_children()); self.fill_users_tree(users)
         if hasattr(self,"backups_tree"):
-            for row in backups: self.backups_tree.insert("","end",iid=row["name"],values=(row["name"],row.get("kind","backup"),row.get("checked","not checked"),f'{row["size"]/1024/1024:,.2f} MB',row["modified"][:19].replace("T"," ")))
+            for row in backups: self.backups_tree.insert("","end",iid=row["name"],values=(row["name"],row.get("kind","backup"),row.get("checked","not checked"),
+                    f'{row["size"]/1024/1024:,.2f} MB',row["modified"][:19].replace("T"," ")))
         if hasattr(self,"backup_scope"): self.backup_scope.config(text=f'Backups of {getattr(self,"current_company",{}).get("name","")} - fiscal year {getattr(self,"current_fiscal_year","")}')
 
     def save_branch(self):
@@ -347,7 +358,8 @@ class SettingsMixin:
         messagebox.showinfo("Restore","Database restored successfully. Refreshing all pages."); self.load_dashboard(); self.load_invoices(); self.load_journal(); self.load_trial(); self.load_settings_pages(); self.load_payroll(); self.load_transactions(); self.load_vat_return()
 
     def save_exchange_rate(self):
-        try: self.client.save_exchange_rate({"date_from":self.rate_date.get(),"date_to":self.rate_date_to.get(),"from_currency":self.rate_from.get(),"to_currency":self.rate_to.get(),"rate":self.rate_value.get()})
+        try: self.client.save_exchange_rate({"date_from":self.rate_date.get(),"date_to":self.rate_date_to.get(),"from_currency":self.rate_from.get(),
+                "to_currency":self.rate_to.get(),"rate":self.rate_value.get()})
         except Exception as exc: return messagebox.showerror("Exchange Rates",str(exc))
         self.load_settings_pages(); messagebox.showinfo("Exchange Rates","Rate added. The daily rate is the average of all entered rates for this date and currency pair.")
 
@@ -410,7 +422,8 @@ class SettingsMixin:
     def lock_books(self):
         date=self.books_lock_date.get().strip()
         if not date: return messagebox.showwarning("Close the books","Enter the last date to lock (for example the last day of the month or quarter you filed)")
-        if not messagebox.askyesno("Close the books",f"Lock the books up to {date}?\n\nNo invoice, expense, payment, payroll or journal entry dated on or before {date} can be added, changed or deleted until an administrator unlocks it. A safety backup is made first."): return
+        if not messagebox.askyesno("Close the books",
+                f"Lock the books up to {date}?\n\nNo invoice, expense, payment, payroll or journal entry dated on or before {date} can be added, changed or deleted until an administrator unlocks it. A safety backup is made first."): return
         try: self.client.set_books_lock(date)
         except Exception as exc: return messagebox.showerror("Close the books",str(exc))
         self.refresh_books_lock(); self.load_settings_pages()

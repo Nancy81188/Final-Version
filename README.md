@@ -1,5 +1,11 @@
 # Saber Accounting MVP
 
+## Version 2.9.102 (code health)
+- No more `from x import *`: the 26 modules that used it now import, by name, only what they use (a mistake now shows as an error at once instead of a wrong name at run time).
+- 418 very long lines were split (lines over 200 characters: 505 -> 106); each file was checked to give exactly the same program before and after.
+- The release test stops both from coming back: no new `import *`, and the number of long lines can only go down.
+- Nothing changes on screen.
+
 ## Version 2.9.101 (tables that show everything, owner account and licence, category / brand of new items)
 - Every table shows its column titles and values in full (no more "Unit Pric", "Discoun", "JV-2026-000") and fills the width of the screen; empty cells no longer show the word "None". A screen opens at its top.
 - Owner (seller) account: a hidden sign-in that works on every installation, is not in the client's list of users and never expires. The owner sets the licence of the installation (Settings > Users, box shown only to the owner); when it ends, only the owner can sign in to renew it. The owner password can be changed per installation.

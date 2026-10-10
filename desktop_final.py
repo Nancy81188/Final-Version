@@ -154,7 +154,8 @@ class FinalFeaturesMixin:
         tk.Entry(controls, textvariable=self.pr_year, width=7).grid(row=0, column=5, padx=4)
         self.pr_index_box = ttk.Combobox(controls, textvariable=self.pr_index, state="readonly", width=11); self.pr_index_box.grid(row=0, column=6, padx=4)
         tk.Label(controls, text="Group", bg=LIGHT).grid(row=1, column=0, padx=4, pady=6, sticky="w")
-        ttk.Combobox(controls, textvariable=self.pr_group, values=["Employees and Managers (separate)", "Employees only", "Managers only"], state="readonly", width=31).grid(row=1, column=1, padx=4, pady=6)
+        ttk.Combobox(controls, textvariable=self.pr_group, values=["Employees and Managers (separate)", "Employees only", "Managers only"], state="readonly",
+                width=31).grid(row=1, column=1, padx=4, pady=6)
         tk.Checkbutton(controls, text="Include draft payroll (preview only)", variable=self.pr_drafts, bg=LIGHT).grid(row=1, column=2, columnspan=3, sticky="w", padx=4)
         buttons = tk.Frame(controls, bg=LIGHT); buttons.grid(row=3, column=0, columnspan=9, sticky="w", pady=(2, 0))  # 2.9.98: own row (it pushed the page off a laptop screen)
         tk.Button(buttons, text="Generate", command=self.generate_payroll_report, bg=GOLD, fg=NAVY, border=0, padx=16, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
@@ -293,11 +294,15 @@ class FinalFeaturesMixin:
         result = getattr(self, "payroll_report_result", None)
         if not result or result.get("report") != "NSSF": return messagebox.showwarning("NSSF Payment", "Generate 'NSSF - Contributions table' for the period first")
         window = tk.Toplevel(self); window.title("Record NSSF Payment"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
-        values = {"amount": tk.StringVar(value=f'{result["net_payable_lbp"]:.0f}'), "payment_date": tk.StringVar(value=datetime.now().strftime("%d-%m-%Y") if str(datetime.now().year) == str(getattr(self, "current_fiscal_year", datetime.now().year)) else _display(result["date_to"])),
+        values = {"amount": tk.StringVar(value=f'{result["net_payable_lbp"]:.0f}'),
+                "payment_date": tk.StringVar(value=datetime.now().strftime("%d-%m-%Y") if str(datetime.now().year) == str(getattr(self, "current_fiscal_year",
+                datetime.now().year)) else _display(result["date_to"])),
                   "cash_account": tk.StringVar(value="531"), "reference": tk.StringVar()}
-        for row, (key, label) in enumerate((("amount", "Amount paid (LBP)"), ("payment_date", "Payment date"), ("cash_account", "Paid from (cash / bank account)"), ("reference", "NSSF receipt number"))):
+        for row, (key, label) in enumerate((("amount", "Amount paid (LBP)"), ("payment_date", "Payment date"), ("cash_account",
+                "Paid from (cash / bank account)"), ("reference", "NSSF receipt number"))):
             tk.Label(window, text=label, bg=LIGHT).grid(row=row, column=0, sticky="w", padx=10, pady=5)
-            (self.date_entry(window, values[key], 24) if key == "payment_date" else self.account_search_box(window, values[key], 22) if key == "cash_account" else tk.Entry(window, textvariable=values[key], width=26)).grid(row=row, column=1, padx=10, pady=5)
+            (self.date_entry(window, values[key], 24) if key == "payment_date" else self.account_search_box(window, values[key],
+                    22) if key == "cash_account" else tk.Entry(window, textvariable=values[key], width=26)).grid(row=row, column=1, padx=10, pady=5)
         def save():
             try: saved = self.client.record_nssf_payment({**{k: v.get().strip() for k, v in values.items()}, "currency": "LBP", "period_label": result["period_label"]})
             except Exception as exc: return messagebox.showerror("NSSF Payment", str(exc), parent=window)
@@ -463,10 +468,12 @@ class FinalFeaturesMixin:
         self.action_button(actions, "Filing Worksheet PDF", lambda: self.export_vat_filing_worksheet("pdf")).pack(side="left", padx=3)
         self.action_button(actions, "Open / Fill VAT PDF", self.edit_vat_filing_worksheet).pack(side="left", padx=3)
         self.action_button(actions, "Filing Worksheet Excel", lambda: self.export_vat_filing_worksheet("xlsx")).pack(side="left", padx=3)
-        tk.Button(actions, text="Official Form Q1-2 (PDF)", command=lambda: self.export_vat_official_form("pdf"), bg=NAVY, fg="white", border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Button(actions, text="Official Form Q1-2 (PDF)", command=lambda: self.export_vat_official_form("pdf"), bg=NAVY, fg="white", border=0, padx=12,
+                pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(actions, "Official Form Excel", lambda: self.export_vat_official_form("xlsx")).pack(side="left", padx=3)
         actions2 = tk.Frame(page, bg=LIGHT); actions2.pack(fill="x", padx=10, pady=(3, 0))
-        tk.Button(actions2, text="Taux Récupérable (PDF)", command=lambda: self.export_vat_recoverable_rate("pdf"), bg=NAVY, fg="white", border=0, padx=12, pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Button(actions2, text="Taux Récupérable (PDF)", command=lambda: self.export_vat_recoverable_rate("pdf"), bg=NAVY, fg="white", border=0, padx=12,
+                pady=7, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(actions2, "Taux Récupérable Excel", lambda: self.export_vat_recoverable_rate("xlsx")).pack(side="left", padx=3)
         tk.Button(actions2, text="VAT Settlement Entry...", command=self.vat_settlement_dialog, bg=NAVY, fg="white", border=0, padx=12, pady=7).pack(side="left", padx=(12, 3))
         tk.Label(actions2, text="Calcul du taux récupérable (Art. 31): revenues taxable / exempt, recoverable and non-recoverable VAT, VAT payable.", bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
@@ -476,7 +483,8 @@ class FinalFeaturesMixin:
         self.vat_headline.pack(fill="x", padx=12, pady=(8, 0))
         self.vat_note = tk.Label(page, text="", bg=LIGHT, fg=MUTED, anchor="w", justify="left"); self.vat_note.pack(fill="x", padx=12)
         nested = ttk.Notebook(page); nested.pack(fill="both", expand=True, padx=10, pady=8)
-        summary = tk.Frame(nested, bg=LIGHT); filing = tk.Frame(nested, bg=LIGHT); documents = tk.Frame(nested, bg=LIGHT); adjustments = tk.Frame(nested, bg=LIGHT); history = tk.Frame(nested, bg=LIGHT)
+        summary = tk.Frame(nested, bg=LIGHT); filing = tk.Frame(nested, bg=LIGHT); documents = tk.Frame(nested, bg=LIGHT); adjustments = tk.Frame(nested,
+                bg=LIGHT); history = tk.Frame(nested, bg=LIGHT)
         nested.add(summary, text="VAT Return"); nested.add(documents, text="Supporting Documents"); nested.add(adjustments, text="Manual Adjustments"); nested.add(history, text="Saved Returns")
         nested.insert(1, filing, text="Filing Worksheet")
         check = tk.Frame(nested, bg=LIGHT); nested.insert(2, check, text="Check with the Books")  # 2.9.79
@@ -491,7 +499,8 @@ class FinalFeaturesMixin:
         tk.Label(filing, text="Based on published 2010 Q1-2 / Q11-2 specimen sections only. Not an official form; A-F are internal refs. Obtain issued forms from the VAT Directorate.",
                  bg=LIGHT, fg=RED, anchor="w", justify="left", wraplength=900).pack(fill="x", padx=10, pady=4)
         self.vat_documents_tree = self.table(documents, [("date", "Date", 90), ("number", "Document", 120), ("party", "Customer / Supplier", 200), ("category", "Category", 140),
-            ("deductible", "Deductible", 80), ("currency", "Currency", 70), ("base", "Base", 110), ("vat", "VAT", 100), ("rate", f"{vat_currency(self)} Rate", 90), ("vat_lbp", f"VAT ({vat_currency(self)})", 120), ("status", "Status", 75)])
+            ("deductible", "Deductible", 80), ("currency", "Currency", 70), ("base", "Base", 110), ("vat", "VAT", 100), ("rate", f"{vat_currency(self)} Rate",
+                    90), ("vat_lbp", f"VAT ({vat_currency(self)})", 120), ("status", "Status", 75)])
         form = tk.Frame(adjustments, bg=LIGHT); form.pack(fill="x", padx=10, pady=8)
         self.vat_adj_type = tk.StringVar(value="Output VAT"); self.vat_adj_currency = tk.StringVar(value=vat_currency(self)); self.vat_adj_amount = tk.StringVar(); self.vat_adj_reason = tk.StringVar()
         ttk.Combobox(form, textvariable=self.vat_adj_type, values=["Output VAT", "Deductible VAT", "Non-deductible VAT"], state="readonly", width=18).pack(side="left", padx=3)
@@ -549,7 +558,8 @@ class FinalFeaturesMixin:
         if result.get("provisional_ratio") is not None and not self.vat_ratio.get().strip(): self.vat_ratio.set(f'{float(result["provisional_ratio"]) * 100:g}')
         self.vat_headline.config(text=f"Q{quarter} {year}  |  {outcome}  |  Deduction {float(result.get('deduction_ratio', 1)) * 100:.2f}%  |  Due {_display(result.get('due_date'))}  |  {result['status'].title()}",
                                  fg=RED if result["changed_since_saved"] else NAVY)
-        notes = [f"Credit brought forward: {result['credit_brought_forward_lbp']:,.{digits}f} {vc} ({result['credit_source']})", f"Deduction ratio: {result.get('ratio_source', '')}"] + [f"Check: {w}" for w in result.get("warnings", [])]
+        notes = [f"Credit brought forward: {result['credit_brought_forward_lbp']:,.{digits}f} {vc} ({result['credit_source']})",
+                f"Deduction ratio: {result.get('ratio_source', '')}"] + [f"Check: {w}" for w in result.get("warnings", [])]
         if result["review_excluded"]: notes.append(f"{result['review_excluded']} document(s) in Review status are not included")
         if result["skipped"]: notes.append(f"{len(result['skipped'])} document(s) have an unreadable date: {', '.join(map(str, result['skipped'][:5]))}")
         if result["changed_since_saved"]: notes.append("Documents changed after this return was saved - review and save again")
@@ -557,7 +567,9 @@ class FinalFeaturesMixin:
         self.vat_note.config(text="   |   ".join(notes))
         self.vat_documents_tree.delete(*self.vat_documents_tree.get_children())
         for d in result["documents"]:
-            self.vat_documents_tree.insert("", "end", values=(_display(d["date"]), d["number"], d["party"], f'{vat_rules.CATEGORIES[d["category"]]} ({d.get("treatment", "standard").replace("_", " ")})', d.get("deductible_share") or ("Yes" if d["recoverable"] else "No"),
+            self.vat_documents_tree.insert("", "end", values=(_display(d["date"]), d["number"], d["party"],
+                    f'{vat_rules.CATEGORIES[d["category"]]} ({d.get("treatment", "standard").replace("_", " ")})',
+                    d.get("deductible_share") or ("Yes" if d["recoverable"] else "No"),
                 d["currency"], _fmt(d["base"]), _fmt(d["vat"]), _fmt(d["lbp_rate"]), _fmt(d["vat_lbp"]), d["status"]))
         self.vat_adjustment_rows = {str(a["id"]): a for a in result["adjustments"]}
         self.vat_adjustments_tree.delete(*self.vat_adjustments_tree.get_children())
@@ -781,7 +793,8 @@ class FinalFeaturesMixin:
         self.action_button(buttons, "Renew 1 Year", self.renew_selected_user).pack(side="left", padx=3)
         self.action_button(buttons, "New / Clear", self.clear_user_form).pack(side="left", padx=3)
         tk.Label(users, text="Roles: Admin = everything; Accountant = enter and post; Viewer = read only. New non-admin users are valid for 1 year; "
-                 "leave 'Valid until' empty for no expiry. Payroll and VAT access can be removed per user. 'Can delete / cancel' allows deleting or cancelling posted documents (new users: off).", bg=LIGHT, fg=MUTED, wraplength=1050, justify="left").pack(fill="x", padx=12)
+                 "leave 'Valid until' empty for no expiry. Payroll and VAT access can be removed per user. 'Can delete / cancel' allows deleting or cancelling posted documents (new users: off).",
+                         bg=LIGHT, fg=MUTED, wraplength=1050, justify="left").pack(fill="x", padx=12)
         self.users_tree = self.table(users, [("id", "ID", 50), ("username", "Username", 160), ("role", "Role", 95), ("language", "Language", 70), ("status", "Status", 80),
             ("expires", "Valid Until", 95), ("days", "Days Left", 75), ("payroll", "Payroll", 65), ("vat", "VAT", 55), ("delete", "Delete", 60), ("approve", "Approve", 65)])
         self.users_tree.tag_configure("expired", foreground=RED); self.users_tree.tag_configure("soon", foreground=AMBER)

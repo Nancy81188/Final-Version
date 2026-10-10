@@ -2,7 +2,9 @@
 move an account's transactions to another account, or transfer its balance."""
 from __future__ import annotations
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    enable_drag_select, GOLD, LIGHT, messagebox, NAVY, selection_totals, tk, ttk
+)
 
 SCOPE_LABELS = {"All accounts": "all", "Clients (411)": "clients", "Suppliers (401 / 403 / 404 / 408)": "suppliers", "Expenses (class 6)": "expenses",
                 "Income (class 7)": "income", "Cash & banks (class 5)": "cash_bank", "Other payables (46)": "other_payables"}

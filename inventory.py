@@ -195,10 +195,12 @@ def save_item(database, item, user_id):
                   1 if item.get("active", True) else 0, str(item.get("notes") or "").strip() or None, str(item.get("barcode") or "").strip() or None,
                   str(item.get("subcategory") or "").strip() or None, str(supplier) if supplier else None, str(item.get("location") or "").strip() or None, default_vat, cost_account)
         if item.get("id"):
-            db.execute("UPDATE inventory_items SET sku=?,name=?,unit=?,category=?,reorder_level=?,sales_price=?,active=?,notes=?,barcode=?,subcategory=?,supplier_id=?,location=?,default_vat=?,cost_account=? WHERE id=?", values + (int(item["id"]),)); saved = int(item["id"])
+            db.execute("UPDATE inventory_items SET sku=?,name=?,unit=?,category=?,reorder_level=?,sales_price=?,active=?,notes=?,barcode=?,subcategory=?,supplier_id=?,location=?,default_vat=?,cost_account=? WHERE id=?",
+                    values + (int(item["id"]),)); saved = int(item["id"])
             if "brand" in item: db.execute("UPDATE inventory_items SET brand=? WHERE id=?", (brand, saved))
         else:
-            saved = db.execute("INSERT INTO inventory_items(sku,name,unit,category,reorder_level,sales_price,active,notes,barcode,subcategory,supplier_id,location,default_vat,cost_account,created_at,brand) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values + (utcnow(), brand)).lastrowid
+            saved = db.execute("INSERT INTO inventory_items(sku,name,unit,category,reorder_level,sales_price,active,notes,barcode,subcategory,supplier_id,location,default_vat,cost_account,created_at,brand) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    values + (utcnow(), brand)).lastrowid
         db.execute("UPDATE inventory_items SET stock_account=? WHERE id=?", (stock_account, saved))
         if "sales_account" in item:  # 2.9.90
             sales_account = str(item.get("sales_account") or "").split(" - ", 1)[0].strip() or None
@@ -402,7 +404,8 @@ def list_items(database, date_to=None, include_inactive=True):
 def next_number(database, doc_type, date):
     prefix = DOC_TYPES[doc_type][0]; year = iso_date(date)[:4]
     with database.connect() as db:
-        numbers = [int(r["number"].rsplit("-", 1)[-1]) for r in db.execute("SELECT number FROM stock_documents WHERE number LIKE ?", (f"{prefix}-{year}-%",)) if r["number"].rsplit("-", 1)[-1].isdigit()]
+        numbers = [int(r["number"].rsplit("-", 1)[-1]) for r in db.execute("SELECT number FROM stock_documents WHERE number LIKE ?",
+                (f"{prefix}-{year}-%",)) if r["number"].rsplit("-", 1)[-1].isdigit()]
     return f"{prefix}-{year}-{max(numbers, default=0) + 1:06d}"
 
 
@@ -449,7 +452,8 @@ def _assert_nonnegative_history(db):
         key=(row["item_id"],row["warehouse_id"])
         balances[key]=balances.get(key,ZERO)+_d(row["quantity"])
         if balances[key]<Decimal("-0.000001") and _d(row["quantity"])<0 and not row["allow_negative"]:
-            shortages[(row["document_id"],key)]=(row["document_id"],f"Stock movement {row['number']} on {display_date(row['doc_date'])} would make later stock negative ({row['sku']} in {row['warehouse_code']}: {balances[key]:,.3f})")
+            shortages[(row["document_id"],key)]=(row["document_id"],
+                    f"Stock movement {row['number']} on {display_date(row['doc_date'])} would make later stock negative ({row['sku']} in {row['warehouse_code']}: {balances[key]:,.3f})")
     if not shortages: return
     if not negative_allowed(): raise NegativeStock(_negative_message([text for _id,text in shortages.values()]))
     ids=sorted({doc_id for doc_id,_text in shortages.values()})
@@ -474,11 +478,14 @@ def save_document(database, header, lines, user_id, document_id=None):
     date = iso_date(header.get("doc_date"), "Date"); database._assert_period_open(date)
     if not isinstance(lines, list) or not lines: raise ValueError("Add at least one item line")
     with database.connect() as db:
-        warehouse = db.execute("SELECT * FROM warehouses WHERE id=? OR code=?", (int(header["warehouse_id"]) if str(header.get("warehouse_id") or "").isdigit() else -1, str(header.get("warehouse_id") or "MAIN"))).fetchone()
+        warehouse = db.execute("SELECT * FROM warehouses WHERE id=? OR code=?",
+                (int(header["warehouse_id"]) if str(header.get("warehouse_id") or "").isdigit() else -1, str(header.get("warehouse_id") or "MAIN"))).fetchone()
         if not warehouse: raise ValueError("Choose the warehouse")
         target = None
         if doc_type == "transfer":
-            target = db.execute("SELECT * FROM warehouses WHERE id=? OR code=?", (int(header["to_warehouse_id"]) if str(header.get("to_warehouse_id") or "").isdigit() else -1, str(header.get("to_warehouse_id") or ""))).fetchone()
+            target = db.execute("SELECT * FROM warehouses WHERE id=? OR code=?",
+                    (int(header["to_warehouse_id"]) if str(header.get("to_warehouse_id") or "").isdigit() else -1,
+                    str(header.get("to_warehouse_id") or ""))).fetchone()
             if not target or target["id"] == warehouse["id"]: raise ValueError("Choose a different destination warehouse for the transfer")
         items = {}; normalized = []
         for index, line in enumerate(lines, 1):
@@ -571,7 +578,8 @@ def delete_document(database, document_id, user_id):
         if doc.get("invoice_id"):
             database._assert_no_active_linked_returns(db,doc["invoice_id"],"delete stock for")
         db.execute("DELETE FROM stock_movements WHERE document_id=?", (int(document_id),)); db.execute("DELETE FROM stock_documents WHERE id=?", (int(document_id),))
-        db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "delete", "stock_document", int(document_id), json.dumps({"number": doc["number"]}), utcnow()))
+        db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)", (user_id, "delete", "stock_document",
+                int(document_id), json.dumps({"number": doc["number"]}), utcnow()))
     return {"deleted": int(document_id)}
 
 
@@ -755,9 +763,12 @@ def post_stock_variation(database, year, user_id):
         opening = group["opening"].quantize(Decimal("0.01")); closing = group["closing"].quantize(Decimal("0.01"))
         if not opening and not closing: continue
         _cost, opening_account, closing_account, _note = stock_link(stock)
-        if opening > 0: lines += [{"account_code": opening_account, "line_currency": currency, "side": "D", "amount": str(opening)}, {"account_code": stock, "line_currency": currency, "side": "C", "amount": str(opening)}]
-        elif opening < 0: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(-opening)}, {"account_code": opening_account, "line_currency": currency, "side": "C", "amount": str(-opening)}]
-        if closing: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(closing)}, {"account_code": closing_account, "line_currency": currency, "side": "C", "amount": str(closing)}]
+        if opening > 0: lines += [{"account_code": opening_account, "line_currency": currency, "side": "D", "amount": str(opening)}, {"account_code": stock,
+                "line_currency": currency, "side": "C", "amount": str(opening)}]
+        elif opening < 0: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(-opening)}, {"account_code": opening_account,
+                "line_currency": currency, "side": "C", "amount": str(-opening)}]
+        if closing: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(closing)}, {"account_code": closing_account,
+                "line_currency": currency, "side": "C", "amount": str(closing)}]
         total_opening += opening; total_closing += closing
         detail.append({"stock_account": stock, "opening_account": opening_account, "closing_account": closing_account, "opening": float(opening), "closing": float(closing)})
     if not lines: return {"year": year, "opening": 0.0, "closing": 0.0, "voucher": None, "groups": []}
@@ -845,9 +856,12 @@ def _post_variation_at(database, date_to, description, user_id):
         opening = group["opening"].quantize(Decimal("0.01")); closing = group["valuation"].quantize(Decimal("0.01"))
         if opening == closing: continue  # nothing changed on this account
         _cost, opening_account, closing_account, _note = stock_link(stock)
-        if opening > 0: lines += [{"account_code": opening_account, "line_currency": currency, "side": "D", "amount": str(opening)}, {"account_code": stock, "line_currency": currency, "side": "C", "amount": str(opening)}]
-        elif opening < 0: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(-opening)}, {"account_code": opening_account, "line_currency": currency, "side": "C", "amount": str(-opening)}]
-        if closing: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(closing)}, {"account_code": closing_account, "line_currency": currency, "side": "C", "amount": str(closing)}]
+        if opening > 0: lines += [{"account_code": opening_account, "line_currency": currency, "side": "D", "amount": str(opening)}, {"account_code": stock,
+                "line_currency": currency, "side": "C", "amount": str(opening)}]
+        elif opening < 0: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(-opening)}, {"account_code": opening_account,
+                "line_currency": currency, "side": "C", "amount": str(-opening)}]
+        if closing: lines += [{"account_code": stock, "line_currency": currency, "side": "D", "amount": str(closing)}, {"account_code": closing_account,
+                "line_currency": currency, "side": "C", "amount": str(closing)}]
         total_opening += opening; total_closing += closing
     if not lines: return {"date": date_to, "voucher": None, "opening": 0.0, "closing": 0.0}
     day = f"{date_to[8:10]}-{date_to[5:7]}-{date_to[:4]}"
@@ -893,7 +907,8 @@ def carry_forward(source, target, year, user_id):
         for i in items:
             db.execute("""INSERT INTO inventory_items(id,sku,name,unit,quantity,average_cost,category,reorder_level,sales_price,active,notes,barcode,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET sku=excluded.sku,name=excluded.name,unit=excluded.unit,category=excluded.category,reorder_level=excluded.reorder_level,sales_price=excluded.sales_price,active=excluded.active""",
-                (i["id"], i["sku"], i["name"], i["unit"], "0", "0", i.get("category"), i.get("reorder_level") or "0", i.get("sales_price") or "0", i.get("active", 1), i.get("notes"), i.get("barcode"), i.get("created_at")))
+                (i["id"], i["sku"], i["name"], i["unit"], "0", "0", i.get("category"), i.get("reorder_level") or "0", i.get("sales_price") or "0",
+                        i.get("active", 1), i.get("notes"), i.get("barcode"), i.get("created_at")))
             # 2.9.79: the item keeps its stock and cost accounts in the new year
             target_columns = {row["name"] for row in db.execute("PRAGMA table_info(inventory_items)")}
             for column in ("stock_account", "cost_account"):
@@ -924,7 +939,8 @@ def list_categories(database):
         for name in {r["category"] for r in db.execute("SELECT DISTINCT category FROM inventory_items WHERE category IS NOT NULL AND category<>''")}:
             if not any(c["name"] == name and not c["parent_id"] for c in rows): rows.append({"id": None, "name": name, "parent_id": None})
     top = [c for c in rows if not c["parent_id"]]
-    return {"categories": [{"id": c["id"], "name": c["name"], "subcategories": [s["name"] for s in rows if s["parent_id"] and s["parent_id"] == c["id"]]} for c in sorted(top, key=lambda c: c["name"])],
+    return {"categories": [{"id": c["id"], "name": c["name"],
+            "subcategories": [s["name"] for s in rows if s["parent_id"] and s["parent_id"] == c["id"]]} for c in sorted(top, key=lambda c: c["name"])],
             "units": units}
 
 
@@ -1046,9 +1062,11 @@ def save_count(database, header, lines, user_id, count_id=None, post=False):
             row = db.execute("SELECT * FROM physical_counts WHERE id=?", (int(count_id),)).fetchone()
             if not row: raise KeyError("Count not found")
             if row["status"] == "posted": raise ValueError("This count is already posted to the stock")
-            db.execute("UPDATE physical_counts SET count_date=?,warehouse_id=?,lines=?,notes=? WHERE id=?", (date, warehouse, json.dumps(clean), header.get("notes"), int(count_id))); saved = int(count_id)
+            db.execute("UPDATE physical_counts SET count_date=?,warehouse_id=?,lines=?,notes=? WHERE id=?", (date, warehouse, json.dumps(clean),
+                    header.get("notes"), int(count_id))); saved = int(count_id)
         else:
-            numbers = [int(r["number"].rsplit("-", 1)[-1]) for r in db.execute("SELECT number FROM physical_counts WHERE number LIKE ?", (f"PHC-{date[:4]}-%",)) if r["number"].rsplit("-", 1)[-1].isdigit()]
+            numbers = [int(r["number"].rsplit("-", 1)[-1]) for r in db.execute("SELECT number FROM physical_counts WHERE number LIKE ?",
+                    (f"PHC-{date[:4]}-%",)) if r["number"].rsplit("-", 1)[-1].isdigit()]
             saved = db.execute("INSERT INTO physical_counts(number,count_date,warehouse_id,lines,notes,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
                 (f"PHC-{date[:4]}-{max(numbers, default=0) + 1:06d}", date, warehouse, json.dumps(clean), header.get("notes"), user_id, utcnow())).lastrowid
     if post:
@@ -1059,8 +1077,10 @@ def save_count(database, header, lines, user_id, count_id=None, post=False):
             elif difference < 0: losses.append({"item_id": line["item_id"], "quantity": -difference})
         numbers = []
         with database.connect() as db: number = db.execute("SELECT number FROM physical_counts WHERE id=?", (saved,)).fetchone()["number"]
-        if gains: numbers.append(save_document(database, {"doc_type": "adjustment_in", "doc_date": date, "warehouse_id": warehouse, "reference": number, "notes": f"Physical count {number}"}, gains, user_id)["number"])
-        if losses: numbers.append(save_document(database, {"doc_type": "adjustment_out", "doc_date": date, "warehouse_id": warehouse, "reference": number, "notes": f"Physical count {number}"}, losses, user_id)["number"])
+        if gains: numbers.append(save_document(database, {"doc_type": "adjustment_in", "doc_date": date, "warehouse_id": warehouse, "reference": number,
+                "notes": f"Physical count {number}"}, gains, user_id)["number"])
+        if losses: numbers.append(save_document(database, {"doc_type": "adjustment_out", "doc_date": date, "warehouse_id": warehouse, "reference": number,
+                "notes": f"Physical count {number}"}, losses, user_id)["number"])
         voucher = _post_count_voucher(database, number, date, system, clean, user_id)  # 2.9.97: the count difference in the journal
         if voucher: numbers.append(voucher)
         with database.connect() as db: db.execute("UPDATE physical_counts SET status='posted',adjustment_numbers=? WHERE id=?", (", ".join(numbers), saved))

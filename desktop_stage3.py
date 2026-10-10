@@ -1,7 +1,12 @@
 """Stage 3 screens (version 1.16): Import from Excel or PDF, Payment & Receipt, Purchases & Expenses."""
 from __future__ import annotations
 
-from desktop_stage3_common import *  # noqa: F401,F403
+from desktop_stage3_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    asset_pdf_details, auto_upload_on, bulk_action, datetime, EXPENSE_VAT, filedialog, GOLD, LIGHT, messagebox,
+    METHODS, MUTED, NAVY, notify_new_items, Path, prepare_pdf_reading, PURCHASE_VAT, read_expenses,
+    read_invoice_pdf_pages, read_invoices, RED, resolve_item, run_with_progress, SALES_VAT, threading, tk, ttk, TYPES
+)
+from desktop_stage3_common import simpledialog  # noqa: F401 - desktop_stage3.simpledialog is patched by tests
 from desktop_common import main_currency  # 2.9.71
 from desktop_stage3_common import _dd, _num
 from desktop_common import flow_toolbars
@@ -48,7 +53,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
                  bg=LIGHT, fg=MUTED, anchor="w").pack(fill="x", padx=12)
         from desktop_brains import EditableSheet
         columns = [("line", "#", 40, "center"), ("invoice_number", "Invoice No.", 110, "w"), ("invoice_date", "Date", 90, "center"), ("party_name", "Customer / Supplier", 200, "w"),
-                   ("entry_type", "Type (review)", 120, "w"), ("currency", "Currency", 65, "center"), ("subtotal", "Before VAT", 105, "e"), ("vat", "VAT", 90, "e"), ("vat_account", "VAT A/C", 170, "w"),
+                   ("entry_type", "Type (review)", 120, "w"), ("currency", "Currency", 65, "center"), ("subtotal", "Before VAT", 105, "e"), ("vat", "VAT", 90,
+                           "e"), ("vat_account", "VAT A/C", 170, "w"),
                    ("total", "Total", 105, "e"), ("supplier_account", "Party / Paid A/C", 200, "w"), ("expense_account", "Cost / Revenue A/C", 200, "w"),
                    ("expense_no_vat_account", "No-VAT A/C", 170, "w"),
                    ("source", "Source", 150, "w"), ("notes", "Check", 230, "w")]
@@ -159,7 +165,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         kind, entry_type = TYPES[self.import_type.get()]
         try:
             if entry_type == "expenses":
-                rows = [{"invoice_number": r["reference"], "invoice_date": r["expense_date"], "party_name": r.get("supplier") or r["description"], "items": r.get("items") or r["description"], "currency": r["currency"],
+                rows = [{"invoice_number": r["reference"], "invoice_date": r["expense_date"], "party_name": r.get("supplier") or r["description"],
+                        "items": r.get("items") or r["description"], "currency": r["currency"],
                          "deductible": r["with_vat_subtotal"], "non_deductible": r["without_vat_subtotal"],
                          "subtotal": r["with_vat_subtotal"] + r["without_vat_subtotal"], "vat": r["vat"], "total": r["with_vat_subtotal"] + r["without_vat_subtotal"] + r["vat"],
                          "source": f"Excel row {r['source_row']}", "_expense": r} for r in read_expenses(path)]
@@ -416,7 +423,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             wrong_cost = [str(r["line"]) for r in rows if r["entry_type"]!="Assets" and not
                           str(r.get("expense_account") or "").startswith("7" if r["entry_type"]=="Sales" else "6")]
             if wrong_cost:
-                return messagebox.showwarning("Import",f"PDF row(s) {', '.join(wrong_cost[:10])}: choose a cost/revenue account matching the selected Type (class 6 for Purchases/Expenses, class 7 for Sales)")
+                return messagebox.showwarning("Import",
+                        f"PDF row(s) {', '.join(wrong_cost[:10])}: choose a cost/revenue account matching the selected Type (class 6 for Purchases/Expenses, class 7 for Sales)")
             wrong_party = [str(r["line"]) for r in rows if r.get("supplier_account") and r["entry_type"]!="Expenses" and not
                            str(r["supplier_account"]).startswith("41" if r["entry_type"]=="Sales" else "40")]
             if wrong_party:
@@ -424,11 +432,13 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             unpaid = [str(r["line"]) for r in rows if r["entry_type"]=="Expenses" and
                       not str(r.get("supplier_account") or "").split(" - ",1)[0].strip().startswith("5")]
             if unpaid:
-                return messagebox.showwarning("Import",f"PDF expense row(s) {', '.join(unpaid[:10])}: choose a class 5 cash/bank payment account in Party / Paid A/C. Expenses post as paid; use Purchases for unpaid invoices")
+                return messagebox.showwarning("Import",
+                        f"PDF expense row(s) {', '.join(unpaid[:10])}: choose a class 5 cash/bank payment account in Party / Paid A/C. Expenses post as paid; use Purchases for unpaid invoices")
             if self.import_replace.get() and any(r["entry_type"]=="Expenses" for r in rows):
                 return messagebox.showwarning("Import","Replace ALL previous invoices cannot be used with PDF expense rows. Uncheck Replace to import paid expenses")
             counts = ", ".join(f"{label}: {sum(r['entry_type']==label for r in rows)}" for label in TYPES if any(r["entry_type"]==label for r in rows))
-            if not auto and not messagebox.askyesno("Confirm PDF types",f"Review the Type of every PDF row before posting.\n{counts}\n\nExpenses are recorded as PAID from the selected payment account; Purchases are supplier invoices and Assets require a fixed-asset account.\n\nAre these types and accounts correct?"):
+            if not auto and not messagebox.askyesno("Confirm PDF types",
+                    f"Review the Type of every PDF row before posting.\n{counts}\n\nExpenses are recorded as PAID from the selected payment account; Purchases are supplier invoices and Assets require a fixed-asset account.\n\nAre these types and accounts correct?"):
                 return
         if self.import_replace.get() and not messagebox.askyesno("Replace previous data", "ALL previous invoices will be removed and replaced. A safety backup is made first. Continue?"): return
         checker = getattr(self, "import_duplicates", None)
@@ -553,7 +563,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         self.load_transactions()
 
     def build_payment_form(self, page, kind):
-        form = {"kind": kind, "id": None, "vars": {k: tk.StringVar() for k in ("number", "date", "party", "currency", "amount", "method", "cash_account", "reference", "description", "bank_commission", "exchange_difference",
+        form = {"kind": kind, "id": None, "vars": {k: tk.StringVar() for k in ("number", "date", "party", "currency", "amount", "method", "cash_account",
+                "reference", "description", "bank_commission", "exchange_difference",
                                                                             "commission_account", "exchange_gain_account", "exchange_loss_account")}}
         v = form["vars"]; v["date"].set(self.fiscal_today()); v["currency"].set(main_currency(self, 1)); v["method"].set("Cash"); v["cash_account"].set("531")
         form["department"] = tk.StringVar(); form["project"] = tk.StringVar()
@@ -572,7 +583,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         form["party_box"].bind("<FocusOut>", lambda _e: self.payment_party_chosen(form), add="+"); form["party_box"].bind("<Return>", lambda _e: self.payment_party_chosen(form), add="+")
         tk.Label(row, text="Currency", bg=LIGHT).pack(side="left")
         ttk.Combobox(row, textvariable=v["currency"], values=self.currency_codes, state="readonly", width=6).pack(side="left", padx=(4, 10))
-        tk.Label(row, text="Amount", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left"); tk.Entry(row, textvariable=v["amount"], width=14, font=("Segoe UI", 10, "bold")).pack(side="left", padx=4)
+        tk.Label(row, text="Amount", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left"); tk.Entry(row, textvariable=v["amount"], width=14,
+                font=("Segoe UI", 10, "bold")).pack(side="left", padx=4)
         row2 = tk.Frame(box, bg=LIGHT); row2.pack(fill="x", pady=(6, 0))
         tk.Label(row2, text="Method", bg=LIGHT).pack(side="left"); ttk.Combobox(row2, textvariable=v["method"], values=METHODS, state="readonly", width=13).pack(side="left", padx=(4, 10))
         tk.Label(row2, text="Cash / Bank Account", bg=LIGHT).pack(side="left")
@@ -651,7 +663,9 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
             expected_kind = ("supplier_payment" if d.get("doc_subtype") == "credit_note" else "customer_receipt") if d["kind"] == "sale" else ("customer_receipt" if d.get("doc_subtype") == "credit_note" else "supplier_payment")
             if expected_kind != form["kind"] and d["id"] not in existing: continue
             open_amount = float(d["open_amount"]) + float(existing.get(d["id"], 0))
-            row = {"invoice_id": d["id"], "expected_kind": expected_kind, "number": d["invoice_number"], "date": _dd(d["invoice_date"]), "type": {"credit_note": "Credit note", "debit_note": "Debit note"}.get(d.get("doc_subtype"), "Sale" if d["kind"] == "sale" else "Purchase"),
+            row = {"invoice_id": d["id"], "expected_kind": expected_kind, "number": d["invoice_number"], "date": _dd(d["invoice_date"]),
+                    "type": {"credit_note": "Credit note", "debit_note": "Debit note"}.get(d.get("doc_subtype"),
+                    "Sale" if d["kind"] == "sale" else "Purchase"),
                    "currency": d["currency"], "total": d["total"], "open": open_amount, "allocate": float(existing.get(d["id"], 0))}
             row["_display"] = {"total": f'{d["total"]:,.2f}', "open": f"{open_amount:,.2f}", "allocate": f'{row["allocate"]:,.2f}' if row["allocate"] else ""}
             sheet.insert(row)
@@ -812,8 +826,10 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
         form["id"] = row["id"]; v = form["vars"]
         label = next((name for name, p in form.get("party_map", {}).items() if p["id"] == row["party_id"]), row["party_name"])
         for key, value in (("number", row.get("payment_number") or ""), ("date", _dd(row["payment_date"])), ("party", label), ("currency", row["currency"]), ("amount", f'{row["amount"]:g}'),
-                           ("method", row.get("payment_method") or "Cash"), ("cash_account", account_label(self, row["cash_account"])), ("reference", row.get("reference") or ""), ("description", row.get("description") or ""),
-                           ("bank_commission", f'{row.get("bank_commission") or 0:g}' if (row.get("bank_commission") or 0) else ""), ("exchange_difference", f'{row.get("exchange_difference") or 0:g}' if (row.get("exchange_difference") or 0) else "")):
+                           ("method", row.get("payment_method") or "Cash"), ("cash_account", account_label(self, row["cash_account"])), ("reference",
+                                   row.get("reference") or ""), ("description", row.get("description") or ""),
+                           ("bank_commission", f'{row.get("bank_commission") or 0:g}' if (row.get("bank_commission") or 0) else ""), ("exchange_difference",
+                                   f'{row.get("exchange_difference") or 0:g}' if (row.get("exchange_difference") or 0) else "")):
             v[key].set(value)
         self.reset_payment_accounts(form)
         for key in ("commission_account", "exchange_gain_account", "exchange_loss_account"):
@@ -864,7 +880,8 @@ class Stage3Mixin(PurchasesMixin, AssetRegisterMixin, ExpensesMixin):
 
     def _payment_tree_values(self, r):
         return (r.get("payment_number") or f"#{r['id']}", _dd(r["payment_date"]), r["party_name"], r["currency"], f'{r["amount"]:,.2f}',
-                r.get("payment_method") or "", account_label(self, r["cash_account"]), r.get("reference") or "", r.get("description") or "", " / ".join(x for x in (r.get("department"), r.get("project")) if x))
+                r.get("payment_method") or "", account_label(self, r["cash_account"]), r.get("reference") or "", r.get("description") or "",
+                        " / ".join(x for x in (r.get("department"), r.get("project")) if x))
 
     def filter_payments(self, form):
         from desktop import row_matches_search

@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from ReportsStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, json, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -538,7 +540,8 @@ class ReportsStore:
         combined={}
         for label,rows in (("current",current),("prior",prior)):
             for row in rows:
-                key=(row["currency"],row["code"],row["name_en"],row["type"]); item=combined.setdefault(key,{"currency":row["currency"],"code":row["code"],"name_en":row["name_en"],"type":row["type"],"current":0.0,"prior":0.0,"variance":0.0})
+                key=(row["currency"],row["code"],row["name_en"],row["type"]); item=combined.setdefault(key,{"currency":row["currency"],"code":row["code"],
+                        "name_en":row["name_en"],"type":row["type"],"current":0.0,"prior":0.0,"variance":0.0})
                 item[label]+=float(row["amount"] or 0)
         for row in combined.values(): row["variance"]=row["current"]-row["prior"]
         return {"from_date":from_date,"to_date":to_date,"prior_from":prior_start,"prior_to":prior_end,"items":sorted(combined.values(),key=lambda row:(row["currency"],row["code"]))}

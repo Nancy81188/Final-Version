@@ -13,7 +13,8 @@ from tkinter import filedialog, messagebox, ttk
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
-TREATMENTS = {"Taxable": "standard", "Taxable 11%": "standard", "Taxable (standard rate)": "standard", "Zero-rated": "zero_rated", "Zero-rated (export)": "zero_rated", "Exempt": "exempt", "Exempt (Art. 16-17)": "exempt", "Out of scope": "out_of_scope"}
+TREATMENTS = {"Taxable": "standard", "Taxable 11%": "standard", "Taxable (standard rate)": "standard", "Zero-rated": "zero_rated",
+        "Zero-rated (export)": "zero_rated", "Exempt": "exempt", "Exempt (Art. 16-17)": "exempt", "Out of scope": "out_of_scope"}
 
 
 def _dd(value):
@@ -200,7 +201,8 @@ class V22Mixin:
             item = self.sales_item_for(iid); product = self.item_by_code(sku)
             if not item or not product: return
             item.update(item_code=product["sku"], description=product["name"], unit=product.get("unit") or "", unit_price=product["sales_price"] or item.get("unit_price") or 0)
-            if product.get("default_vat") not in (None,""): item["vat_rate"]=0.0 if str(product["default_vat"]).replace("%","").strip() in ("0","0.0") else vat_rate(self); item["_vat_typed"]=False  # 2.9.72
+            if product.get("default_vat") not in (None,""): item["vat_rate"]=0.0 if str(product["default_vat"]).replace("%","").strip() in ("0",
+                    "0.0") else vat_rate(self); item["_vat_typed"]=False  # 2.9.72
             self.recalculate_sales_item(item); self.sales_sheet.item(iid, values=self.sales_row_values(item)); self.update_sales_totals()
         self.item_picker(chosen)
 
@@ -241,14 +243,19 @@ class V22Mixin:
         tk.Label(bar, text="As of", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.br["to"], 11).pack(side="left", padx=(4, 6))
         self.action_button(bar, "Today", lambda: self.set_business_as_of(0)).pack(side="left", padx=2)
         self.action_button(bar, "+30 days", lambda: self.set_business_as_of(30)).pack(side="left", padx=(2, 6))
-        tk.Label(bar, text="Amounts in", bg=LIGHT).pack(side="left"); ttk.Combobox(bar, textvariable=self.br["basis"], values=list(dict.fromkeys(["USD", "LBP"] + list(getattr(self, "currency_codes", None) or []))), state="readonly", width=5).pack(side="left", padx=(4, 6))
-        tk.Label(bar, text="Only", bg=LIGHT).pack(side="left"); ttk.Combobox(bar, textvariable=self.br["only"], values=["All currencies", "USD", "LBP", "EUR", "AED"], state="readonly", width=12).pack(side="left", padx=4)
+        tk.Label(bar, text="Amounts in", bg=LIGHT).pack(side="left"); ttk.Combobox(bar, textvariable=self.br["basis"], values=list(dict.fromkeys(["USD",
+                "LBP"] + list(getattr(self, "currency_codes", None) or []))), state="readonly", width=5).pack(side="left", padx=(4, 6))
+        tk.Label(bar, text="Only", bg=LIGHT).pack(side="left"); ttk.Combobox(bar, textvariable=self.br["only"], values=["All currencies", "USD", "LBP", "EUR",
+                "AED"], state="readonly", width=12).pack(side="left", padx=4)
         bar2 = tk.Frame(page, bg=LIGHT); bar2.pack(fill="x", padx=8, pady=2)
         tk.Label(bar2, text="Ageing buckets", bg=LIGHT).pack(side="left"); tk.Entry(bar2, textvariable=self.br["buckets"], width=13).pack(side="left", padx=(4, 8))
         tk.Label(bar2, text="Top", bg=LIGHT).pack(side="left"); tk.Entry(bar2, textvariable=self.br["top"], width=4).pack(side="left", padx=(4, 8))
-        tk.Label(bar2, text="3D: rows", bg=LIGHT).pack(side="left"); ttk.Combobox(bar2, textvariable=self.br["rows"], values=["client", "item", "category"], state="readonly", width=8).pack(side="left", padx=2)
-        tk.Label(bar2, text="columns", bg=LIGHT).pack(side="left"); ttk.Combobox(bar2, textvariable=self.br["columns"], values=["month", "quarter", "client", "item", "category"], state="readonly", width=8).pack(side="left", padx=2)
-        tk.Label(bar2, text="measure", bg=LIGHT).pack(side="left"); ttk.Combobox(bar2, textvariable=self.br["measure"], values=["quantity", "ht", "vat", "ttc"], state="readonly", width=8).pack(side="left", padx=(2, 8))
+        tk.Label(bar2, text="3D: rows", bg=LIGHT).pack(side="left"); ttk.Combobox(bar2, textvariable=self.br["rows"], values=["client", "item", "category"],
+                state="readonly", width=8).pack(side="left", padx=2)
+        tk.Label(bar2, text="columns", bg=LIGHT).pack(side="left"); ttk.Combobox(bar2, textvariable=self.br["columns"], values=["month", "quarter", "client",
+                "item", "category"], state="readonly", width=8).pack(side="left", padx=2)
+        tk.Label(bar2, text="measure", bg=LIGHT).pack(side="left"); ttk.Combobox(bar2, textvariable=self.br["measure"], values=["quantity", "ht", "vat", "ttc"],
+                state="readonly", width=8).pack(side="left", padx=(2, 8))
         tk.Checkbutton(bar2, text="Include Review", variable=self.br_review, bg=LIGHT).pack(side="left", padx=4)
         fsbar = tk.Frame(page, bg=LIGHT); fsbar.pack(fill="x", padx=8, pady=3)
         # 2.9.69: two years, or a period (From / As of above) with the same period one year before
@@ -360,17 +367,20 @@ class V22Mixin:
             text_fields[kind] = {}
             for index, (name, default) in enumerate(definitions.items(), 1):
                 tab=ttk.Frame(inner); inner.add(tab,text=f"{'Note' if kind=='notes' else 'Section'} {index}")
-                ttk.Label(tab,text=name+"   (words in {} are filled in: {company}, {end_text}, {period_text}, {basis} and the Company & Auditor fields, e.g. {legal_form}, {auditor_firm})",font=("Segoe UI",10,"bold"),wraplength=940).pack(anchor="w",padx=8,pady=6)
+                ttk.Label(tab,text=name+"   (words in {} are filled in: {company}, {end_text}, {period_text}, {basis} and the Company & Auditor fields, e.g. {legal_form}, {auditor_firm})",
+                        font=("Segoe UI",10,"bold"),wraplength=940).pack(anchor="w",padx=8,pady=6)
                 text=ScrolledText(tab,wrap="word",font=("Segoe UI",11)); text.pack(fill="both",expand=True,padx=6,pady=6)
                 text_fields[kind][name]=(text,default)
         page=ttk.Frame(notebook); notebook.add(page,text="OCI and Cash Flow")
-        ttk.Label(page,text="Cash flow: calculated automatically (indirect method). To replace it, enter the three reviewed totals. Positive = inflow, negative = outflow.\nOCI is disclosure only; related asset/equity entries must already be posted.",wraplength=900).pack(anchor="w",padx=10,pady=10)
+        ttk.Label(page,text="Cash flow: calculated automatically (indirect method). To replace it, enter the three reviewed totals. Positive = inflow, negative = outflow.\nOCI is disclosure only; related asset/equity entries must already be posted.",
+                wraplength=900).pack(anchor="w",padx=10,pady=10)
         for key,label in SUPPLEMENTS.items():
             row=ttk.Frame(page); row.pack(fill="x",padx=10,pady=8)
             ttk.Label(row,text=label,width=48).pack(side="left")
             variable=tk.StringVar(); entries[key]=variable; ttk.Entry(row,textvariable=variable,width=22).pack(side="left")
         page=ttk.Frame(notebook); notebook.add(page,text="Account mapping")
-        ttk.Label(page,text="Optional overrides: one account or prefix = category per line. Longest prefix wins.\nExample: 4031 = noncurrent_liabilities. Review classifications and maturity before issuing.").pack(anchor="w",padx=10,pady=8)
+        ttk.Label(page,text="Optional overrides: one account or prefix = category per line. Longest prefix wins.\nExample: 4031 = noncurrent_liabilities. Review classifications and maturity before issuing.").pack(anchor="w",
+                padx=10,pady=8)
         mapping=ScrolledText(page,height=10); mapping.pack(fill="both",expand=True,padx=10)
         ttk.Label(page,text="\n".join(f"{k}: {v}" for k,v in GROUPS.items()),wraplength=930).pack(anchor="w",padx=10,pady=8)
         def load():
@@ -397,13 +407,16 @@ class V22Mixin:
                     if not line.strip(): continue
                     code,category=line.split("=",1); overrides[code.strip()]=category.strip()
                 # 2.9.83: a text left as the standard one is saved empty, so it keeps following the standard text and the information
-                cfg={kind:{name:(lambda text,default: "" if text==default.strip() else text)(widget.get("1.0","end-1c").strip(),default) for name,(widget,default) in fields.items()} for kind,fields in text_fields.items()}
+                cfg={kind:{name:(lambda text,default: "" if text==default.strip() else text)(widget.get("1.0","end-1c").strip(),default) for name,(widget,
+                        default) in fields.items()} for kind,fields in text_fields.items()}
                 cfg.update(mapping=overrides,supplements={k:v.get().strip() for k,v in entries.items()},basis=self.br["basis"].get(),
                            info={k:v.get().strip() for k,v in info_vars.items() if v.get().strip()})
                 if logo_state["value"] is not None: cfg["auditor_logo"]=logo_state["value"]  # 2.9.97
                 self.client.save_financial_config(loaded[0],cfg)
                 self.business_result=None
-                messagebox.showinfo("Financial Statements",f"Saved. Information, texts and mapping now apply to every year; cash flow / OCI amounts saved for {loaded[0]}. Journal entries were not changed.",parent=window)
+                messagebox.showinfo("Financial Statements",
+                        f"Saved. Information, texts and mapping now apply to every year; cash flow / OCI amounts saved for {loaded[0]}. Journal entries were not changed.",
+                        parent=window)
             except Exception as exc: messagebox.showerror("Financial Statements",str(exc),parent=window)
         selector.bind("<<ComboboxSelected>>",lambda _e:load())
         ttk.Button(window,text="Save (information and texts apply to every year)",command=save).pack(pady=10)
@@ -463,7 +476,8 @@ class V22Mixin:
                 h = chart_h * max(0, vals[i]) / top; canvas.create_rectangle(x0 + j * bar, bottom - h, x0 + (j + 1) * bar - 1, bottom, fill=color, outline="")
             canvas.create_text(left + i * slot + slot / 2, bottom + 9, text=label, fill="#5f6b76", font=("Segoe UI", 7))
         for j, (name, color, vals) in enumerate(series):
-            x = width - 170 + j * 85; canvas.create_rectangle(x, 11, x + 10, 19, fill=color, outline=""); canvas.create_text(x + 14, 15, anchor="w", text=f"{name} {self._short(sum(vals))}", font=("Segoe UI", 7), fill=NAVY)
+            x = width - 170 + j * 85; canvas.create_rectangle(x, 11, x + 10, 19, fill=color, outline=""); canvas.create_text(x + 14, 15, anchor="w",
+                    text=f"{name} {self._short(sum(vals))}", font=("Segoe UI", 7), fill=NAVY)
 
     def _hbar_chart(self, canvas, title, rows, color):
         canvas.delete("all"); width = max(canvas.winfo_width(), 300); height = max(canvas.winfo_height(), 160)
@@ -479,7 +493,8 @@ class V22Mixin:
     # ------------------------------------------------------------ bank reconciliation
     def build_bank_rec_page(self, page):
         year = getattr(self, "current_fiscal_year", datetime.now().year)
-        self.bk = {k: tk.StringVar(value=v) for k, v in (("account", ""), ("currency", "USD"), ("from", f"01-01-{year}"), ("to", f"31-12-{year}"), ("balance", ""), ("post_account", "6739 - Bank Commissions & Other Charges"))}
+        self.bk = {k: tk.StringVar(value=v) for k, v in (("account", ""), ("currency", "USD"), ("from", f"01-01-{year}"), ("to", f"31-12-{year}"), ("balance",
+                ""), ("post_account", "6739 - Bank Commissions & Other Charges"))}
         bar = tk.Frame(page, bg=LIGHT); bar.pack(fill="x", padx=8, pady=(8, 2))
         tk.Label(bar, text="Bank account", bg=LIGHT, font=("Segoe UI", 9, "bold")).pack(side="left")
         self.bk_account_box = ttk.Combobox(bar, textvariable=self.bk["account"], state="readonly", width=30); self.bk_account_box.pack(side="left", padx=(4, 8))
@@ -495,12 +510,15 @@ class V22Mixin:
         tk.Label(bar2, text="Book to", bg=LIGHT).pack(side="left", padx=(8, 2)); tk.Entry(bar2, textvariable=self.bk["post_account"], width=20).pack(side="left")
         tk.Button(bar2, text="Post Line", command=self.bank_post_line, bg=GOLD, fg=NAVY, border=0, padx=10, pady=5).pack(side="left", padx=4)
         tk.Button(bar, text="Report", command=lambda: self.bank_report("preview"), bg=NAVY, fg="white", border=0, padx=10, pady=5).pack(side="left", padx=2)
-        self.bk_info = tk.Label(page, text="Choose the bank account and press Show. Match each statement line (left) with its book line (right).", bg=LIGHT, fg=NAVY, anchor="w", font=("Segoe UI", 9, "bold"))
+        self.bk_info = tk.Label(page, text="Choose the bank account and press Show. Match each statement line (left) with its book line (right).", bg=LIGHT,
+                fg=NAVY, anchor="w", font=("Segoe UI", 9, "bold"))
         self.bk_info.pack(fill="x", padx=10, pady=(2, 2))
         panes = tk.Frame(page, bg=LIGHT); panes.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.bk_trees = {}
-        for index, (key, title, columns) in enumerate((("statement", "Bank statement", (("date", "Date", 82), ("ref", "Reference", 80), ("desc", "Description", 140), ("amount", "Amount", 95), ("match", "Matched", 75))),  # 2.9.98: both panes fit a laptop
-                                                       ("books", "Books (account movements)", (("date", "Date", 82), ("voucher", "Voucher", 95), ("desc", "Description", 130), ("amount", "Amount", 95), ("match", "Matched", 70))))):
+        for index, (key, title, columns) in enumerate((("statement", "Bank statement", (("date", "Date", 82), ("ref", "Reference", 80), ("desc", "Description",
+                140), ("amount", "Amount", 95), ("match", "Matched", 75))),  # 2.9.98: both panes fit a laptop
+                                                       ("books", "Books (account movements)", (("date", "Date", 82), ("voucher", "Voucher", 95), ("desc",
+                                                               "Description", 130), ("amount", "Amount", 95), ("match", "Matched", 70))))):
             frame = tk.LabelFrame(panes, text=title, bg=LIGHT, padx=4, pady=2); frame.grid(row=0, column=index, sticky="nsew", padx=3)
             tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", selectmode="browse")
             for col, label, width in columns: tree.heading(col, text=label); tree.column(col, width=width, anchor="e" if col == "amount" else "w")
@@ -523,7 +541,8 @@ class V22Mixin:
         self.bank_data = data; books = {b["id"]: b for b in data["books"]}
         tree = self.bk_trees["statement"]; tree.delete(*tree.get_children())
         for s in data["statement"]:
-            book = books.get(s["journal_line_id"]); tree.insert("", "end", iid=str(s["id"]), values=(_dd(s["line_date"]), s.get("reference") or "", s.get("description") or "", f'{float(s["amount"]):,.2f}',
+            book = books.get(s["journal_line_id"]); tree.insert("", "end", iid=str(s["id"]), values=(_dd(s["line_date"]), s.get("reference") or "",
+                    s.get("description") or "", f'{float(s["amount"]):,.2f}',
                 book["entry_number"] if book else ("matched" if s["journal_line_id"] else "")), tags=("matched" if s["journal_line_id"] else "open",))
         tree = self.bk_trees["books"]; tree.delete(*tree.get_children())
         for b in data["books"]:

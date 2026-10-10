@@ -1,7 +1,9 @@
 """Balance des Comptes panel: Trial Balance and Statement of Account (moved out of desktop_brains.py in 2.9.42, unchanged)."""
 from __future__ import annotations
 
-from desktop_brains_common import *  # noqa: F401,F403
+from desktop_brains_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, GOLD, LIGHT, messagebox, MUTED, NAVY, RED, tk, ttk
+)
 from desktop_common import main_currency  # 2.9.71
 from desktop_brains_common import _date_text, _fmt, _num
 import logging
@@ -51,7 +53,8 @@ class BalanceReportsMixin:
 
         options = tk.Frame(box, bg=LIGHT); options.pack(fill="x", pady=(6, 0))
         groups = [("Lines", [("summary", "Summary (Resume)"), ("by_due_date", "By Due Date"), ("reference", "Reference"), ("with_branch", "With Branch")]),
-                  ("Accounts", [("detailed", "Detailed Account (statement)"), ("include_zero", "All accounts"), ("order_by_description", "Order by Description"), ("non_zero_only", "Non-zero Balances only")]),
+                  ("Accounts", [("detailed", "Detailed Account (statement)"), ("include_zero", "All accounts"), ("order_by_description",
+                          "Order by Description"), ("non_zero_only", "Non-zero Balances only")]),
                   ("Grouping", [("chapters", "Chapters (class)"), ("sub_chapters", "Sub-chapters"), ("balance_sheet_only", "Balance Sheet (1-5)"), ("profit_loss_only", "Profit & Loss (6-7)")]),
                   ("Format", [("balance_format", "Format Balance (Dr / Cr balance)"), ("carry_forward", "With Carry Forward (opening)"), ("monthly", "Monthly"),
                               ("without_opening", "Without Opening entries"), ("without_closing", "Without Closing entries")])]
@@ -60,7 +63,8 @@ class BalanceReportsMixin:
             for name, label in items: tk.Checkbutton(frame, text=label, variable=flags[name], bg=LIGHT, anchor="w").pack(anchor="w")
             if title == "Grouping":
                 digits = tk.Frame(frame, bg=LIGHT); digits.pack(anchor="w")
-                tk.Label(digits, text="Summary digits", bg=LIGHT).pack(side="left"); ttk.Combobox(digits, textvariable=v["summary_digits"], values=["1", "2", "3", "4", "5", "6"], width=3, state="readonly").pack(side="left", padx=3)
+                tk.Label(digits, text="Summary digits", bg=LIGHT).pack(side="left"); ttk.Combobox(digits, textvariable=v["summary_digits"], values=["1", "2",
+                        "3", "4", "5", "6"], width=3, state="readonly").pack(side="left", padx=3)
         row3 = tk.Frame(box, bg=LIGHT); row3.pack(fill="x", pady=(4, 0))
         for title, key, choices in (("1st Column", "first_column", (("account", "Account Currency"),)+tuple((code,code) for code in self.currency_codes)),
                                     ("2nd Column", "second_column", (("account", "Account Currency"),)+tuple((code,code) for code in self.currency_codes)+(("none", "None"),))):
@@ -159,13 +163,15 @@ class BalanceReportsMixin:
         if not rows: return messagebox.showinfo("Transaction", f"{entry_number} was not found in this fiscal year")
         first = rows[0]
         window = tk.Toplevel(self); window.title(f"Transaction {entry_number}"); window.configure(bg=LIGHT); window.geometry("860x380"); window.transient(self)
-        tk.Label(window, text=f"{entry_number}   |   {_date_text(first['entry_date'])}   |   {first.get('description') or ''}", bg=LIGHT, fg=NAVY, font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=8)
+        tk.Label(window, text=f"{entry_number}   |   {_date_text(first['entry_date'])}   |   {first.get('description') or ''}", bg=LIGHT, fg=NAVY,
+                font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=8)
         tree = ttk.Treeview(window, columns=("account", "name", "party", "debit", "credit"), show="headings", height=9)
         for key, label, width in (("account", "Account", 110), ("name", "Account Name", 260), ("party", "Customer / Supplier", 200), ("debit", "Debit", 110), ("credit", "Credit", 110)):
             tree.heading(key, text=label); tree.column(key, width=width, anchor="e" if key in ("debit", "credit") else "w")
         for r in rows: tree.insert("", "end", values=(r["account_code"], r.get("account_name") or "", r.get("party_name") or "", f'{float(r["debit"] or 0):,.2f}', f'{float(r["credit"] or 0):,.2f}'))
         tree.pack(fill="both", expand=True, padx=10)
-        tk.Label(window, text=f'Total  Debit {sum(float(r["debit"] or 0) for r in rows):,.2f}   Credit {sum(float(r["credit"] or 0) for r in rows):,.2f}  {first["currency"]}', bg=LIGHT, fg=NAVY).pack(anchor="e", padx=10)
+        tk.Label(window, text=f'Total  Debit {sum(float(r["debit"] or 0) for r in rows):,.2f}   Credit {sum(float(r["credit"] or 0) for r in rows):,.2f}  {first["currency"]}',
+                bg=LIGHT, fg=NAVY).pack(anchor="e", padx=10)
         buttons = tk.Frame(window, bg=LIGHT); buttons.pack(pady=8)
         def edit(_event=None):
             window.destroy(); self.open_entry_source(first, return_state)

@@ -205,7 +205,8 @@ def build_cnss_leave(data=None, path=None):
     f.label(r, 13, 15, "التوقيــــع :", 9, True); f.field(r, 16, f.N); f.heights((31, 32), 22)
     r = office_boxes(f, 34)
     f.hline(r)
-    f.label(r, 1, f.N, "(١) تملأ المؤسسة هذه المطبوعة، وترسلها الى الصندوق الوطني للضمان الإجتماعي، كلما ترك احد الاجراء المرتبطين بها عمله فيها، مهما كان السبب. وذلك ضمن مهلة (١٥) يوماً من تاريخ الترك (المادة ٨٠ فقرة \"٤\")", 7, r2=r + 1)
+    f.label(r, 1, f.N, "(١) تملأ المؤسسة هذه المطبوعة، وترسلها الى الصندوق الوطني للضمان الإجتماعي، كلما ترك احد الاجراء المرتبطين بها عمله فيها، مهما كان السبب. وذلك ضمن مهلة (١٥) يوماً من تاريخ الترك (المادة ٨٠ فقرة \"٤\")",
+            7, r2=r + 1)
     f.label(r + 2, 1, f.N, "* تنبيـــــه : تحت طائلة اهمال المطبوعة: يجب دائماً ذكر رقم المؤسسة ورقم الاجير أو تاريخ ولادته بخط واضح ومقروء.", 7)
     LAST = r + 2; f.frame(1, LAST)
     return f.finish(path, LAST)
@@ -242,7 +243,8 @@ def build_cnss_41a(data=None, path=None):
     f.heights(range(29, 34), 20)
     r = office_boxes(f, 35)
     f.hline(r)
-    f.label(r, 1, f.N, "* تملأ هذه المطبوعة وترسل الى الصندوق الوطني للضمان الإجتماعي كلما استخدمت المؤسسة اجيراً جديداً سبق ان جرى تسجيله في الصندوق وذلك ضمن مهلة ١٥ يوماً من تاريخ الاستخدام", 7, r2=r + 1)
+    f.label(r, 1, f.N, "* تملأ هذه المطبوعة وترسل الى الصندوق الوطني للضمان الإجتماعي كلما استخدمت المؤسسة اجيراً جديداً سبق ان جرى تسجيله في الصندوق وذلك ضمن مهلة ١٥ يوماً من تاريخ الاستخدام",
+            7, r2=r + 1)
     f.label(r + 2, 1, f.N, "* تنبيه : يهمل كل اعلام غير مرفق باخراج قيد فردي للعازب وعائلي للمتأهل، وغير مكتوب بخط واضح ومقروء، واذا كانت الكلمات ناقصة.", 7)
     f.label(r + 3, 19, f.N, "CNSS 41A", 9, True)
     LAST = r + 3; f.frame(1, LAST)
@@ -267,7 +269,8 @@ def build_cnss_2aa(data=None, path=None):
     r = 13; num(r, "٣"); f.label(r, 2, 3, "الجنس:", 9); c = f.option(r, 4, "ذكر", "١", 1, key="sex", match="male"); f.option(r, c + 1, "انثى", "٢", 1, key="sex", match="female")
     r = 14; num(r, "٤"); f.label(r, 2, 3, "اسم الاجير:", 9); f.field(r, 4, 9, key="first_name"); f.label(r, 10, 11, "الشهرة", 9); f.field(r, 12, P, key="last_name")
     r = 15; num(r, "٥"); f.label(r, 2, 3, "اسم الأب:", 9); f.field(r, 4, 9, key="father_name"); f.label(r, 10, 12, "اسم الام وشهرتها", 9); f.field(r, 13, P, key="mother_name")
-    r = 16; num(r, "٦"); f.label(r, 2, 5, "تاريخ ومحل الولادة:", 9); f.field(r, 6, 9, key="birth"); f.label(r, 10, 11, "القضاء", 9); f.field(r, 12, 13); f.label(r, 14, 15, "رقم السجل:", 9); f.field(r, 16, P)
+    r = 16; num(r, "٦"); f.label(r, 2, 5, "تاريخ ومحل الولادة:", 9); f.field(r, 6, 9, key="birth"); f.label(r, 10, 11, "القضاء", 9); f.field(r, 12,
+            13); f.label(r, 14, 15, "رقم السجل:", 9); f.field(r, 16, P)
     r = 17; num(r, "٧"); f.label(r, 2, 3, "الوضع العائلي:", 9); c = 4
     for text, n, match in (("أعزب", "١", "single"), ("متأهل", "٢", "married"), ("ارمل", "٣", "widowed"), ("مطلق", "٤", "divorced"), ("هاجر", "٥", "separated")):
         c = f.option(r, c, text, n, 1, key="marital_status", match=match)
@@ -277,7 +280,8 @@ def build_cnss_2aa(data=None, path=None):
     r = 21; f.label(r, 2, 4, "بناية وطابق", 9); f.field(r, 5, 11); f.label(r, 12, 13, "هاتف", 9); f.field(r, 14, P, key="contact_number")
     r = 22; num(r, "١٠"); f.label(r, 2, 4, "تاريخ دخول العمل", 9); f.field(r, 5, 9, key="hire_date"); f.label(r, 10, 13, "عدد ساعات عمله في الشهر", 9); f.field(r, 14, P)
     r = 23; f.label(r, 2, 3, "دوام العمل:", 9); c = f.option(r, 4, "كامل", "١", 1); f.option(r, c + 1, "جزئي", "٢", 1)
-    r = 24; num(r, "١١"); f.label(r, 2, 4, "عمل الاجير الحالي", 9); f.field(r, 5, 9, key="job_title"); f.boxes(r, 10, 3); f.label(r, 13, 14, "الراتب الحالي:", 9); f.field(r, 15, 16, key="salary_lbp"); f.label(r, P, P, "ل.ل.", 9)
+    r = 24; num(r, "١١"); f.label(r, 2, 4, "عمل الاجير الحالي", 9); f.field(r, 5, 9, key="job_title"); f.boxes(r, 10, 3); f.label(r, 13, 14, "الراتب الحالي:",
+            9); f.field(r, 15, 16, key="salary_lbp"); f.label(r, P, P, "ل.ل.", 9)
     r = 25; num(r, "١٢"); f.label(r, 2, 5, "الاجر بتاريخ دخول العمل:", 9); f.field(r, 6, 10); f.label(r, 11, 11, "ل.ل.", 9)
     r = 26; f.label(r, 2, 3, "طريقة دفع الاجر:", 9); c = 4
     for text, n in (("شهري", "١"), ("اسبوعي", "٢"), ("يومي", "٣"), ("لقاء عمولة", "٤"), ("على الانتاج", "٥")):
@@ -300,13 +304,15 @@ def build_cnss_2aa(data=None, path=None):
     f.label(24, P + 2, P + 3, "بتاريخ:", 9); f.field(24, P + 4, N)
     f.label(25, P + 2, N, "اسم المستخدم وتوقيعه", 9); f.field(26, P + 2, N, 27, box=True)
     f.hline(31, style="medium")
-    r = 32; f.label(r, 1, 9, "اوافق على صحة المعلومات المدرجة أعلاه: اسم الاجير:", 9); f.field(r, 10, 14, key="full_name"); f.label(r, 15, 16, "التاريخ", 9); f.field(r, 17, 19); f.label(r, 20, 21, "التوقيع", 9); f.field(r, 22, N)
+    r = 32; f.label(r, 1, 9, "اوافق على صحة المعلومات المدرجة أعلاه: اسم الاجير:", 9); f.field(r, 10, 14, key="full_name"); f.label(r, 15, 16, "التاريخ",
+            9); f.field(r, 17, 19); f.label(r, 20, 21, "التوقيع", 9); f.field(r, 22, N)
     f.hline(33, style="thin")
     r = 34; f.label(r, 12, 15, "ختم المؤسسة", 9, align=center); f.label(r, 17, N, "اسم وتوقيع الشخص المسؤول", 9, align=center)
     f.field(35, 12, 15, 38, box=True); f.field(35, 17, N, 38, box=True)
     r = 39; f.field(r, 14, 18); f.label(r, 19, 19, "في", 9); f.field(r, 20, N)
     f.hline(41)
-    f.label(41, 1, N, "١ – ملاحظة: كل صاحب عمل يغفل التصريح عن اجرائه ضمن مهلة (١٥) يوماً من تاريخ الاستخدام أو يتقدم بتصاريح غير صحيحة يتعرض لعقوبات الغرامة والحبس وذلك عملاً باحكام المادتين ٨٠ و ٨١ من قانون الضمان الاجتماعي.", 7, r2=42)
+    f.label(41, 1, N, "١ – ملاحظة: كل صاحب عمل يغفل التصريح عن اجرائه ضمن مهلة (١٥) يوماً من تاريخ الاستخدام أو يتقدم بتصاريح غير صحيحة يتعرض لعقوبات الغرامة والحبس وذلك عملاً باحكام المادتين ٨٠ و ٨١ من قانون الضمان الاجتماعي.",
+            7, r2=42)
     f.label(43, 1, N, "٢ – يجب أن تطابق المعلومات الواردة أعلاه مع اخراج القيد المرفق (افرادي للأعزب – عائلي للمتأهل).", 7)
     f.label(44, 1, N - 4, "٣ – تنبيه: يهمل كل طلب غير مكتوب بخط واضح ومقروء ومعلومات ناقصة.", 7); f.label(44, N - 3, N, "CNSS-2 AA", 8, True)
     f.page(44)
@@ -360,7 +366,8 @@ def build_cnss_2aa(data=None, path=None):
     grid(children, children + 10)
     r = children + 12
     f.label(r, 1, N, "ملاحظة: ترفق بهذا التصريح شهادة طبية تثبت حالة العجز، وإفادة مدرسية للطلاب الذين يتراوح عمرهم بين ١٦ و ٢٥ سنة", 8, r2=r)
-    f.label(r + 1, 1, N, "حـــالات خـــاصـــة: – اذا كان هذا التصريح مقدم من قبل شخص غير والد او والدة الاولاد المصرح عنهم عليه أن يبين صفته بالنسبة للأولاد (التبني، الوصاية..) مع تقديم الأوراق الثبوتية", 8, r2=r + 2); f.field(r + 3, 1, N)
+    f.label(r + 1, 1, N, "حـــالات خـــاصـــة: – اذا كان هذا التصريح مقدم من قبل شخص غير والد او والدة الاولاد المصرح عنهم عليه أن يبين صفته بالنسبة للأولاد (التبني، الوصاية..) مع تقديم الأوراق الثبوتية",
+            8, r2=r + 2); f.field(r + 3, 1, N)
     r += 4
     f.label(r, 1, N, "– اذا كان هذا التصريح مقدم من قبل أجيرة عليها أن تبين اذا كانت:", 8)
     c = 1; f.label(r + 1, 1, 6, "أ – (ضع علامة X في المربع المناسب)", 8)
@@ -389,13 +396,15 @@ def build_mof_r3(data=None, path=None):
     r = 7; f.label(r, 1, 5, "رقم تسجيل الشركة/المؤسسة", 10, True); f.boxes(r, 6, 10, key="company_mof"); f.label(r + 1, 1, 5, "(لدى وزارة المالية)", 8)
     f.hline(9)
     r = 10; f.label(r, 1, 5, "تعـــريف المستخدم / الأجير", 10, True, True); f.label(r, 6, 11, "هل لديه رقم مالي شخصي؟*", 9)
-    c = f.checkbox(r, 12, "نعم", 1, key="has_mof", match="yes"); c = f.checkbox(r, c, "كلا", 1, key="has_mof", match="no"); f.label(r, c, c + 3, "في حال نعم، أذكر الرقم", 8); f.boxes(r, c + 4, N - c - 3, key="mof_number")
+    c = f.checkbox(r, 12, "نعم", 1, key="has_mof", match="yes"); c = f.checkbox(r, c, "كلا", 1, key="has_mof", match="no"); f.label(r, c, c + 3,
+            "في حال نعم، أذكر الرقم", 8); f.boxes(r, c + 4, N - c - 3, key="mof_number")
     f.label(r + 1, 6, 11, "(لدى وزارة المالية)", 8)
     def item(r, c1, text, key, f2, lw=3):
         f.label(r, c1, c1 + lw - 1, text, 9); f.field(r, c1 + lw, f2, key=key or None)
     r = 12; item(r, 1, "١. الإســـم", "first_name", 11); item(r, 13, "٢. الشـــهرة", "last_name", N)
     r = 13; item(r, 1, "٣. إسم الأب", "father_name", 11); item(r, 13, "٤. إسم الأم وشهرتها قبل الزواج", "mother_name", N, 5)
-    r = 14; f.label(r, 1, 3, "٥. الجنـس*", 9); c = f.checkbox(r, 4, "ذكر", 1, key="sex", match="male"); f.checkbox(r, c, "أنثى", 1, key="sex", match="female"); item(r, 13, "٦. الجنسية", "nationality", N)
+    r = 14; f.label(r, 1, 3, "٥. الجنـس*", 9); c = f.checkbox(r, 4, "ذكر", 1, key="sex", match="male"); f.checkbox(r, c, "أنثى", 1, key="sex",
+            match="female"); item(r, 13, "٦. الجنسية", "nationality", N)
     r = 15; item(r, 1, "٧. محل الــولادة", "birth_place", 11); f.label(r, 13, 15, "٨. تاريخ الولادة", 9); f.date(r, 16, key="birth_date")
     r = 17; item(r, 1, "٩. رقم السجل", None, 6); item(r, 7, "١٠. مكان السجل", None, 11); item(r, 13, "١١. رقم بطاقة الهوية", "national_id", N, 4)
     r = 18; f.label(r, 1, 3, "١٢. الوضع العائلي*", 9); c = 4
@@ -412,7 +421,8 @@ def build_mof_r3(data=None, path=None):
     r = 26; item(r, 1, "٥. الجنسية", None, 11); item(r, 13, "٦. محل الــولادة", None, N)
     r = 27; f.label(r, 1, 3, "٧. تاريخ الولادة", 9); f.date(r, 4); item(r, 13, "٨. رقم بطاقة الهوية", None, N, 4)
     r = 29; f.label(r, 1, 10, "٩. عدد الأشخاص الذين يستفيدون من التنزيل العائلي", 9); f.field(r, 11, 13)
-    r = 30; f.label(r, 1, 5, "١٠. هل الزوج/الزوجة يعمل*؟", 9, True); c = f.checkbox(r, 6, "نعم", 1, key="spouse_works", match="yes"); c = f.checkbox(r, c, "لا", 1, key="spouse_works", match="no"); f.label(r, c, c + 3, "في حال نعم أذكر:", 9)
+    r = 30; f.label(r, 1, 5, "١٠. هل الزوج/الزوجة يعمل*؟", 9, True); c = f.checkbox(r, 6, "نعم", 1, key="spouse_works", match="yes"); c = f.checkbox(r, c, "لا",
+            1, key="spouse_works", match="no"); f.label(r, c, c + 3, "في حال نعم أذكر:", 9)
     r = 31; f.label(r, 3, 6, "رقم التسجيل الشخصي", 9); f.boxes(r, 7, 10); f.label(r + 1, 3, 6, "(لدى وزارة المالية)", 8)
     r = 33; f.label(r, 1, 11, "أ – في القطاع الخاص أو في مؤسسة عامة/مصلحة مستقلة", 9, True, True); f.label(r, 15, 17, "رقم التسجيل", 9); f.boxes(r, 18, 7)
     r = 34; f.label(r, 2, 9, "إسم الشركة/المؤسسة العامة/المصلحة المستقلة", 8); f.field(r, 10, 17)

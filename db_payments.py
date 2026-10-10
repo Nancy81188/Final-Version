@@ -3,7 +3,10 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from PaymentsStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    closing, datetime, Decimal, DEFAULT_LEBANESE_ACCOUNTS, display_date, iso_date, json, Path, sqlite3, tempfile,
+    timedelta, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -43,13 +46,15 @@ class PaymentsStore:
         try: due_days=int(str(item.get("due_days") if item.get("due_days") not in (None, "") else 0).strip())
         except ValueError as exc: raise ValueError("Due days must be a whole number") from exc
         if not 0 <= due_days <= 3650: raise ValueError("Due days must be between 0 and 3650")
-        if requested_account and (not requested_account.isdigit() or len(requested_account) not in (4,9)): raise ValueError("Enter the first 4 digits for automatic numbering, or the full 9-digit account number")
+        if requested_account and (not requested_account.isdigit() or len(requested_account) not in (4,
+                9)): raise ValueError("Enter the first 4 digits for automatic numbering, or the full 9-digit account number")
         if not name or kind not in ("customer","supplier","both") or currency not in self.currency_codes():
             raise ValueError("Enter a valid name, type, and currency")
         with self.connect() as db:
             if requested_account and len(requested_account)==4:
                 prefix=requested_account
-                last=db.execute("SELECT account_number FROM parties WHERE account_number LIKE ? AND length(account_number)=9 ORDER BY CAST(account_number AS INTEGER) DESC LIMIT 1",(prefix+"%",)).fetchone()
+                last=db.execute("SELECT account_number FROM parties WHERE account_number LIKE ? AND length(account_number)=9 ORDER BY CAST(account_number AS INTEGER) DESC LIMIT 1",
+                        (prefix+"%",)).fetchone()
                 next_suffix=(int(last["account_number"][4:])+1) if last else 1
                 if next_suffix>99999: raise ValueError(f"No account numbers remain under prefix {prefix}")
                 requested_account=f"{prefix}{next_suffix:05d}"
@@ -58,8 +63,10 @@ class PaymentsStore:
                 if not db.execute("SELECT 1 FROM parties WHERE id=?",(int(party_id),)).fetchone(): raise KeyError(party_id)
                 duplicate=db.execute("SELECT 1 FROM parties WHERE kind=? AND name=? AND id<>?",(kind,name,int(party_id))).fetchone()
                 if duplicate: raise ValueError("A customer/supplier with this name and type already exists")
-                if requested_account and db.execute("SELECT 1 FROM parties WHERE account_number=? AND id<>?",(requested_account,int(party_id))).fetchone(): raise ValueError("Account number already exists")
-                db.execute("UPDATE parties SET kind=?,name=?,tax_number=?,mof_number=?,address=?,contact_number=?,currency=?,account_number=COALESCE(?,account_number),account_category=?,due_days=? WHERE id=?",(kind,name,tax_number,mof_number,address,contact_number,currency,requested_account,category,due_days,int(party_id)))
+                if requested_account and db.execute("SELECT 1 FROM parties WHERE account_number=? AND id<>?",(requested_account,
+                        int(party_id))).fetchone(): raise ValueError("Account number already exists")
+                db.execute("UPDATE parties SET kind=?,name=?,tax_number=?,mof_number=?,address=?,contact_number=?,currency=?,account_number=COALESCE(?,account_number),account_category=?,due_days=? WHERE id=?",
+                        (kind,name,tax_number,mof_number,address,contact_number,currency,requested_account,category,due_days,int(party_id)))
                 row=db.execute("SELECT * FROM parties WHERE id=?",(int(party_id),)).fetchone()
             else:
                 db.execute("""INSERT INTO parties(kind,name,tax_number,mof_number,address,contact_number,currency,due_days) VALUES(?,?,?,?,?,?,?,?)
@@ -134,7 +141,9 @@ class PaymentsStore:
             db.execute("UPDATE payments SET payment_number=?,payment_method=?,department_id=?,project_id=?,exchange_gain_account=?,exchange_loss_account=? WHERE id=?",
                 (number,str(item.get("payment_method") or "Cash").strip(),department_id,project_id,gain_account,loss_account,payment_id))
             entry=db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,created_by,created_at)
-                VALUES(?,?,?,?,?,?,?,?)""",(number,date,str(item.get("description") or (("Receipt from " if kind=="customer_receipt" else "Payment to ")+party["name"])).strip(),"payment",payment_id,currency,user_id,utcnow()))
+                VALUES(?,?,?,?,?,?,?,?)""",(number,date,
+                        str(item.get("description") or (("Receipt from " if kind=="customer_receipt" else "Payment to ")+party["name"])).strip(),"payment",
+                        payment_id,currency,user_id,utcnow()))
             party_settlement=amount+exchange_diff
             if kind=="customer_receipt": lines=[(cash_account,amount-commission,Decimal("0")),(party_account,Decimal("0"),party_settlement)]
             else: lines=[(party_account,party_settlement,Decimal("0")),(cash_account,Decimal("0"),amount+commission)]
@@ -164,7 +173,8 @@ class PaymentsStore:
         date=str(item.get("expense_date") or "").strip(); self._assert_period_open(date); self._assert_vat_open(date)
         description=str(item.get("description") or "").strip()
         if not description: raise ValueError("Expense description is required")
-        legacy=Decimal(str(item.get("subtotal") or 0)); with_vat=Decimal(str(item.get("with_vat_subtotal") if item.get("with_vat_subtotal") not in (None,"") else legacy)); without_vat=Decimal(str(item.get("without_vat_subtotal") or 0)); subtotal=with_vat+without_vat
+        legacy=Decimal(str(item.get("subtotal") or 0)); with_vat=Decimal(str(item.get("with_vat_subtotal") if item.get("with_vat_subtotal") not in (None,
+                "") else legacy)); without_vat=Decimal(str(item.get("without_vat_subtotal") or 0)); subtotal=with_vat+without_vat
         vat=Decimal(str(item.get("vat") or 0)); total=subtotal+vat
         if min(with_vat,without_vat,vat)<0 or total<=0: raise ValueError("Expense amounts must be valid")
         defaults=self.default_accounts()  # 2.9.81
@@ -175,10 +185,13 @@ class PaymentsStore:
         expense_side=self._side(item.get("expense_side"),"D"); expense_without_vat_side=self._side(item.get("expense_without_vat_side"),"D")
         vat_side=self._side(item.get("vat_side"),"D"); payment_side=self._side(item.get("payment_side"),"C")
         with self.connect() as db:
-            for code,name,typ in ((expense_account,"Expense with VAT","expense"),(expense_without_vat_account,"Expense without VAT","expense"),(vat_account,"VAT Receivable","asset"),(payment_account,"Cash / Bank Account","asset")):
+            for code,name,typ in ((expense_account,"Expense with VAT","expense"),(expense_without_vat_account,"Expense without VAT","expense"),(vat_account,
+                    "VAT Receivable","asset"),(payment_account,"Cash / Bank Account","asset")):
                 db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(code,name,typ))
             result=db.execute("""INSERT INTO expenses(expense_date,description,category,currency,subtotal,with_vat_subtotal,without_vat_subtotal,vat,total,expense_account,expense_without_vat_account,vat_account,payment_account,expense_side,expense_without_vat_side,vat_side,payment_side,reference,created_by,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(date,description,str(item.get("category") or "").strip(),currency,str(subtotal),str(with_vat),str(without_vat),str(vat),str(total),expense_account,expense_without_vat_account,vat_account,payment_account,expense_side,expense_without_vat_side,vat_side,payment_side,str(item.get("reference") or "").strip(),user_id,utcnow()))
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(date,description,str(item.get("category") or "").strip(),currency,str(subtotal),
+                        str(with_vat),str(without_vat),str(vat),str(total),expense_account,expense_without_vat_account,vat_account,payment_account,expense_side,
+                        expense_without_vat_side,vat_side,payment_side,str(item.get("reference") or "").strip(),user_id,utcnow()))
             expense_id=result.lastrowid
             number=str(item.get("expense_number") or "").strip() or self._next_number(db,"expenses","expense_number","EXP",date)
             db.execute("UPDATE expenses SET expense_number=? WHERE id=?",(number,expense_id))
@@ -186,7 +199,8 @@ class PaymentsStore:
                 VALUES(?,?,?,?,?,?,?,?)""",(number if not db.execute("SELECT 1 FROM journal_entries WHERE entry_number=?",(number,)).fetchone() else f"EXP-{expense_id}",date,
                 description+(f" - {str(item.get('reference')).strip()}" if str(item.get("reference") or "").strip() and str(item.get("reference")).strip() not in description else ""),  # 2.9.87: the supplier's invoice number in the entry
                 "expense",expense_id,currency,user_id,utcnow()))
-            lines=[self._line_for_side(expense_account,with_vat,expense_side),self._line_for_side(expense_without_vat_account,without_vat,expense_without_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(payment_account,total,payment_side)]
+            lines=[self._line_for_side(expense_account,with_vat,expense_side),self._line_for_side(expense_without_vat_account,without_vat,
+                    expense_without_vat_side),self._line_for_side(vat_account,vat,vat_side),self._line_for_side(payment_account,total,payment_side)]
             difference=sum(Decimal(str(line[1]))-Decimal(str(line[2])) for line in lines)
             if difference>0: lines.append((DEFAULT_LEBANESE_ACCOUNTS["import_variance"],Decimal("0"),difference))
             elif difference<0: lines.append((DEFAULT_LEBANESE_ACCOUNTS["import_variance"],-difference,Decimal("0")))

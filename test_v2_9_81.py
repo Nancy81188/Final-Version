@@ -48,7 +48,8 @@ class SetupTest(_Book):
         self.db.add_payment({"kind": "customer_receipt", "party_id": party["id"], "payment_date": "06-03-2025", "currency": "USD", "amount": "50", "cash_account": "512", "bank_commission": "1"}, 1)
         self.assertIn("6739", {r["account_code"] for r in self.db.journal() if r["source_type"] == "payment"})
         # the VAT settlement proposes the chosen payable account
-        self.db.import_invoice({"invoice_number": "S-1", "invoice_date": "15-02-2025", "party_name": "C", "kind": "sale", "currency": "LBP", "subtotal": 100000000, "vat": 11000000, "total": 111000000}, 1)
+        self.db.import_invoice({"invoice_number": "S-1", "invoice_date": "15-02-2025", "party_name": "C", "kind": "sale", "currency": "LBP",
+                "subtotal": 100000000, "vat": 11000000, "total": 111000000}, 1)
         plan = vat_return.settlement_lines(self.db, vat_return.build_vat_return(self.db, 2025, 1))
         self.assertIn("4425.1", {line["account_code"] for line in plan["lines"]})
         # and back to the program defaults

@@ -2,16 +2,23 @@
 from __future__ import annotations
 import logging
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, filedialog, formatted_user_date, GOLD, json, LIGHT, messagebox, NAVY, os, parse_user_date,
+    safe_display_date, tk, ttk
+)
 
 
 class PayrollMixin:
     def build_payroll(self):
         nested=ttk.Notebook(self.payroll_tab); nested.pack(fill="both",expand=True,padx=8,pady=8); self.payroll_notebook=nested
-        employees=tk.Frame(nested,bg=LIGHT); run=tk.Frame(nested,bg=LIGHT); settings_outer,settings_page=self.scrollable_page(nested); reports_page=tk.Frame(nested,bg=LIGHT); forms_page=tk.Frame(nested,bg=LIGHT)
+        employees=tk.Frame(nested,bg=LIGHT); run=tk.Frame(nested,
+                bg=LIGHT); settings_outer,settings_page=self.scrollable_page(nested); reports_page=tk.Frame(nested,bg=LIGHT); forms_page=tk.Frame(nested,
+                bg=LIGHT)
         self.payroll_employees_page=employees
         self.cnss_forms_page=forms_page
-        nested.add(employees,text="Employees"); nested.add(run,text="Payroll Entry"); nested.add(reports_page,text="Payroll Reports & Worksheets (R5 / R6 / R10)"); nested.add(forms_page,text="CNSS Forms"); nested.add(settings_outer,text="Tax & NSSF Settings")
+        nested.add(employees,text="Employees"); nested.add(run,text="Payroll Entry"); nested.add(reports_page,
+                text="Payroll Reports & Worksheets (R5 / R6 / R10)"); nested.add(forms_page,text="CNSS Forms"); nested.add(settings_outer,
+                text="Tax & NSSF Settings")
         extras_page=tk.Frame(nested,bg=LIGHT); nested.insert(2,extras_page,text="End of Service & Leave"); self.build_payroll_extras_page(extras_page)  # 2.9.82
         employee_actions=tk.Frame(employees,bg=LIGHT); employee_actions.pack(fill="x",padx=10,pady=8)
         self.action_button(employee_actions,"New Employee",lambda:self.employee_dialog()).pack(side="left",padx=4)
@@ -38,7 +45,8 @@ class PayrollMixin:
         self.payroll_employee_combo=ttk.Combobox(form,textvariable=self.payroll_employee,state="readonly",width=26); self.payroll_employee_combo.grid(row=0,column=1,padx=6,pady=5,sticky="w")
         self.payroll_employee_combo.bind("<<ComboboxSelected>>",lambda _event:self.payroll_employee_chosen())
         tk.Label(form,text="Period Date",bg=LIGHT).grid(row=0,column=2,padx=6,pady=5,sticky="w"); self.date_entry(form,self.payroll_period,14).grid(row=0,column=3,padx=6,pady=5,sticky="w")
-        labels=(("salary","Salary"),("transport","Transport"),("overtime","Overtime"),("commission","Commission"),("retro_salary","Retroactive Salary"),("schooling","Schooling"),("bonus","Bonus"),("thirteenth_month","13th Month"),("director_remuneration","Director Remuneration (not taxable)"))
+        labels=(("salary","Salary"),("transport","Transport"),("overtime","Overtime"),("commission","Commission"),("retro_salary","Retroactive Salary"),
+                ("schooling","Schooling"),("bonus","Bonus"),("thirteenth_month","13th Month"),("director_remuneration","Director Remuneration (not taxable)"))
         for index,(key,label) in enumerate(labels):
             row=1+index//3; column=(index%3)*2
             tk.Label(form,text=label,bg=LIGHT).grid(row=row,column=column,padx=6,pady=4,sticky="w")
@@ -46,7 +54,8 @@ class PayrollMixin:
         tk.Label(form,text="Retro From",bg=LIGHT).grid(row=4,column=0,padx=6,pady=4,sticky="w"); self.date_entry(form,self.payroll_retro_from,14).grid(row=4,column=1,padx=6,pady=4,sticky="w")
         tk.Label(form,text="Retro To",bg=LIGHT).grid(row=4,column=2,padx=6,pady=4,sticky="w"); self.date_entry(form,self.payroll_retro_to,14).grid(row=4,column=3,padx=6,pady=4,sticky="w")
         self.payroll_transport_days=tk.StringVar()
-        tk.Label(form,text="Transport Days",bg=LIGHT).grid(row=4,column=4,padx=6,pady=4,sticky="w"); days_entry=tk.Entry(form,textvariable=self.payroll_transport_days,width=6); days_entry.grid(row=4,column=5,padx=6,pady=4,sticky="w")
+        tk.Label(form,text="Transport Days",bg=LIGHT).grid(row=4,column=4,padx=6,pady=4,sticky="w"); days_entry=tk.Entry(form,
+                textvariable=self.payroll_transport_days,width=6); days_entry.grid(row=4,column=5,padx=6,pady=4,sticky="w")
         # Typing the transport days fills Transport at once: days x the daily transport of the period (Tax & NSSF Settings).
         days_entry.bind("<KeyRelease>",lambda _event:self.payroll_transport_from_days(),add="+"); days_entry.bind("<FocusOut>",lambda _event:self.payroll_transport_from_days(),add="+")
         tk.Label(form,text="Family Allocation",bg=LIGHT).grid(row=4,column=6,padx=6,pady=4,sticky="w")
@@ -58,7 +67,8 @@ class PayrollMixin:
         period_widgets=[w for w in form.grid_slaves(row=0,column=3)]
         for widget in period_widgets: widget.bind("<FocusOut>",lambda _event:self.payroll_family_auto(),add="+")
         self.payroll_breakdown=tk.Label(form,text="",bg=LIGHT,fg="#5f6b76",anchor="w",justify="left",wraplength=1060); self.payroll_breakdown.grid(row=6,column=0,columnspan=8,padx=6,sticky="w")
-        self.payroll_notes=tk.Label(form,text="",bg=LIGHT,fg="#8B1E1E",anchor="w",justify="left",font=("Segoe UI",9,"bold"),wraplength=1060); self.payroll_notes.grid(row=7,column=0,columnspan=8,padx=6,sticky="w")
+        self.payroll_notes=tk.Label(form,text="",bg=LIGHT,fg="#8B1E1E",anchor="w",justify="left",font=("Segoe UI",9,"bold"),
+                wraplength=1060); self.payroll_notes.grid(row=7,column=0,columnspan=8,padx=6,sticky="w")
         self.payroll_result=tk.StringVar(value="Gross: 0 | Tax: 0 | Employee NSSF: 0 | Net: 0")
         tk.Label(form,textvariable=self.payroll_result,bg=LIGHT,fg=NAVY,font=("Segoe UI",10,"bold"),wraplength=1000,justify="left").grid(row=5,column=0,columnspan=8,padx=6,pady=6,sticky="w")
         for variable in (self.payroll_employee,self.payroll_period,*self.payroll_vars.values(),self.payroll_transport_days):
@@ -69,16 +79,28 @@ class PayrollMixin:
         tk.Button(buttons,text="Save Payroll",command=self.save_payroll,bg=GOLD,fg=NAVY,border=0,padx=15,pady=7,font=("Segoe UI",9,"bold")).pack(side="left",padx=3)
         payroll_actions=tk.Frame(run,bg=LIGHT); payroll_actions.pack(fill="x",padx=10)
         self.action_button(payroll_actions,"Post Selected to Accounting",self.post_selected_payroll).pack(side="left",padx=4,pady=3)
-        tk.Button(payroll_actions,text="Monthly Payroll Sheet | الحركة الشهرية",command=self.open_payroll_sheet,bg=GOLD,fg=NAVY,border=0,padx=12,pady=6,font=("Segoe UI",9,"bold")).pack(side="left",padx=4,pady=3)
+        tk.Button(payroll_actions,text="Monthly Payroll Sheet | الحركة الشهرية",command=self.open_payroll_sheet,bg=GOLD,fg=NAVY,border=0,padx=12,pady=6,
+                font=("Segoe UI",9,"bold")).pack(side="left",padx=4,pady=3)
         self.payroll_tree=self.table(run,[("number","Payroll No.",135),("period","Period",95),("employee","Employee",190),("currency","Currency",65),
             ("gross","Gross",105),("tax","Tax",95),("nssf","Employee NSSF",110),("net","Net Salary",110),("status","Status",75)])
-        self.payroll_setting_vars={key:tk.StringVar() for key in ("date_from","date_to","single_allowance","spouse_allowance","child_allowance","employee_nssf_rate","medical_rate","end_service_rate","family_rate","employee_ceiling","medical_ceiling","family_ceiling","end_service_ceiling","salary_account","salary_payable_account","payroll_tax_account","nssf_payable_account",
-            "max_children_deduction","transport_daily_exempt","default_transport_days","schooling_annual_exempt","schooling_max_children","schooling_public_child","schooling_public_cap","schooling_private_child","schooling_private_cap","tax_rounding","minimum_wage","family_allowance_spouse","family_allowance_child","family_allowance_cap","family_allowance_max_children")}
-        setting_labels=(("date_from","Date From"),("date_to","Date To"),("single_allowance","Single Allowance"),("spouse_allowance","Spouse Allowance"),("child_allowance","Child Allowance"),("employee_nssf_rate","Employee NSSF Rate"),("medical_rate","Employer Medical Rate"),("end_service_rate","End Service Rate"),("family_rate","Family Rate"),("employee_ceiling","Employee NSSF Ceiling"),("medical_ceiling","Medical Ceiling"),("family_ceiling","Family Ceiling"),("end_service_ceiling","End Service Ceiling"),("salary_account","Salary Expense Account"),("salary_payable_account","Salary Payable Account"),("payroll_tax_account","Payroll Tax Account"),("nssf_payable_account","NSSF Payable Account"),
-            ("max_children_deduction","Tax Deduction Children"),("transport_daily_exempt","Transport Exempt / Day"),("default_transport_days","Default Transport Days"),("schooling_annual_exempt","Schooling Tax Exempt / Year"),("schooling_max_children","Schooling Children"),
+        self.payroll_setting_vars={key:tk.StringVar() for key in ("date_from","date_to","single_allowance","spouse_allowance","child_allowance",
+                "employee_nssf_rate","medical_rate","end_service_rate","family_rate","employee_ceiling","medical_ceiling","family_ceiling",
+                "end_service_ceiling","salary_account","salary_payable_account","payroll_tax_account","nssf_payable_account",
+            "max_children_deduction","transport_daily_exempt","default_transport_days","schooling_annual_exempt","schooling_max_children",
+                    "schooling_public_child","schooling_public_cap","schooling_private_child","schooling_private_cap","tax_rounding","minimum_wage",
+                    "family_allowance_spouse","family_allowance_child","family_allowance_cap","family_allowance_max_children")}
+        setting_labels=(("date_from","Date From"),("date_to","Date To"),("single_allowance","Single Allowance"),("spouse_allowance","Spouse Allowance"),
+                ("child_allowance","Child Allowance"),("employee_nssf_rate","Employee NSSF Rate"),("medical_rate","Employer Medical Rate"),("end_service_rate",
+                "End Service Rate"),("family_rate","Family Rate"),("employee_ceiling","Employee NSSF Ceiling"),("medical_ceiling","Medical Ceiling"),
+                ("family_ceiling","Family Ceiling"),("end_service_ceiling","End Service Ceiling"),("salary_account","Salary Expense Account"),
+                ("salary_payable_account","Salary Payable Account"),("payroll_tax_account","Payroll Tax Account"),("nssf_payable_account",
+                "NSSF Payable Account"),
+            ("max_children_deduction","Tax Deduction Children"),("transport_daily_exempt","Transport Exempt / Day"),("default_transport_days",
+                    "Default Transport Days"),("schooling_annual_exempt","Schooling Tax Exempt / Year"),("schooling_max_children","Schooling Children"),
             ("schooling_public_child","Public School / Child"),("schooling_public_cap","Public School Cap"),
             ("schooling_private_child","Private School / Child"),("schooling_private_cap","Private School Cap"),
-            ("tax_rounding","Round Tax Up To"),("minimum_wage","Minimum Wage"),("family_allowance_spouse","Allowance Spouse"),("family_allowance_child","Allowance per Child"),("family_allowance_cap","Allowance Maximum"),("family_allowance_max_children","Allowance Children"))
+            ("tax_rounding","Round Tax Up To"),("minimum_wage","Minimum Wage"),("family_allowance_spouse","Allowance Spouse"),("family_allowance_child",
+                    "Allowance per Child"),("family_allowance_cap","Allowance Maximum"),("family_allowance_max_children","Allowance Children"))
         # 2.9.100: three columns in their own frame (four columns made the tab wider than a laptop screen)
         fields=tk.Frame(settings_page,bg=LIGHT); fields.grid(row=0,column=0,rowspan=10,columnspan=8,sticky="nw")
         per_column=-(-len(setting_labels)//3)
@@ -86,7 +108,8 @@ class PayrollMixin:
             column=(index//per_column)*2; row=index%per_column
             tk.Label(fields,text=label,bg=LIGHT).grid(row=row,column=column,padx=(10,2),pady=3,sticky="w")
             tk.Entry(fields,textvariable=self.payroll_setting_vars[key],width=13).grid(row=row,column=column+1,padx=(2,10),pady=3,sticky="w")
-        tk.Label(settings_page,text="Tax Brackets JSON (annual LBP): [[ceiling,rate], ... [null,rate]]   Rates as decimals: 3% = 0.03   Dates: DD-MM-YYYY",bg=LIGHT).grid(row=10,column=0,columnspan=4,padx=10,pady=4,sticky="w")
+        tk.Label(settings_page,text="Tax Brackets JSON (annual LBP): [[ceiling,rate], ... [null,rate]]   Rates as decimals: 3% = 0.03   Dates: DD-MM-YYYY",
+                bg=LIGHT).grid(row=10,column=0,columnspan=4,padx=10,pady=4,sticky="w")
         self.payroll_brackets=tk.Text(settings_page,width=62,height=4); self.payroll_brackets.grid(row=11,column=0,columnspan=6,padx=10,pady=5,sticky="ew")
         # 2.9.100: one toolbar (it wraps on a small screen): settings | for the tax adviser | on paper
         toolbar=tk.Frame(settings_page,bg=LIGHT); toolbar.grid(row=12,column=0,columnspan=8,padx=10,pady=10,sticky="ew")
@@ -122,10 +145,16 @@ class PayrollMixin:
         tk.Label(settings_page,text="Salary-tax policy used here: no spouse deduction when the spouse works; half the child deduction. Confirm this dependent split with your accountant. Tax applies only above the taxable threshold.",
             bg=LIGHT,fg="#5f6b76",anchor="w",justify="left",wraplength=950).grid(row=15,column=0,columnspan=6,padx=10,pady=4,sticky="w")
         mapping_frame=tk.LabelFrame(settings_page,text="Standard Posting Accounts",bg=LIGHT,padx=8,pady=6); mapping_frame.grid(row=16,column=0,columnspan=6,padx=10,pady=8,sticky="ew")
-        self.payroll_employee_accounts={key:tk.StringVar() for key in ("salary","transport","overtime","commission","retro_salary","schooling","bonus","thirteenth_month","director_remuneration","family_allowance","employer_social","tax","nssf","payable")}
+        self.payroll_employee_accounts={key:tk.StringVar() for key in ("salary","transport","overtime","commission","retro_salary","schooling","bonus",
+                "thirteenth_month","director_remuneration","family_allowance","employer_social","tax","nssf","payable")}
         self.payroll_manager_accounts={key:tk.StringVar() for key in self.payroll_employee_accounts}
-        tk.Label(mapping_frame,text="Component",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=0,padx=5); tk.Label(mapping_frame,text="Employees",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=1,padx=5); tk.Label(mapping_frame,text="Managers",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=2,padx=5)
-        labels={"salary":"Salary","transport":"Transportation","overtime":"Overtime","commission":"Commission","retro_salary":"Retro Salary","schooling":"Schooling","bonus":"Bonus","thirteenth_month":"13th Salary","director_remuneration":"Director Remuneration","family_allowance":"Family Allocation (empty = NSSF account)","employer_social":"Employer NSSF (expense)","tax":"Payroll Tax","nssf":"NSSF","payable":"Net Salary Payable"}
+        tk.Label(mapping_frame,text="Component",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=0,padx=5); tk.Label(mapping_frame,text="Employees",
+                bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=1,padx=5); tk.Label(mapping_frame,text="Managers",bg=LIGHT,font=("Segoe UI",9,
+                "bold")).grid(row=0,column=2,padx=5)
+        labels={"salary":"Salary","transport":"Transportation","overtime":"Overtime","commission":"Commission","retro_salary":"Retro Salary",
+                "schooling":"Schooling","bonus":"Bonus","thirteenth_month":"13th Salary","director_remuneration":"Director Remuneration",
+                "family_allowance":"Family Allocation (empty = NSSF account)","employer_social":"Employer NSSF (expense)","tax":"Payroll Tax","nssf":"NSSF",
+                "payable":"Net Salary Payable"}
         for index,(key,label) in enumerate(labels.items(),1):
             tk.Label(mapping_frame,text=label,bg=LIGHT).grid(row=index,column=0,padx=5,pady=2,sticky="w")
             self.account_search_box(mapping_frame,self.payroll_employee_accounts[key],16).grid(row=index,column=1,padx=5,pady=2)
@@ -139,22 +168,34 @@ class PayrollMixin:
         window=tk.Toplevel(self); window.title("Employee File"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
         self.fit_dialog(window,960,760,480,360)
         outer,form=self.scrollable_page(window); outer.pack(fill="both",expand=True)
-        data=employee or {}; fields={key:tk.StringVar(value=str(data.get(key) or "")) for key in ("employee_number","full_name","national_id","mof_number","nssf_number","address","contact_number","nationality","father_name","mother_name","birth_date","birth_place","job_title","hire_date","leave_date","base_salary","salary_account","payable_account")}
+        data=employee or {}; fields={key:tk.StringVar(value=str(data.get(key) or "")) for key in ("employee_number","full_name","national_id","mof_number",
+                "nssf_number","address","contact_number","nationality","father_name","mother_name","birth_date","birth_place","job_title","hire_date",
+                "leave_date","base_salary","salary_account","payable_account")}
         if not fields["employee_number"].get(): fields["employee_number"].set("1000")
-        marital=tk.StringVar(value=data.get("marital_status","single")); spouse_works=tk.BooleanVar(value=bool(data.get("spouse_works",0))); children=tk.StringVar(value=str(data.get("children",0))); employee_group=tk.StringVar(value=data.get("employee_group","employee")); currency=tk.StringVar(value=data.get("currency","LBP")); active=tk.BooleanVar(value=bool(data.get("active",1)))
-        rows=(("employee_number","Employee ID / 4-digit prefix"),("full_name","Full Name"),("national_id","National ID"),("mof_number","MOF Number"),("nssf_number","NSSF Number"),("address","Address"),("contact_number","Contact Number"),("nationality","Nationality"),("father_name","Father's Name"),("mother_name","Mother's Name"),("birth_date","Date of Birth"),("birth_place","Place of Birth"),("job_title","Job Title"),("hire_date","Hire Date"),("leave_date","Leave Date"),("base_salary","Base Salary"),("salary_account","Salary Expense Account"),("payable_account","Payable Account"))
+        marital=tk.StringVar(value=data.get("marital_status","single")); spouse_works=tk.BooleanVar(value=bool(data.get("spouse_works",
+                0))); children=tk.StringVar(value=str(data.get("children",0))); employee_group=tk.StringVar(value=data.get("employee_group",
+                "employee")); currency=tk.StringVar(value=data.get("currency","LBP")); active=tk.BooleanVar(value=bool(data.get("active",1)))
+        rows=(("employee_number","Employee ID / 4-digit prefix"),("full_name","Full Name"),("national_id","National ID"),("mof_number","MOF Number"),
+                ("nssf_number","NSSF Number"),("address","Address"),("contact_number","Contact Number"),("nationality","Nationality"),("father_name",
+                "Father's Name"),("mother_name","Mother's Name"),("birth_date","Date of Birth"),("birth_place","Place of Birth"),("job_title","Job Title"),
+                ("hire_date","Hire Date"),("leave_date","Leave Date"),("base_salary","Base Salary"),("salary_account","Salary Expense Account"),
+                ("payable_account","Payable Account"))
         for index,(key,label) in enumerate(rows):
             column=0 if index<9 else 2; row=index if index<9 else index-9
             tk.Label(form,text=label,bg=LIGHT).grid(row=row,column=column,padx=10,pady=5,sticky="w")
             (self.date_entry(form,fields[key],28) if key in ("hire_date","leave_date","birth_date") else tk.Entry(form,textvariable=fields[key],width=28)).grid(row=row,column=column+1,padx=10,pady=5)
-        tk.Label(form,text="Marital Status",bg=LIGHT).grid(row=9,column=0,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=marital,values=["single","married"],state="readonly",width=25).grid(row=9,column=1)
+        tk.Label(form,text="Marital Status",bg=LIGHT).grid(row=9,column=0,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=marital,values=["single",
+                "married"],state="readonly",width=25).grid(row=9,column=1)
         tk.Label(form,text="Children",bg=LIGHT).grid(row=10,column=0,padx=10,pady=5,sticky="w"); tk.Entry(form,textvariable=children,width=28).grid(row=10,column=1)
-        tk.Label(form,text="Currency",bg=LIGHT).grid(row=9,column=2,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=currency,values=self.currency_codes,state="readonly",width=25).grid(row=9,column=3)
+        tk.Label(form,text="Currency",bg=LIGHT).grid(row=9,column=2,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=currency,
+                values=self.currency_codes,state="readonly",width=25).grid(row=9,column=3)
         tk.Checkbutton(form,text="Spouse Works",variable=spouse_works,bg=LIGHT).grid(row=10,column=2,sticky="w")
         tk.Checkbutton(form,text="Active",variable=active,bg=LIGHT).grid(row=10,column=3,sticky="w")
-        tk.Label(form,text="Payroll Group",bg=LIGHT).grid(row=11,column=0,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=employee_group,values=["employee","manager"],state="readonly",width=25).grid(row=11,column=1)
+        tk.Label(form,text="Payroll Group",bg=LIGHT).grid(row=11,column=0,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=employee_group,
+                values=["employee","manager"],state="readonly",width=25).grid(row=11,column=1)
         sex=tk.StringVar(value=data.get("sex") or "")
-        tk.Label(form,text="Sex (for official forms)",bg=LIGHT).grid(row=11,column=2,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=sex,values=["male","female"],state="readonly",width=25).grid(row=11,column=3)
+        tk.Label(form,text="Sex (for official forms)",bg=LIGHT).grid(row=11,column=2,padx=10,pady=5,sticky="w"); ttk.Combobox(form,textvariable=sex,
+                values=["male","female"],state="readonly",width=25).grid(row=11,column=3)
         # 2.9.44 register (like the official declaration workbook): unit, recurring allowances, NSSF branches, address.
         # 2.9.96: family changes during the year - the spouse counts from the marriage month, a new child from the birth month
         family=tk.LabelFrame(form,text="Family changes | الوضع العائلي",bg=LIGHT,padx=6,pady=4)
@@ -226,10 +267,13 @@ class PayrollMixin:
         flags={key:tk.BooleanVar(value=str(data.get(key) or "0")=="1") for key in ("nssf_no_end_service","nssf_no_family","nssf_no_medical")}
         flag_row=tk.Frame(register,bg=LIGHT); flag_row.grid(row=10,column=0,columnspan=4,sticky="w",pady=(4,0))
         tk.Label(flag_row,text="Not subject to NSSF:",bg=LIGHT,fg=NAVY).pack(side="left",padx=4)
-        for key,label in (("nssf_no_end_service","End of service | تعويض نهاية الخدمة"),("nssf_no_family","Family allowances | التعويضات العائلية"),("nssf_no_medical","Sickness & maternity | المرض والأمومة")):
+        for key,label in (("nssf_no_end_service","End of service | تعويض نهاية الخدمة"),("nssf_no_family","Family allowances | التعويضات العائلية"),
+                ("nssf_no_medical","Sickness & maternity | المرض والأمومة")):
             tk.Checkbutton(flag_row,text=label,variable=flags[key],bg=LIGHT).pack(side="left",padx=6)
         def save():
-            payload={key:var.get().strip() for key,var in fields.items()}; payload.update({"id":data.get("id"),"marital_status":marital.get(),"spouse_works":spouse_works.get(),"children":children.get(),"employee_group":employee_group.get(),"currency":currency.get(),"active":active.get(),"sex":sex.get()})
+            payload={key:var.get().strip() for key,var in fields.items()}; payload.update({"id":data.get("id"),"marital_status":marital.get(),
+                    "spouse_works":spouse_works.get(),"children":children.get(),"employee_group":employee_group.get(),"currency":currency.get(),
+                    "active":active.get(),"sex":sex.get()})
             payload.update({key:var.get().strip() for key,var in register_vars.items()}); payload.update({key:"1" if var.get() else "0" for key,var in flags.items()})
             payload.update({"marriage_date":family_vars["marriage_date"].get().strip() if married_now.get() else "",  # 2.9.96 / 2.9.99
                             "children_birth_dates":", ".join(family_vars["_births"].get(0,"end"))})
@@ -341,8 +385,12 @@ class PayrollMixin:
             f'{form}_Worksheet_{employee["employee_number"]}')
 
     def employee_nssf_declaration(self,kind,format_name):
-        titles={"hire":("NSSF Employment Declaration","NSSF Employment Declaration (Estekhdam Ajir) Worksheet | \u0625\u0639\u0644\u0627\u0645 \u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0623\u062c\u064a\u0631","NSSF-HIRE-NEW","hire_date","Start date"),
-                "leave":("NSSF Termination Declaration","NSSF Termination Declaration (Tark Ajir) Worksheet | \u0625\u0639\u0644\u0627\u0645 \u062a\u0631\u0643 \u0623\u062c\u064a\u0631","NSSF-LEAVE","leave_date","Leaving date")}
+        titles={"hire":("NSSF Employment Declaration",
+                "NSSF Employment Declaration (Estekhdam Ajir) Worksheet | \u0625\u0639\u0644\u0627\u0645 \u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0623\u062c\u064a\u0631",
+                "NSSF-HIRE-NEW","hire_date","Start date"),
+                "leave":("NSSF Termination Declaration",
+                        "NSSF Termination Declaration (Tark Ajir) Worksheet | \u0625\u0639\u0644\u0627\u0645 \u062a\u0631\u0643 \u0623\u062c\u064a\u0631",
+                        "NSSF-LEAVE","leave_date","Leaving date")}
         warn,title,form,date_key,date_label=titles[kind]
         selected=self.employee_tree.selection()
         if not selected: return messagebox.showwarning(warn,"Select an employee first")
@@ -381,12 +429,17 @@ class PayrollMixin:
         except Exception as exc: return messagebox.showerror("Payroll",str(exc))
         if hasattr(self,"cnss_employee_combo"): self.refresh_cnss_employee_options()
         self.employee_tree.delete(*self.employee_tree.get_children())
-        for row in self.employee_rows: self.employee_tree.insert("","end",iid=str(row["id"]),values=(row["employee_number"],row["full_name"],"" if str(row.get("job_title") or "").strip().lower() in ("","none") else row["job_title"],safe_display_date(row.get("hire_date")),safe_display_date(row.get("leave_date")),row.get("branch_name") or "",row["currency"],row["base_salary"],row["nssf_number"],"Yes" if row["active"] else "No"))
+        for row in self.employee_rows: self.employee_tree.insert("","end",iid=str(row["id"]),values=(row["employee_number"],row["full_name"],
+                "" if str(row.get("job_title") or "").strip().lower() in ("","none") else row["job_title"],safe_display_date(row.get("hire_date")),
+                safe_display_date(row.get("leave_date")),row.get("branch_name") or "",row["currency"],row["base_salary"],row["nssf_number"],
+                "Yes" if row["active"] else "No"))
         self.payroll_employee_map={f'{row["employee_number"]} - {row["full_name"]}':row for row in self.employee_rows if row["active"]}
         self.payroll_employee_combo["values"]=list(self.payroll_employee_map)
         if not self.payroll_employee.get() and self.payroll_employee_map: self.payroll_employee.set(next(iter(self.payroll_employee_map))); self.payroll_employee_chosen()
         self.payroll_tree.delete(*self.payroll_tree.get_children())
-        for row in payroll: self.payroll_tree.insert("","end",iid=str(row["id"]),values=(row["payroll_number"],safe_display_date(row["period_date"]),row["full_name"],row["currency"],f'{float(row["gross_salary"]):,.2f}',f'{float(row["income_tax"]):,.2f}',f'{float(row["employee_nssf"]):,.2f}',f'{float(row["net_salary"]):,.2f}',row["status"]))
+        for row in payroll: self.payroll_tree.insert("","end",iid=str(row["id"]),values=(row["payroll_number"],safe_display_date(row["period_date"]),
+                row["full_name"],row["currency"],f'{float(row["gross_salary"]):,.2f}',f'{float(row["income_tax"]):,.2f}',f'{float(row["employee_nssf"]):,.2f}',
+                f'{float(row["net_salary"]):,.2f}',row["status"]))
 
     def schooling_law_dialog(self):
         """Calculate the annual schooling grant under the dated public/private rules."""

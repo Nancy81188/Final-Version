@@ -108,7 +108,8 @@ def settings_report(db, date):
         ["Employee NSSF rate", pct(s.get("employee_nssf_rate"))], ["Employer sickness & maternity rate", pct(s.get("medical_rate"))],
         ["Family allowances rate", pct(s.get("family_rate"))], ["End-of-service rate", pct(s.get("end_service_rate"))],
         ["Employee NSSF ceiling / month", _money(s.get("employee_ceiling"))], ["Sickness & maternity ceiling / month", _money(s.get("medical_ceiling"))],
-        ["Family allowances ceiling / month", _money(s.get("family_ceiling"))], ["End-of-service ceiling", _money(s.get("end_service_ceiling")) if Decimal(str(s.get("end_service_ceiling") or 0)) else "no ceiling"],
+        ["Family allowances ceiling / month", _money(s.get("family_ceiling"))], ["End-of-service ceiling",
+                _money(s.get("end_service_ceiling")) if Decimal(str(s.get("end_service_ceiling") or 0)) else "no ceiling"],
         ["Transport exempt / working day", _money(s.get("transport_daily_exempt"))], ["Default transport days", s.get("default_transport_days") or ""],
         ["Schooling exempt / year, children", f"{_money(s.get('schooling_annual_exempt'))}, {s.get('schooling_max_children') or ''}"],
         ["Public school / child, cap", f"{_money(s.get('schooling_public_child'))} / {_money(s.get('schooling_public_cap'))}"],
@@ -137,7 +138,8 @@ def settings_report(db, date):
     return {"title": "Tax & NSSF Settings", "meta": meta, "sections": [
         {"heading": "Values in force", "headers": ["Setting", "Value"], "rows": values},
         {"heading": "Salary tax brackets (annual LBP)", "headers": ["From", "To", "Rate"], "rows": brackets},
-        {"heading": "NSSF ceilings and rates by period (LBP / month)", "headers": ["From", "To", "Employee ceiling", "Sickness ceiling", "Family ceiling", "Employee %", "Employer sick. %", "Family %", "EOS %"], "rows": period_rows},
+        {"heading": "NSSF ceilings and rates by period (LBP / month)", "headers": ["From", "To", "Employee ceiling", "Sickness ceiling", "Family ceiling",
+                "Employee %", "Employer sick. %", "Family %", "EOS %"], "rows": period_rows},
         {"heading": "NSSF family allowance by period (LBP / month)", "headers": ["From", "To", "Spouse", "Per child (up to 5)", "Monthly maximum"], "rows": family},
         {"heading": "Standard posting accounts", "headers": ["Component", "Employees", "Managers"], "rows": accounts},
     ]}

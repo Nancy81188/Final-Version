@@ -210,7 +210,8 @@ def post_opening(source, target, year, user_id):
             if not items and not doe: continue
             number = f"OPEN-{year}-{currency}"
             entry = db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,currency,created_by,created_at,branch_id,voucher_type)
-                VALUES(?,?,?,?,?,?,?,(SELECT id FROM branches ORDER BY id LIMIT 1),'04')""", (number, f"01-01-{year}", f"Opening balances {year} ({currency})", "opening", currency, user_id, utcnow())).lastrowid
+                VALUES(?,?,?,?,?,?,?,(SELECT id FROM branches ORDER BY id LIMIT 1),'04')""", (number, f"01-01-{year}", f"Opening balances {year} ({currency})",
+                        "opening", currency, user_id, utcnow())).lastrowid
             _insert_lines(db, target, entry, currency, [(code, amount, lbp, usd, f"Opening {year}") for code, amount, lbp, usd in items])
             if doe: _insert_revaluations(db, entry, doe, f"Opening {year} - exchange revaluation of {year - 1}")
             vouchers.append(number)

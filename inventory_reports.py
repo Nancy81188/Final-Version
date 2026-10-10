@@ -102,7 +102,8 @@ def build_report(database, report, options):
             price = _d(item.get("sales_price")); reorder = _d(item.get("reorder_level"))
             total += value; sales_total += qty * price
             quantities_by_unit[item["unit"]]=quantities_by_unit.get(item["unit"],ZERO)+qty
-            rows.append([item["sku"], item["name"], item.get("category") or "", item["unit"], qty, unit_cost.quantize(Decimal("0.0001")), value, price, (qty * price).quantize(Decimal("0.01")), reorder,
+            rows.append([item["sku"], item["name"], item.get("category") or "", item["unit"], qty, unit_cost.quantize(Decimal("0.0001")), value, price,
+                    (qty * price).quantize(Decimal("0.01")), reorder,
                          "Reorder" if reorder and qty <= reorder else "OK"])
         # group by category with a subtotal per category
         grouped = []; totals_index = []
@@ -137,7 +138,9 @@ def build_report(database, report, options):
             if row["doc_date"] < date_from:
                 card["opening_qty"] += qty; card["opening_value"] += cost_value; return
             card["lines"].append([display_date(row["doc_date"]), row["number"], DOC_TYPES[row["doc_type"]][1], row.get("warehouse_code") or "", row.get("party_name") or row.get("reference") or "",
-                                  qty if qty > 0 else "", -qty if qty < 0 else "", (unit if qty < 0 or row["doc_type"] == "transfer" else _d(row["unit_cost"])).quantize(Decimal("0.0001")), cost_value.quantize(Decimal("0.01"))])
+                                  qty if qty > 0 else "", -qty if qty < 0 else "",
+                                          (unit if qty < 0 or row["doc_type"] == "transfer" else _d(row["unit_cost"])).quantize(Decimal("0.0001")),
+                                          cost_value.quantize(Decimal("0.01"))])
         run_costing(database, date_to, method, record)
         closing_state = run_costing(database, date_to, method)
         card_totals={}
@@ -176,7 +179,8 @@ def build_report(database, report, options):
             rows.append([display_date(row["doc_date"]), row["number"], DOC_TYPES[row["doc_type"]][1], items[row["item_id"]]["sku"], items[row["item_id"]]["name"], row.get("warehouse_code") or "",
                          row.get("party_name") or "", qty, unit_cost.quantize(Decimal("0.0001")), (qty * unit_cost).quantize(Decimal("0.01"))])
         run_costing(database, date_to, method, record); title = "Stock Movements"
-        sections.append({"heading": f"Movements {display_date(date_from)} to {display_date(date_to)}", "headers": ["Date", "Document", "Type", "Item Code", "Item", "Warehouse", "Party", "Quantity (+in / -out)", "Unit Cost", "Value"],
+        sections.append({"heading": f"Movements {display_date(date_from)} to {display_date(date_to)}", "headers": ["Date", "Document", "Type", "Item Code",
+                "Item", "Warehouse", "Party", "Quantity (+in / -out)", "Unit Cost", "Value"],
                          "rows": rows or [["No movements"] + [""] * 9], "total_rows": []})
     elif report == "margin":
         sold = {}
@@ -190,7 +194,8 @@ def build_report(database, report, options):
             margin = data["sales"] - data["cost"]; totals[0] += data["sales"]; totals[1] += data["cost"]; totals[2] += margin
             rows.append([items[item_id]["sku"], items[item_id]["name"], data["qty"], data["sales"].quantize(Decimal("0.01")), data["cost"].quantize(Decimal("0.01")), margin.quantize(Decimal("0.01")),
                          f"{(margin / data['sales'] * 100):.1f}%" if data["sales"] else ""])
-        rows.append(["TOTAL", "", "", totals[0].quantize(Decimal("0.01")), totals[1].quantize(Decimal("0.01")), totals[2].quantize(Decimal("0.01")), f"{(totals[2] / totals[0] * 100):.1f}%" if totals[0] else ""])
+        rows.append(["TOTAL", "", "", totals[0].quantize(Decimal("0.01")), totals[1].quantize(Decimal("0.01")), totals[2].quantize(Decimal("0.01")),
+                f"{(totals[2] / totals[0] * 100):.1f}%" if totals[0] else ""])
         title = "Sales Margin (Cost of Goods Sold)"
         sections.append({"heading": f"Items issued {display_date(date_from)} to {display_date(date_to)} - sales at invoice price, cost at {'FIFO' if method == 'fifo' else 'weighted average'}",
                          "headers": ["Item Code", "Item", "Quantity Sold", f"Sales ({currency})", "Cost of Goods Sold", "Gross Margin", "Margin %"], "rows": rows, "total_rows": [len(rows) - 1]})
@@ -227,19 +232,23 @@ def build_report(database, report, options):
             if report == "reorder" and reorder > 0 and data["qty"] <= reorder:
                 rows.append([item["sku"], item["name"], item["unit"], data["qty"], reorder, max(ZERO, reorder * 2 - data["qty"]), data["avg"].quantize(Decimal("0.0001"))])
             if report == "slow" and data["qty"] > 0 and (not data.get("last_out") or data["last_out"] < cutoff):
-                rows.append([item["sku"], item["name"], item["unit"], data["qty"], data["value"].quantize(Decimal("0.01")), display_date(data.get("last_out")) if data.get("last_out") else "never sold"])
+                rows.append([item["sku"], item["name"], item["unit"], data["qty"], data["value"].quantize(Decimal("0.01")),
+                        display_date(data.get("last_out")) if data.get("last_out") else "never sold"])
         if report == "reorder":
-            title = "Reorder Report"; sections.append({"heading": f"Items at or below their reorder level on {display_date(date_to)}", "headers": ["Item Code", "Item", "Unit", "On Hand", "Reorder Level", "Suggested Order", "Unit Cost"],
+            title = "Reorder Report"; sections.append({"heading": f"Items at or below their reorder level on {display_date(date_to)}", "headers": ["Item Code",
+                    "Item", "Unit", "On Hand", "Reorder Level", "Suggested Order", "Unit Cost"],
                                                           "rows": rows or [["No item below its reorder level"] + [""] * 6], "total_rows": []})
         else:
             title = "Slow-moving Stock"; sections.append({"heading": f"Items in stock with no issue since {display_date(cutoff)} ({int(options.get('days') or 90)} days)",
-                                                          "headers": ["Item Code", "Item", "Unit", "On Hand", f"Value ({currency})", "Last Issue"], "rows": rows or [["No slow-moving items"] + [""] * 5], "total_rows": []})
+                                                          "headers": ["Item Code", "Item", "Unit", "On Hand", f"Value ({currency})", "Last Issue"],
+                                                                  "rows": rows or [["No slow-moving items"] + [""] * 5], "total_rows": []})
     elif report == "ledger_check":  # 2.9.82: stock valuation against the stock accounts of the ledger
         check = stock_ledger_check(database, date_to, method)
         title = "Stock vs Ledger"
         sections.append({"heading": f"Stock valuation against the ledger on {display_date(date_to)} ({currency})",
                          "headers": ["Stock account", "Items", f"Valuation ({currency})", f"Ledger ({currency})", "Difference", "Variation accounts"],
-                         "rows": [[g["stock_account"] + (f" - {g['name']}" if g.get("name") else ""), g["items"], g["valuation"], g["ledger"], g["difference"], g["variation"]] for g in check["groups"]]
+                         "rows": [[g["stock_account"] + (f" - {g['name']}" if g.get("name") else ""), g["items"], g["valuation"], g["ledger"], g["difference"],
+                                 g["variation"]] for g in check["groups"]]
                          + [["TOTAL", sum(g["items"] for g in check["groups"]), check["valuation"], check["ledger"], check["difference"], ""]],
                          "total_rows": [len(check["groups"])]})
         sections.append({"heading": "How to read it", "headers": ["Note"], "rows": [[n] for n in check["notes"]], "total_rows": []})
@@ -374,7 +383,8 @@ def inventory_health(database, options, items, in_category, currency, method, da
     summary = [[issue, count, value.quantize(Decimal("0.01"))] for issue, (count, value) in sorted(totals.items())]
     return {"title": "Inventory Health", "meta": [f"Company: {company.get('company_name') or '-'}", f"As of {display_date(date_to)}   Slow-moving threshold: {days} days"],
             "sections": [{"heading": "Action summary", "headers": ["Issue", "Items", f"Stock Value ({currency})"], "rows": summary or [["No inventory exceptions", 0, ZERO]], "total_rows": []},
-                         {"heading": "Items to review (an item may appear for more than one issue)", "headers": ["Issue", "Item Code", "Item", "Category", "On Hand", "Reorder Level", f"Value ({currency})", "Last Issue"],
+                         {"heading": "Items to review (an item may appear for more than one issue)", "headers": ["Issue", "Item Code", "Item", "Category",
+                                 "On Hand", "Reorder Level", f"Value ({currency})", "Last Issue"],
                           "rows": rows or [["No inventory exceptions"] + [""] * 7], "total_rows": []}]}
 
 
@@ -385,7 +395,8 @@ def additional_inventory_report(database, report, options, items, warehouses, in
     meta = [f"Company: {company.get('company_name') or '-'}   Currency: {currency}", f"From {display_date(date_from)} to {display_date(date_to)}"]
     if report == "count_variances":
         with database.connect() as db:
-            counts = [dict(row) for row in db.execute("SELECT number,count_date,warehouse_id,status,lines FROM physical_counts WHERE count_date BETWEEN ? AND ? ORDER BY count_date,number", (date_from, date_to))]
+            counts = [dict(row) for row in db.execute("SELECT number,count_date,warehouse_id,status,lines FROM physical_counts WHERE count_date BETWEEN ? AND ? ORDER BY count_date,number",
+                    (date_from, date_to))]
         rows = []; total = ZERO
         for count in counts:
             if not warehouse.has(count["warehouse_id"]): continue
@@ -405,9 +416,12 @@ def additional_inventory_report(database, report, options, items, warehouses, in
                 if not difference: continue
                 cost = _d(line.get("unit_cost") if line.get("unit_cost") is not None else snapshot.get(item_id, {}).get("unit_cost"))
                 value = money(difference * cost); total += value
-                rows.append([count["number"], display_date(count["count_date"]), warehouses[count["warehouse_id"]]["code"], items[item_id]["sku"], items[item_id]["name"], system, counted, difference, value, count["status"]])
+                rows.append([count["number"], display_date(count["count_date"]), warehouses[count["warehouse_id"]]["code"], items[item_id]["sku"],
+                        items[item_id]["name"], system, counted, difference, value, count["status"]])
         rows.append(["TOTAL", "", "", "", "", "", "", "", money(total), ""])
-        return {"title": "Physical Count Variances", "meta": meta, "sections": [{"heading": "Saved counts with differences", "headers": ["Count", "Date", "Warehouse", "Item Code", "Item", "Stock on Hand", "Counted", "Difference", f"Variance ({currency})", "Status"], "rows": rows, "total_rows": [len(rows)-1]}]}
+        return {"title": "Physical Count Variances", "meta": meta, "sections": [{"heading": "Saved counts with differences", "headers": ["Count", "Date",
+                "Warehouse", "Item Code", "Item", "Stock on Hand", "Counted", "Difference", f"Variance ({currency})", "Status"], "rows": rows,
+                "total_rows": [len(rows)-1]}]}
     state = run_costing(database, date_to, method)
     if report == "turnover":
         issued = {}
@@ -424,7 +438,9 @@ def additional_inventory_report(database, report, options, items, warehouses, in
             days = (on_hand / sold * Decimal(period_days)).quantize(Decimal("0.1")) if sold else "-"
             value = warehouse.pick(_reported_warehouse_values(data)) if warehouse and data else data.get("value", ZERO)
             rows.append([item["sku"], item["name"], item["unit"], sold, on_hand, days, money(value)])
-        return {"title": "Stock Turnover", "meta": meta, "sections": [{"heading": "Issues during period and stock at To Date (coverage at the period's issue rate)", "headers": ["Item Code", "Item", "Unit", "Issued", "On Hand", "Coverage Days", f"On-hand Value ({currency})"], "rows": rows, "total_rows": []}]}
+        return {"title": "Stock Turnover", "meta": meta,
+                "sections": [{"heading": "Issues during period and stock at To Date (coverage at the period's issue rate)", "headers": ["Item Code", "Item",
+                "Unit", "Issued", "On Hand", "Coverage Days", f"On-hand Value ({currency})"], "rows": rows, "total_rows": []}]}
     with database.connect() as db:
         suppliers = {str(row["id"]): row["name"] for row in db.execute("SELECT id,name FROM parties")}
     groups = {}
@@ -439,8 +455,10 @@ def additional_inventory_report(database, report, options, items, warehouses, in
     for name, members in sorted(groups.items()):
         rows.extend([[name, *member] for member in sorted(members)])
         rows.append([f"Subtotal {name}", "", "", "", sum((member[3] for member in members), ZERO), money(sum((member[4] for member in members), ZERO))]); totals.append(len(rows)-1)
-    rows.append(["TOTAL", "", "", "", sum((member[3] for members in groups.values() for member in members), ZERO), money(sum((member[4] for members in groups.values() for member in members), ZERO))]); totals.append(len(rows)-1)
-    return {"title": "Stock by Supplier", "meta": meta, "sections": [{"heading": f"On-hand stock at {display_date(date_to)} by item supplier", "headers": ["Supplier", "Item Code", "Item", "Unit", "On Hand", f"Value ({currency})"], "rows": rows, "total_rows": totals}]}
+    rows.append(["TOTAL", "", "", "", sum((member[3] for members in groups.values() for member in members), ZERO),
+            money(sum((member[4] for members in groups.values() for member in members), ZERO))]); totals.append(len(rows)-1)
+    return {"title": "Stock by Supplier", "meta": meta, "sections": [{"heading": f"On-hand stock at {display_date(date_to)} by item supplier",
+            "headers": ["Supplier", "Item Code", "Item", "Unit", "On Hand", f"Value ({currency})"], "rows": rows, "total_rows": totals}]}
 
 AGEING_BUCKETS = (30, 60, 90, 180, 365)
 
@@ -507,7 +525,8 @@ def ageing_report(database, options, items, warehouses, in_category, currency, m
     """Stock ageing: how long the stock on hand has been waiting, by receipt date (FIFO), valued at cost."""
     limits, data = _ageing_data(database, options, items, in_category, method, date_to)
     labels = _bucket_labels(limits); money = lambda v: Decimal(v).quantize(Decimal("0.01"))
-    headers = ["Item Code", "Item", "Category", "Unit", "On Hand", f"Value ({currency})", "Avg Age (days)", "Oldest Receipt", "Last Issue"] + labels + [f"% over {limits[-2] if len(limits) > 1 else limits[-1]} days"]
+    headers = ["Item Code", "Item", "Category", "Unit", "On Hand", f"Value ({currency})", "Avg Age (days)", "Oldest Receipt",
+            "Last Issue"] + labels + [f"% over {limits[-2] if len(limits) > 1 else limits[-1]} days"]
     risk_from = len(limits) - 1 if len(limits) > 1 else len(limits)
     rows = []; totals = []; grand = [ZERO] * (len(labels)); grand_qty = ZERO; grand_value = ZERO
     for name in sorted({(d["item"].get("category") or "(no category)") for d in data}):
@@ -533,7 +552,8 @@ def ageing_report(database, options, items, warehouses, in_category, currency, m
     sections = [{"heading": "Ageing summary", "headers": ["Age of stock", f"Value ({currency})", "% of stock value", "Items"], "rows": summary, "total_rows": [len(summary) - 1]},
                 {"heading": f"Stock ageing by item at {display_date(date_to)} (by receipt date, first in - first out)", "headers": headers,
                  "rows": rows if data else [["No stock on hand"] + [""] * (len(headers) - 1)], "total_rows": totals if data else []},
-                {"heading": f"Stock older than {threshold} days - review for slow-moving or obsolete items", "headers": ["Item Code", "Item", "Category", f"Value over {threshold} days", "Avg Age (days)", "Last Issue"],
+                {"heading": f"Stock older than {threshold} days - review for slow-moving or obsolete items", "headers": ["Item Code", "Item", "Category",
+                        f"Value over {threshold} days", "Avg Age (days)", "Last Issue"],
                  "rows": risk or [["No stock older than this"] + [""] * 5], "total_rows": []}]
     meta = [f"Company: {company.get('company_name') or '-'}   Inventory currency: {currency}   Costing: {'FIFO' if method == 'fifo' else 'Weighted average'}",
             f"Stock ageing as of {display_date(date_to)}   Buckets: {', '.join(labels)}" + (f"   Warehouse: {warehouses[int(options['warehouse_id'])]['code']}" if str(options.get('warehouse_id') or '').isdigit() else "")]
@@ -577,7 +597,8 @@ def summary_report(database, options, items, warehouses, in_category, currency, 
     sections = [{"heading": "Key figures", "headers": ["Indicator", "Value"], "rows": kpis, "total_rows": [1]},
                 {"heading": "Stock value by category", "headers": ["Category", "Items", f"Value ({currency})", "% of value"], "rows": category_rows or [["-", "", "", ""]], "total_rows": []},
                 {"heading": "Stock value by warehouse", "headers": ["Warehouse", "Name", f"Value ({currency})", "% of value"], "rows": warehouse_rows or [["-", "", "", ""]], "total_rows": []},
-                {"heading": "Top 10 items by value", "headers": ["Item Code", "Item", "Category", "On Hand", "Unit Cost", f"Value ({currency})", "% of value"], "rows": top_rows or [["-"] + [""] * 6], "total_rows": []},
+                {"heading": "Top 10 items by value", "headers": ["Item Code", "Item", "Category", "On Hand", "Unit Cost", f"Value ({currency})", "% of value"],
+                        "rows": top_rows or [["-"] + [""] * 6], "total_rows": []},
                 {"heading": "Ageing of the stock", "headers": ["Age of stock", f"Value ({currency})", "% of value"],
                  "rows": [[label, money(value), f"{(value / total_value * 100):.1f}%" if total_value else ""] for label, value in zip(labels, age_totals)], "total_rows": []}]
     if below: sections.append({"heading": "Items to reorder", "headers": ["Item Code", "Item", "On Hand", "Reorder Level"],

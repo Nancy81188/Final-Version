@@ -101,9 +101,12 @@ class ManagementPackTest(_Book):
     def test_pack_balances_and_budget_alerts(self):
         self.db.save_journal_voucher({"entry_date": "01-01-2025", "description": "Open", "currency": "USD", "voucher_type": "04"},
                                      [{"account_code": "512", "debit": "10000"}, {"account_code": "101", "credit": "10000"}], 1)
-        self.db.create_manual_invoice({"invoice_date": "10-03-2025", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"}, [{"description": "S", "quantity": 1, "unit_price": 5000, "vat_rate": 11}], 1)
-        self.db.add_expense({"expense_date": "15-03-2025", "description": "Rent", "currency": "LBP", "with_vat_subtotal": "89500000", "vat": "0", "expense_account": "6263.1", "payment_account": "531"}, 1)
-        self.db.save_budget({"year": 2025, "currency": "USD", "lines": [{"account_code": "6263.1", "annual": 1200, "months": [100] * 12}, {"account_code": "713", "annual": 60000, "months": [5000] * 12}]}, 1)
+        self.db.create_manual_invoice({"invoice_date": "10-03-2025", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"},
+                [{"description": "S", "quantity": 1, "unit_price": 5000, "vat_rate": 11}], 1)
+        self.db.add_expense({"expense_date": "15-03-2025", "description": "Rent", "currency": "LBP", "with_vat_subtotal": "89500000", "vat": "0",
+                "expense_account": "6263.1", "payment_account": "531"}, 1)
+        self.db.save_budget({"year": 2025, "currency": "USD", "lines": [{"account_code": "6263.1", "annual": 1200, "months": [100] * 12},
+                {"account_code": "713", "annual": 60000, "months": [5000] * 12}]}, 1)
         pack = management_pack.build(self.db, "31-03-2025", "USD")
         results = {row[0]: row for row in pack["sections"][0]["rows"]}
         self.assertEqual(results["Revenue"][1:4], [5000.0, 5000.0, 0.0]); self.assertEqual(results["Operating expenses"][1], 1000.0)  # the LBP rent, converted

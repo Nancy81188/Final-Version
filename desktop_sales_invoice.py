@@ -2,7 +2,10 @@
 from __future__ import annotations
 from pathlib import Path
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, export_excel, export_pdf, filedialog, flow_toolbar, formatted_user_date, GOLD, LIGHT, messagebox, NAVY,
+    parse_user_date, print_rows, safe_display_date, SALE_TREATMENTS, sortable_date, TAXABLE_LABEL, tk, ttk
+)
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 from desktop_common import main_currency  # 2.9.71
 
@@ -48,7 +51,8 @@ class SalesInvoiceMixin:
         tk.Entry(top,textvariable=self.sales_supplier_account,width=12).pack(side="left",padx=(0,10))
         tk.Label(top,text="Currency",bg=LIGHT).pack(side="left")
         ttk.Combobox(top,textvariable=self.sales_currency,values=self.currency_codes,state="readonly",width=6).pack(side="left",padx=(4,8))
-        account_fields=[("Client Account",self.sales_supplier_account,self.sales_supplier_side),("VAT Account",self.sales_vat_account,self.sales_vat_side),("Revenue Account",self.sales_expense_account,self.sales_expense_side)]
+        account_fields=[("Client Account",self.sales_supplier_account,self.sales_supplier_side),("VAT Account",self.sales_vat_account,self.sales_vat_side),
+                ("Revenue Account",self.sales_expense_account,self.sales_expense_side)]
         accounts_grid=tk.Frame(account_details,bg=LIGHT); accounts_grid.pack(anchor="w",fill="x",pady=1)
         for col,(label,var,side) in enumerate(account_fields):
             cell=tk.Frame(accounts_grid,bg=LIGHT,bd=1,relief="groove"); cell.grid(row=0,column=col,padx=4,pady=2,sticky="nw")
@@ -65,7 +69,8 @@ class SalesInvoiceMixin:
         self.sales_category_box.bind("<space>",lambda _event:self.cycle_sales_type())
         self.sales_category_box.bind("<Key-space>",lambda _event:self.cycle_sales_type())
         tk.Label(payment,text="Payment Mode",bg=LIGHT).pack(side="left")
-        ttk.Combobox(payment,textvariable=self.sales_payment_method,values=["On Account (Not Cash)","Cash","Bank Transfer","Cheque","Card","Other"],state="readonly",width=16).pack(side="left",padx=(4,10))
+        ttk.Combobox(payment,textvariable=self.sales_payment_method,values=["On Account (Not Cash)","Cash","Bank Transfer","Cheque","Card","Other"],
+                state="readonly",width=16).pack(side="left",padx=(4,10))
         tk.Label(payment,text="Due Date",bg=LIGHT).pack(side="left"); self.date_entry(payment,self.sales_due_date,12).pack(side="left",padx=(4,10))
         dims=tk.Frame(invoice_details,bg=LIGHT); dims.pack(anchor="w",fill="x",pady=(1,0))
         self.sales_department=tk.StringVar(); self.sales_project=tk.StringVar(); self.dimension_selectors(dims,self.sales_department,self.sales_project)
@@ -296,7 +301,8 @@ class SalesInvoiceMixin:
         if confirm and self.sales_items and not messagebox.askyesno("Sales Invoice","Start a new invoice? Lines that are not saved will be cleared."): return
         self.sales_edit_id=None; self.sales_items=[]; self.sales_pdf_path=None; self.sales_sheet.delete(*self.sales_sheet.get_children())
         self._sales_loaded_state=None
-        self.sales_party.set(""); self.sales_supplier_account.set(""); self.sales_amount_paid.set("0"); getattr(self,"sales_cash_account",tk.StringVar()).set(""); self.sales_due_date.set(""); self.sales_open_choice.set("")
+        self.sales_party.set(""); self.sales_supplier_account.set(""); self.sales_amount_paid.set("0"); getattr(self,"sales_cash_account",
+                tk.StringVar()).set(""); self.sales_due_date.set(""); self.sales_open_choice.set("")
         self.sales_doc_type.set("Invoice"); self.sales_category.set("Services"); self.sales_currency.set(main_currency(self, 1))  # 2.9.71
         self.sales_category_box["values"]=["Goods","Products","Services"]
         self.sales_revenue_caption.config(text="Revenue Account")
@@ -323,7 +329,8 @@ class SalesInvoiceMixin:
         return item
 
     def add_sales_item(self,item=None):
-        item=self.recalculate_sales_item(dict(item or {"description":"","quantity":1,"unit":"","unit_price":0,"discount_percent":0,"vat_rate":0 if getattr(self,"sales_treatment",None) is not None and self.sales_treatment.get()!=TAXABLE_LABEL else vat_rate(self)}))
+        item=self.recalculate_sales_item(dict(item or {"description":"","quantity":1,"unit":"","unit_price":0,"discount_percent":0,"vat_rate":0 if getattr(self,
+                "sales_treatment",None) is not None and self.sales_treatment.get()!=TAXABLE_LABEL else vat_rate(self)}))
         self.sales_items.append(item); iid=self.sales_sheet.insert("","end",values=self.sales_row_values(item))
         item["_iid"]=iid; self.update_sales_totals()
         if not item["description"]:
@@ -358,7 +365,8 @@ class SalesInvoiceMixin:
         item=self.sales_item_for(iid)
         if item is None: return
         value=item.get(key,"")
-        editor=tk.Entry(tree,justify="left" if key in ("description","item_code","unit") else "right"); editor.insert(0,str(value if key in ("description","item_code","unit") else f"{float(value or 0):g}"))
+        editor=tk.Entry(tree,justify="left" if key in ("description","item_code","unit") else "right"); editor.insert(0,str(value if key in ("description",
+                "item_code","unit") else f"{float(value or 0):g}"))
         editor.place(x=bbox[0],y=bbox[1],width=bbox[2],height=bbox[3]); editor.focus_set(); editor.select_range(0,"end")
         def commit(move=0):
             text=editor.get().strip(); editor.destroy()
@@ -428,7 +436,8 @@ class SalesInvoiceMixin:
                     "Total HT":result["total_ht"],"VAT":result["vat"],"TOTAL":result["grand_total"]}
             for key,label in self.sales_total_labels.items():
                 label.config(text=f"{values[key]:,.2f} {currency}" if key=="TOTAL" else f"{values[key]:,.2f}",fg=NAVY)
-            self.sales_vat_caption.config(text=f"VAT {vat_rate_text(self)}" if not export else f"VAT {vat_rate_text(self)}  ({self.sales_treatment.get()})",font=("Segoe UI",9,"overstrike") if export else ("Segoe UI",9))
+            self.sales_vat_caption.config(text=f"VAT {vat_rate_text(self)}" if not export else f"VAT {vat_rate_text(self)}  ({self.sales_treatment.get()})",
+                    font=("Segoe UI",9,"overstrike") if export else ("Segoe UI",9))
             from report_export import shape_arabic
             key=(str(result["grand_total"]),currency); cache=self.__dict__.setdefault("_sales_words_cache",{})  # 2.9.91: drawn once per amount
             if key not in cache:
@@ -488,10 +497,12 @@ class SalesInvoiceMixin:
         currency=self.sales_currency.get()
         title=f"Invoice {invoice_no} - {party} - {currency}"
         headers=["Description","Quantity","Unit Price","Deductible","Non-Deductible","VAT %","VAT Amount","After VAT","Debit","Credit"]
-        rows=[[item["description"],item["quantity"],item["unit_price"],item.get("deductible_subtotal",item["subtotal"]),item.get("non_deductible_subtotal",0),item["vat_rate"],item["vat"],item["total"],
+        rows=[[item["description"],item["quantity"],item["unit_price"],item.get("deductible_subtotal",item["subtotal"]),item.get("non_deductible_subtotal",0),
+                item["vat_rate"],item["vat"],item["total"],
                item["total"] if self.sales_kind.get()=="sales" else 0,item["total"] if self.sales_kind.get()!="sales" else 0] for item in self.sales_items]
         total_amount=sum(float(item["total"]) for item in self.sales_items)
-        rows.append(["","",f"TOTAL {currency}",sum(float(item.get("deductible_subtotal",item["subtotal"])) for item in self.sales_items),sum(float(item.get("non_deductible_subtotal",0)) for item in self.sales_items),
+        rows.append(["","",f"TOTAL {currency}",sum(float(item.get("deductible_subtotal",item["subtotal"])) for item in self.sales_items),
+                sum(float(item.get("non_deductible_subtotal",0)) for item in self.sales_items),
                      "",sum(float(item["vat"]) for item in self.sales_items),total_amount,
                      total_amount if self.sales_kind.get()=="sales" else 0,total_amount if self.sales_kind.get()!="sales" else 0])
         try:
@@ -575,7 +586,8 @@ class SalesInvoiceMixin:
         lines=[{k:v for k,v in item.items() if not k.startswith("_") and k!="net"} for item in self.sales_items if str(item.get("description") or "").strip()]
         if not self.sales_party.get().strip(): return messagebox.showwarning("Sales Invoice","Choose or type the customer")
         orphan=[item for item in self.sales_items if not str(item.get("description") or "").strip() and float(item.get("quantity") or 0)*float(item.get("unit_price") or 0)]
-        if orphan: return messagebox.showwarning("Sales Invoice","A line has an amount but no description. Add a description or delete that line before saving, so the saved total matches what you see.")
+        if orphan: return messagebox.showwarning("Sales Invoice",
+                "A line has an amount but no description. Add a description or delete that line before saving, so the saved total matches what you see.")
         if not lines: return messagebox.showwarning("Sales Invoice","Add at least one line with a description")
         invoice={"invoice_number":self.sales_no.get().strip(),"invoice_date":self.sales_date.get().strip(),
                  "party_name":self.sales_party.get().strip(),"kind":"sales","currency":self.sales_currency.get(),

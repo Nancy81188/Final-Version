@@ -87,7 +87,8 @@ class ConvertedPlanningTest(_Book):
         self.db.save_journal_voucher({"entry_date": "01-01-2025", "description": "Opening", "currency": "USD", "voucher_type": "04"},
                                      [{"account_code": "531", "line_currency": "USD", "side": "D", "amount": "500"}, {"account_code": "101", "line_currency": "USD", "side": "C", "amount": "500"}], 1)
         self.db.save_journal_voucher({"entry_date": "05-01-2025", "description": "Cash sale", "currency": "LBP"},
-                                     [{"account_code": "531", "line_currency": "LBP", "side": "D", "amount": "8950000"}, {"account_code": "713", "line_currency": "LBP", "side": "C", "amount": "8950000"}], 1)
+                                     [{"account_code": "531", "line_currency": "LBP", "side": "D", "amount": "8950000"}, {"account_code": "713",
+                                             "line_currency": "LBP", "side": "C", "amount": "8950000"}], 1)
         flows = self.db.cash_flow_converted("2025-01-01", "2025-12-31", "USD")
         self.assertEqual(round(sum(r["inflow"] for r in flows), 2), 100.0)
         cash = sum(r["balance"] for r in self.db.balance_sheet_converted("2025-12-31", "USD") if r["code"].startswith("5"))

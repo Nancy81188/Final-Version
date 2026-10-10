@@ -316,7 +316,8 @@ def report_sections(base_accounts, assumptions, balances, base_label, currency, 
         closing = opening + change
         plan.append([MONTHS[index], _r(opening), _r(cash_year["operating"] * share_income[index]), _r(cash_year["capex"] / 12), _r(cash_year["financing"] / 12), _r(change), _r(closing)])
         opening = closing
-    sections.append({"heading": f"Monthly cash plan {year} - {scenario} ({currency})", "headers": ["Month", "Opening cash", "From operations", "Investments", "Financing", "Net change", "Closing cash"],
+    sections.append({"heading": f"Monthly cash plan {year} - {scenario} ({currency})", "headers": ["Month", "Opening cash", "From operations", "Investments",
+            "Financing", "Net change", "Closing cash"],
                      "rows": plan, "total_rows": [], "chart": {"title": f"Cash by month {year} (3D)", "series": ["From operations", "Closing cash"], "categories": list(MONTHS),
                                                                 "values": [[r[2] for r in plan], [r[6] for r in plan]]}})
     return projections, sections

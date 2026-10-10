@@ -1,7 +1,13 @@
 from __future__ import annotations
 from desktop_common import search_arrows  # 2.9.78
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    ApiClient, auto_dash_date, datetime, enable_drag_select, export_excel, export_pdf, filedialog, flow_toolbars,
+    formatted_user_date, GOLD, initial_window_size, is_amount_column, LIGHT, messagebox, NAVY, os, Path, print_rows,
+    resource_path, row_matches_search, selection_totals, sortable_date, sys, threading, time, tk, tr, ttk
+)
+from desktop_common import natural_sort_value, parse_user_date, safe_display_date  # noqa: F401 - kept for callers of desktop.*
+
 from desktop_common import _enable_windows_dpi_awareness
 import logging
 import app_runtime
@@ -29,7 +35,9 @@ from desktop_settings import SettingsMixin
 from desktop_payroll_sheet import PayrollSheetMixin
 from desktop_projection import ProjectionMixin
 
-class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin, ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, ProductionMixin, AccountToolsMixin, Stage3Mixin, DimensionsMixin, BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
+class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, ProjectionMixin, PayrollSheetMixin, InvoicesMixin, PartiesMixin, PayrollMixin,
+        ReportsMixin, SettingsMixin, AssetsMixin, V22Mixin, InventoryMixin, ProductionMixin, AccountToolsMixin, Stage3Mixin, DimensionsMixin,
+        BrainsScreensMixin, FinalFeaturesMixin, CNSSFormsMixin, tk.Tk):
     def __init__(self):
         _enable_windows_dpi_awareness()
         super().__init__()
@@ -116,7 +124,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         def open_page():
             import webbrowser
             if found.get("url"): webbrowser.open(found["url"])
-            messagebox.showinfo("Update",f"Saber Accounting {found['version']} is available.\n\n1. Make a backup (Settings > Backup & Restore > Create Backup Now).\n2. Download SaberAccountingSetup.exe and run it; your data is kept.")
+            messagebox.showinfo("Update",
+                    f"Saber Accounting {found['version']} is available.\n\n1. Make a backup (Settings > Backup & Restore > Create Backup Now).\n2. Download SaberAccountingSetup.exe and run it; your data is kept.")
         tk.Button(bar,text=f"New version {found['version']} available",command=open_page,bg=GOLD,fg=NAVY,border=0,padx=10,font=("Segoe UI",9,"bold")).pack(side="right",padx=8)
 
     def open_user_guide(self):
@@ -135,7 +144,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         if kind.__name__ == "SessionExpired":  # the sign-in screen is already shown
             log.info("Session ended during a screen action"); return
         log.error("Screen action failed", exc_info=(kind, value, tb))
-        try: messagebox.showerror("Saber Accounting", f"Something went wrong: {value}\n\nYour saved data is safe. The details were written to the log file (Settings > Backup & Restore > Open Log Folder).")
+        try: messagebox.showerror("Saber Accounting",
+                f"Something went wrong: {value}\n\nYour saved data is safe. The details were written to the log file (Settings > Backup & Restore > Open Log Folder).")
         except Exception: logging.getLogger("saber.ignored").debug("Ignored error", exc_info=True)
 
     def _style(self):
@@ -385,8 +395,10 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         card=tk.Frame(self,bg="white",padx=42,pady=34); card.place(relx=.5,rely=.5,anchor="center")
         tk.Label(card,text="Select Company & Fiscal Year",bg="white",fg=NAVY,font=("Segoe UI",18,"bold")).grid(row=0,column=0,columnspan=2,pady=(0,20))
         labels={f'{c["name"]} ({"Active" if c.get("active",True) else "Inactive"})':c for c in companies}; company_var=tk.StringVar(value=next(iter(labels),"")); year_var=tk.StringVar()
-        tk.Label(card,text="Company",bg="white").grid(row=1,column=0,sticky="w",pady=8); company_box=ttk.Combobox(card,textvariable=company_var,values=list(labels),state="readonly",width=34); company_box.grid(row=1,column=1,pady=8)
-        tk.Label(card,text="Fiscal Year",bg="white").grid(row=2,column=0,sticky="w",pady=8); year_box=ttk.Combobox(card,textvariable=year_var,state="readonly",width=34); year_box.grid(row=2,column=1,pady=8)
+        tk.Label(card,text="Company",bg="white").grid(row=1,column=0,sticky="w",pady=8); company_box=ttk.Combobox(card,textvariable=company_var,
+                values=list(labels),state="readonly",width=34); company_box.grid(row=1,column=1,pady=8)
+        tk.Label(card,text="Fiscal Year",bg="white").grid(row=2,column=0,sticky="w",pady=8); year_box=ttk.Combobox(card,textvariable=year_var,state="readonly",
+                width=34); year_box.grid(row=2,column=1,pady=8)
         def refresh_years(*_args):
             company=labels.get(company_var.get()); years=[str(y["year"]) for y in company.get("years",[])] if company else []
             year_box["values"]=years
@@ -431,7 +443,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
     def create_company_dialog(self):
         window=tk.Toplevel(self); window.title("Create Company"); window.configure(bg=LIGHT); window.transient(self); window.grab_set()
         fields={key:tk.StringVar(value=str(datetime.now().year) if key=="year" else "") for key in ("name","year","address","phone","mof_number","email","website")}
-        for row,(key,label) in enumerate((("name","Company Name"),("year","Opening Fiscal Year"),("address","Address"),("phone","Phone"),("mof_number","MOF / VAT Number"),("email","Email"),("website","Website"))):
+        for row,(key,label) in enumerate((("name","Company Name"),("year","Opening Fiscal Year"),("address","Address"),("phone","Phone"),("mof_number",
+                "MOF / VAT Number"),("email","Email"),("website","Website"))):
             tk.Label(window,text=label,bg=LIGHT).grid(row=row,column=0,sticky="w",padx=14,pady=7); tk.Entry(window,textvariable=fields[key],width=38).grid(row=row,column=1,padx=14,pady=7)
         # 2.9.71: the two main currencies of the company (USD + LBP, EUR + USD, AED + USD ...), changeable later in Settings
         choices=["USD","LBP","EUR","AED","SAR","QAR","KWD","GBP","CHF","CAD","JOD","EGP","TRY"]
@@ -495,7 +508,9 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         if not hasattr(self, "show_project"): self.show_project=tk.BooleanVar(value=True)
         self._dimension_groups=[]; self._dimension_sheets=[]
         # Forget the widgets of the previous screen (switching company / year rebuilds every page).
-        for name in ("purchase_form","expense_form","payment_forms","trial_state","statement_state","voucher_sheet","budget_sheet","departments_tree","pr_tree","vat_summary_tree","_dimensions","_account_cache","items_tree","sd_find_box","warehouses_tree","ir_warehouse_box","ir_item_box","ir_category_box","stock_sheet","_cash_accounts","_expense_accounts",
+        for name in ("purchase_form","expense_form","payment_forms","trial_state","statement_state","voucher_sheet","budget_sheet","departments_tree","pr_tree",
+                "vat_summary_tree","_dimensions","_account_cache","items_tree","sd_find_box","warehouses_tree","ir_warehouse_box","ir_item_box",
+                "ir_category_box","stock_sheet","_cash_accounts","_expense_accounts",
                      "sio_sheet","pc_sheet","pc_find_box","sio_wh_box","pc_wh_box","cat_tree","item_boxes","ir_subcategory_box","ir_unit_box","ir_supplier_box","_all_accounts"):
             self.__dict__.pop(name,None)
         # Also forget every page widget of the previous screen: they are destroyed below, and a page that is
@@ -573,7 +588,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         filter_bar=tk.Frame(host,bg=LIGHT); filter_bar.pack(fill="x",padx=28 if not side_menu else 14,pady=(6 if side_menu else 0,0))
         notebook.pack(fill="both",expand=True,padx=18 if not side_menu else 8,pady=(6,16 if not side_menu else 8))
         pages=[("dashboard_tab",tr(lang,"dashboard")),("invoices_tab",tr(lang,"invoices")),("sales_tab","Sales Invoice"),("manual_tab",tr(lang,"manual_entry")),
-            ("import_tab",tr(lang,"import")),("parties_tab",tr(lang,"customers_suppliers")),("transactions_tab",tr(lang,"payments_expenses")),("purchases_tab","Purchases & Expenses"),("inventory_tab","Inventory")]
+            ("import_tab",tr(lang,"import")),("parties_tab",tr(lang,"customers_suppliers")),("transactions_tab",tr(lang,"payments_expenses")),("purchases_tab",
+                    "Purchases & Expenses"),("inventory_tab","Inventory")]
         if self.can_use("payroll"): pages.append(("payroll_tab","Payroll"))
         if self.can_use("vat"): pages.append(("vat_tab","Quarterly VAT"))
         pages+=[("journal_tab",tr(lang,"general_journal")),("account_reports_tab","Accounts & Statements"),("pnl_tab",tr(lang,"profit_loss")),("reports_tab",tr(lang,"financial_reports")),
@@ -636,7 +652,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         currency_filter.pack(side="right",padx=(8,2))
         tk.Label(filter_bar,text="Show currency",bg=LIGHT,fg="#5f6b76",font=("Segoe UI",9,"bold")).pack(side="right")
         self.highlight_main_tab(); currency_filter.bind("<<ComboboxSelected>>",lambda _event:self.currency_changed())
-        builders=[self.build_dashboard,self.build_invoices,self.build_sales_invoice,self.build_manual,self.build_import,self.build_parties,self.build_transactions,self.build_purchases_expenses,self.build_inventory]
+        builders=[self.build_dashboard,self.build_invoices,self.build_sales_invoice,self.build_manual,self.build_import,self.build_parties,
+                self.build_transactions,self.build_purchases_expenses,self.build_inventory]
         if self.can_use("payroll"): builders.append(self.build_payroll)
         if self.can_use("vat"): builders.append(self.build_vat_return)
         builders+=[self.build_journal,self.build_trial,self.build_profit_loss,self.build_financial_reports,self.build_statement,self.build_accounts,self.build_settings]
@@ -672,7 +689,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
             self.setup_context_f2()
             self.apply_hidden_tabs()  # 2.9.81
         except Exception as exc:
-            log.exception("Page %s could not be loaded", build.__name__); messagebox.showerror("Saber Accounting",f"A page could not be loaded ({build.__name__.replace('build_','').replace('_',' ')}): {exc}\n\nThe other pages are still available.")
+            log.exception("Page %s could not be loaded", build.__name__); messagebox.showerror("Saber Accounting",
+                    f"A page could not be loaded ({build.__name__.replace('build_','').replace('_',' ')}): {exc}\n\nThe other pages are still available.")
         finally: self.__dict__["_building_depth"]-=1
 
     def apply_hidden_tabs(self):
@@ -1183,7 +1201,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
             selected=tree.selection()
             if not selected: return
             values=tree.item(selected[0],"values"); variable.set(str(values[0])); close_lookup()
-        search_var.trace_add("write",populate); tree.bind("<Double-1>",select); tree.bind("<Return>",select); entry.bind("<Return>",lambda _event:(None if tree.selection() else tree.selection_set(tree.get_children()[0]),select()) if tree.get_children() else None)
+        search_var.trace_add("write",populate); tree.bind("<Double-1>",select); tree.bind("<Return>",select); entry.bind("<Return>",
+                lambda _event:(None if tree.selection() else tree.selection_set(tree.get_children()[0]),select()) if tree.get_children() else None)
         entry.bind("<Down>",lambda _event:move(1)); entry.bind("<Up>",lambda _event:move(-1))
         entry.bind("<Next>",lambda _event:move(10)); entry.bind("<Prior>",lambda _event:move(-10))
         tk.Label(window,text="Arrows \u2191 \u2193 choose, Enter selects (or double-click). If it does not exist, create it below.",bg=LIGHT,fg="#5f6b76").pack(pady=(0,5))
@@ -1253,7 +1272,8 @@ class SaberApp(ReportsExtrasMixin, PayrollExtrasMixin, AccountingSetupMixin, Pro
         try:
             if format_name == "print": print_rows(title,headers,rows); return
             extension=".xlsx" if format_name=="xlsx" else ".pdf"
-            path=filedialog.asksaveasfilename(defaultextension=extension,filetypes=[("Excel workbook","*.xlsx")] if format_name=="xlsx" else [("PDF document","*.pdf")],initialfile=title.replace(" - ","_").replace(" ","_")+extension)
+            path=filedialog.asksaveasfilename(defaultextension=extension,filetypes=[("Excel workbook","*.xlsx")] if format_name=="xlsx" else [("PDF document",
+                    "*.pdf")],initialfile=title.replace(" - ","_").replace(" ","_")+extension)
             if not path: return
             (export_excel if format_name=="xlsx" else export_pdf)(path,title,headers,rows)
             messagebox.showinfo("Saber Accounting",f"Saved successfully:\n{path}")

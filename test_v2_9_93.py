@@ -42,7 +42,8 @@ class ApprovalTest(unittest.TestCase):
         self.assertIn("approval", created)
         invoice = next(i for i in self.admin.invoices() if i["id"] == created["invoice_id"])
         self.assertEqual(invoice["status"], "review")  # not in the books yet
-        self.assertFalse([r for r in self.admin.trial_balance() if str(r.get("code", "")).startswith("7") and float(r.get("credit") or 0) >= 1000])  # the 1,000 draft is not posted (the other test posts 150)
+        self.assertFalse([r for r in self.admin.trial_balance() if str(r.get("code",
+                "")).startswith("7") and float(r.get("credit") or 0) >= 1000])  # the 1,000 draft is not posted (the other test posts 150)
         with self.assertRaisesRegex(RuntimeError, "permission to approve"): maker.approve_invoices([created["invoice_id"]])
         mine = checker.create_manual_invoice({"invoice_date": "11-03-2025", "party_name": "Client", "kind": "sales", "currency": "USD", "status": "review"},
                                              [{"description": "S2", "quantity": 1, "unit_price": 500, "vat_rate": 11}])

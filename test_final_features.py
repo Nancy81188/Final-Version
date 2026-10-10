@@ -268,11 +268,13 @@ class QuarterlyVatTest(unittest.TestCase):
 
     def test_adjustments_lock_and_credit_carry_forward(self):
         vat_return.add_adjustment(self.db, {"year": 2025, "quarter": 1, "adjustment_type": "output", "currency": "USD", "amount": "10", "reason": "Late credit note"}, self.user, "admin")
-        with self.assertRaisesRegex(ValueError, "reason"): vat_return.add_adjustment(self.db, {"year": 2025, "quarter": 1, "adjustment_type": "input", "currency": "USD", "amount": "5", "reason": ""}, self.user)
+        with self.assertRaisesRegex(ValueError, "reason"): vat_return.add_adjustment(self.db, {"year": 2025, "quarter": 1, "adjustment_type": "input",
+                "currency": "USD", "amount": "5", "reason": ""}, self.user)
         saved = vat_return.save_return(self.db, 2025, 1, self.user, user_name="admin")
         self.assertEqual(saved["status"], "saved")
         self.assertEqual(saved["credit_carried_forward_lbp"], 45 * 89500 - 984500)
-        with self.assertRaisesRegex(ValueError, "saved"): vat_return.add_adjustment(self.db, {"year": 2025, "quarter": 1, "adjustment_type": "output", "currency": "USD", "amount": "1", "reason": "Too late"}, self.user)
+        with self.assertRaisesRegex(ValueError, "saved"): vat_return.add_adjustment(self.db, {"year": 2025, "quarter": 1, "adjustment_type": "output",
+                "currency": "USD", "amount": "1", "reason": "Too late"}, self.user)
         self.db.create_manual_invoice({"invoice_date": "10-04-2025", "party_name": "Client", "kind": "sales", "currency": "USD", "status": "posted"},
                                       [{"description": "Q2", "quantity": 1, "unit_price": 1000, "vat_rate": 11}], self.user)
         q2 = vat_return.build_vat_return(self.db, 2025, 2)
@@ -453,7 +455,8 @@ class DepartmentsProjectsBudgetTest(unittest.TestCase):
         self.assertEqual(float(rows["601100000"][-1]), 340); self.assertEqual(float(rows["713100000"][-1]), -1000)
         split = ledger_reports.build_account_report(self.db, {"split_by_department": True, "profit_loss_only": True, "first_column": "USD", "second_column": "none"})
         self.assertEqual(len(split["sections"]), 2); self.assertIn("D01 Sales", split["sections"][0]["heading"])
-        detail = ledger_reports.build_account_report(self.db, {"detailed": True, "with_department": True, "account_from": "601100000", "account_to": "601100000", "first_column": "USD", "second_column": "none"})
+        detail = ledger_reports.build_account_report(self.db, {"detailed": True, "with_department": True, "account_from": "601100000",
+                "account_to": "601100000", "first_column": "USD", "second_column": "none"})
         self.assertIn("Department", detail["sections"][0]["headers"])
 
     def test_budget_monthly_annual_parent_and_dimension_budgets(self):
@@ -482,7 +485,8 @@ class Stage3PaymentsPurchasesExpensesTest(unittest.TestCase):
 
     def test_receipts_and_payments_numbering_edit_delete(self):
         receipt = self.db.add_payment({"kind": "customer_receipt", "party_id": self.client_party["id"], "payment_date": "10-03-2025", "currency": "USD", "amount": "100"}, self.user)
-        payment = self.db.add_payment({"kind": "supplier_payment", "party_id": self.supplier["id"], "payment_date": "11-03-2025", "currency": "USD", "amount": "40", "payment_method": "Cheque"}, self.user)
+        payment = self.db.add_payment({"kind": "supplier_payment", "party_id": self.supplier["id"], "payment_date": "11-03-2025", "currency": "USD",
+                "amount": "40", "payment_method": "Cheque"}, self.user)
         rows = {r["id"]: r for r in self.db.list_payments()}
         self.assertEqual((rows[receipt]["payment_number"], rows[payment]["payment_number"]), ("RV-2025-000001", "PV-2025-000001"))
         self.assertEqual(rows[receipt]["party_account"], self.client_party["account_number"])  # the customer's own account
@@ -547,11 +551,13 @@ class Stage3PaymentsPurchasesExpensesTest(unittest.TestCase):
         self.assertEqual(data["party_name"], "ALPHA TRADING SARL")
         blank = Path(self.folder.name) / "scan.pdf"; c = canvas.Canvas(str(blank)); c.rect(10, 10, 100, 100); c.save()
         self.assertIn("scanned", read_invoice_pdf(blank)["notes"].casefold())
-        wb = Workbook(); ws = wb.active; ws.append(["Date", "Description", "Currency", "Amount", "Without VAT", "VAT", "Reference"]); ws.append(["05-03-2025", "Rent", "USD", 500, 0, 55, "R-3"]); ws.append([None] * 7)
+        wb = Workbook(); ws = wb.active; ws.append(["Date", "Description", "Currency", "Amount", "Without VAT", "VAT", "Reference"]); ws.append(["05-03-2025",
+                "Rent", "USD", 500, 0, 55, "R-3"]); ws.append([None] * 7)
         wb.save(Path(self.folder.name) / "exp.xlsx")
         expenses = read_expenses(Path(self.folder.name) / "exp.xlsx")
         self.assertEqual(len(expenses), 1); self.assertEqual((expenses[0]["with_vat_subtotal"], expenses[0]["vat"], expenses[0]["reference"]), (500, 55, "R-3"))
-        wb = Workbook(); ws = wb.active; ws.append(["Declaration No", "Freight", "Insurance", "Customs Duties", "Broker Fees", "VAT"]); ws.append(["D-1", 100, 10, 200, 50, 40]); ws.append(["", 20, 0, 0, 0, 2])
+        wb = Workbook(); ws = wb.active; ws.append(["Declaration No", "Freight", "Insurance", "Customs Duties", "Broker Fees", "VAT"]); ws.append(["D-1", 100,
+                10, 200, 50, 40]); ws.append(["", 20, 0, 0, 0, 2])
         wb.save(Path(self.folder.name) / "customs.xlsx")
         costs = read_customs_costs(Path(self.folder.name) / "customs.xlsx")
         self.assertEqual((costs["freight"], costs["customs_duties"], costs["import_vat"], costs["customs_declaration_no"]), (120, 200, 42, "D-1"))
@@ -566,7 +572,8 @@ class YearEndClosingTest(unittest.TestCase):
         self.party = self.db.save_party({"kind": "customer", "name": "Client A", "account_category": "client"}, u)
         self.db.create_manual_invoice({"invoice_date": "15-03-2024", "party_name": "Client A", "kind": "sales", "currency": "USD", "status": "posted", "source_file": "Sales Invoice"},
                                       [{"description": "S", "quantity": 1, "unit_price": 1000}], u)
-        self.db.create_manual_invoice({"invoice_date": "16-03-2024", "party_name": "Local", "kind": "sales", "currency": "LBP", "status": "posted"}, [{"description": "S", "quantity": 1, "unit_price": 8950000}], u)
+        self.db.create_manual_invoice({"invoice_date": "16-03-2024", "party_name": "Local", "kind": "sales", "currency": "LBP", "status": "posted"},
+                [{"description": "S", "quantity": 1, "unit_price": 8950000}], u)
         self.db.add_expense({"expense_date": "20-03-2024", "description": "Rent", "currency": "USD", "with_vat_subtotal": "300", "vat": "0"}, u)
 
     def tearDown(self): self.folder.cleanup()
@@ -576,7 +583,8 @@ class YearEndClosingTest(unittest.TestCase):
         self.db._balance_check_paused = True
         try:
             with self.db.connect() as db:  # an old-style closing that must be removed
-                entry = db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,created_at) VALUES('CLOSE-2024-USD','2024-12-31','old','year_close',2024,'USD',?)", (utcnow(),)).lastrowid
+                entry = db.execute("INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,created_at) VALUES('CLOSE-2024-USD','2024-12-31','old','year_close',2024,'USD',?)",
+                        (utcnow(),)).lastrowid
                 db.execute("INSERT INTO journal_lines(entry_id,account_id,debit,credit) VALUES(?,(SELECT id FROM accounts WHERE code='121'),'5','0')", (entry,))
         finally: self.db._balance_check_paused = False
         result = self.manager.close_and_open_year(self.company, 2024, 1)
@@ -798,7 +806,8 @@ class InventoryTest(unittest.TestCase):
         self.store = inventory.save_warehouse(self.db, {"name": "Site Store"}, u)
         self.hpl = inventory.save_item(self.db, {"name": "HPL Panel", "unit": "sheet", "sales_price": "120", "reorder_level": "80", "category": "Cladding"}, u)
         self.alu = inventory.save_item(self.db, {"name": "Aluminium Profile", "unit": "m", "sales_price": "15"}, u)
-        inventory.save_document(self.db, {"doc_type": "opening", "doc_date": "01-01-2024", "warehouse_id": "MAIN"}, [{"sku": self.hpl["sku"], "quantity": 50, "unit_cost": 80}, {"sku": self.alu["sku"], "quantity": 200, "unit_cost": 8}], u)
+        inventory.save_document(self.db, {"doc_type": "opening", "doc_date": "01-01-2024", "warehouse_id": "MAIN"}, [{"sku": self.hpl["sku"], "quantity": 50,
+                "unit_cost": 80}, {"sku": self.alu["sku"], "quantity": 200, "unit_cost": 8}], u)
         inventory.save_document(self.db, {"doc_type": "receipt", "doc_date": "10-02-2024", "warehouse_id": "MAIN"}, [{"sku": self.hpl["sku"], "quantity": 50, "unit_cost": 100}], u)
         self.db.save_party({"kind": "customer", "name": "Tower Client", "account_category": "client"}, u)
         self.invoice = self.db.create_manual_invoice({"invoice_date": "15-03-2024", "party_name": "Tower Client", "kind": "sales", "currency": "USD", "status": "posted"},
@@ -882,7 +891,8 @@ class ArabicPdfAndNssfTest(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.db, self.user = new_db(self.folder.name)
         self.db.save_settings({"company_nssf": "1234567"}, self.user)
-        self.rami = self.db.save_employee({"employee_number": "1000", "full_name": "رامي الخوري", "currency": "LBP", "base_salary": "100000000", "nssf_number": "5550001", "mof_number": "1"}, self.user)
+        self.rami = self.db.save_employee({"employee_number": "1000", "full_name": "رامي الخوري", "currency": "LBP", "base_salary": "100000000",
+                "nssf_number": "5550001", "mof_number": "1"}, self.user)
         self.maya = self.db.save_employee({"employee_number": "2000", "full_name": "Maya Haddad", "currency": "USD", "base_salary": "2000", "nssf_number": "5550002", "mof_number": "2"}, self.user)
         for employee in (self.rami, self.maya):
             for day in ("31-07-2025", "31-08-2025", "30-09-2025"):
@@ -910,7 +920,8 @@ class ArabicPdfAndNssfTest(unittest.TestCase):
         self.assertEqual(rows[("Maya Haddad", "07-2025")][3:6], [179000000, 90000000, 2700000])  # USD salary converted, exact LBP
         self.assertEqual(rows[("Maya Haddad", "08-2025")][3:6], [179000000, 120000000, 3600000])
         self.assertEqual(result["net_payable_lbp"], 145825000); self.assertIn("1234567", result["meta"][0])
-        payment = self.db.record_nssf_payment({"amount": str(result["net_payable_lbp"]), "payment_date": "15-10-2025", "cash_account": "531", "reference": "NSSF-778", "period_label": result["period_label"]}, self.user)
+        payment = self.db.record_nssf_payment({"amount": str(result["net_payable_lbp"]), "payment_date": "15-10-2025", "cash_account": "531",
+                "reference": "NSSF-778", "period_label": result["period_label"]}, self.user)
         lines = [(r["account_code"], r["debit"], r["credit"]) for r in self.db.journal() if r["entry_number"] == payment["voucher"]]
         self.assertEqual(lines, [("4431", 145825000.0, 0.0), ("531", 0.0, 145825000.0)])
 
@@ -957,7 +968,8 @@ class ArabicPdfAndNssfTest(unittest.TestCase):
         path = company["years"][0]["database"]; connection = sqlite3.connect(path)
         connection.execute("DROP TABLE stock_documents"); connection.execute("ALTER TABLE invoices DROP COLUMN vat_treatment"); connection.commit(); connection.close()
         database = CompanyManager(Path(self.folder.name) / "master.db").database(company["id"], 2024)
-        database.create_manual_invoice({"invoice_date": "10-02-2024", "party_name": "X", "kind": "sales", "currency": "USD", "status": "posted"}, [{"description": "a", "quantity": 1, "unit_price": 10}], 1)
+        database.create_manual_invoice({"invoice_date": "10-02-2024", "party_name": "X", "kind": "sales", "currency": "USD", "status": "posted"},
+                [{"description": "a", "quantity": 1, "unit_price": 10}], 1)
         self.assertEqual(inventory.list_documents(database), []); self.assertEqual(len(database.list_invoices()), 1)
 
 class Version22Test(unittest.TestCase):
@@ -1009,7 +1021,8 @@ class Version22Test(unittest.TestCase):
         self.db.add_landed_cost(purchase, {"freight": "120", "customs_duties": "200", "import_vat": "35"}, self.user)
         balances = {r["code"]: r["closing_balance"] for r in self.db.trial_balance()}
         self.assertEqual((balances["601800001"], balances["601800003"], balances["44210"]), (120, 200, 110 + 35))
-        self.db.create_manual_invoice({"invoice_date": "20-03-2026", "party_name": "Client A", "kind": "sales", "currency": "USD", "status": "posted"}, [{"description": "S", "quantity": 1, "unit_price": 2000}], self.user)
+        self.db.create_manual_invoice({"invoice_date": "20-03-2026", "party_name": "Client A", "kind": "sales", "currency": "USD", "status": "posted"},
+                [{"description": "S", "quantity": 1, "unit_price": 2000}], self.user)
         result = year_end.close_year(self.db, 2026, self.user)
         closing = [r for r in self.db.journal() if (r["description"] or "").startswith("CLOSING 6&7")]
         self.assertTrue(closing); self.assertIn("138", {r["account_code"] for r in closing}); self.assertEqual(result["net_results"]["USD"], 680)
@@ -1047,10 +1060,12 @@ class DeleteYearTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); root = Path(folder.name)
         master = Database(root / "master.db"); master.initialize("secret"); manager = CompanyManager(root / "master.db")
         company = manager.list_companies()[0]["id"]; db = manager.database(company, 2024)
-        db.create_manual_invoice({"invoice_date": "15-03-2024", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"}, [{"description": "S", "quantity": 1, "unit_price": 1000}], 1)
+        db.create_manual_invoice({"invoice_date": "15-03-2024", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"},
+                [{"description": "S", "quantity": 1, "unit_price": 1000}], 1)
         manager.close_and_open_year(company, 2024, 1)
         next_year = manager.database(company, 2025)
-        next_year.create_manual_invoice({"invoice_date": "10-02-2025", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"}, [{"description": "wrong", "quantity": 1, "unit_price": 5}], 1)
+        next_year.create_manual_invoice({"invoice_date": "10-02-2025", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"},
+                [{"description": "wrong", "quantity": 1, "unit_price": 5}], 1)
         with self.assertRaisesRegex(ValueError, "Only the last fiscal year"): manager.delete_year(company, 2024, 1)
         result = manager.delete_year(company, 2025, 1); self.assertEqual((result["deleted_year"], result["reopened_year"]), (2025, 2024))
         with self.assertRaisesRegex(ValueError, "only fiscal year"): manager.delete_year(company, 2024, 1)
@@ -1214,10 +1229,12 @@ class BusinessReportsTest(unittest.TestCase):
             if subtype == "credit_note": head.update(supplier_side="C - Credit", vat_side="D - Debit", expense_side="D - Debit", invoice_number="CN-1")
             return self.db.create_manual_invoice(head, calc["lines"], u)
         self.first = sale("10-03-2026", "Client A", [{"description": "HPL Panel", "quantity": 10, "unit": "sheet", "unit_price": 120}], "10-04-2026")
-        sale("15-05-2026", "Client A", [{"description": "HPL Panel", "quantity": 5, "unit": "sheet", "unit_price": 120}, {"description": "Installation", "quantity": 1, "unit_price": 300}], "15-06-2026")
+        sale("15-05-2026", "Client A", [{"description": "HPL Panel", "quantity": 5, "unit": "sheet", "unit_price": 120}, {"description": "Installation",
+                "quantity": 1, "unit_price": 300}], "15-06-2026")
         sale("20-08-2026", "Client B", [{"description": "HPL Panel", "quantity": 2, "unit": "sheet", "unit_price": 110}], "19-10-2026")
         sale("25-08-2026", "Client A", [{"description": "HPL Panel", "quantity": 1, "unit": "sheet", "unit_price": 120}], subtype="credit_note")
-        self.db.create_manual_invoice({"invoice_date": "01-09-2026", "party_name": "Supplier S", "kind": "purchases", "currency": "USD", "status": "posted"}, [{"description": "Goods", "quantity": 1, "unit_price": 2000}], u)
+        self.db.create_manual_invoice({"invoice_date": "01-09-2026", "party_name": "Supplier S", "kind": "purchases", "currency": "USD", "status": "posted"},
+                [{"description": "Goods", "quantity": 1, "unit_price": 2000}], u)
         payment = self.db.add_payment({"kind": "customer_receipt", "party_id": self.db.list_parties()[0]["id"], "payment_date": "01-05-2026", "currency": "USD", "amount": "500"}, u)
         self.db.save_allocations(payment, [{"invoice_id": self.first, "amount": 400}], u)
         self.options = {"date_from": "01-01-2026", "date_to": "26-09-2026", "basis": "USD"}
@@ -1261,7 +1278,8 @@ class NewCurrencyTest(unittest.TestCase):
         result = db.calculate_payroll({"employee_id": employee["id"], "period_date": "28-02-2026"})  # LBP -> USD -> SAR
         self.assertEqual((result["income_tax_lbp"], result["employee_nssf"]), (2880000, 150))
         self.assertTrue(vat_return.add_adjustment(db, {"year": 2026, "quarter": 1, "adjustment_type": "output", "currency": "SAR", "amount": "5", "reason": "test"}, user))
-        with self.assertRaisesRegex(ValueError, "not set up"): vat_return.add_adjustment(db, {"year": 2026, "quarter": 1, "adjustment_type": "output", "currency": "XYZ", "amount": "5", "reason": "test"}, user)
+        with self.assertRaisesRegex(ValueError, "not set up"): vat_return.add_adjustment(db, {"year": 2026, "quarter": 1, "adjustment_type": "output",
+                "currency": "XYZ", "amount": "5", "reason": "test"}, user)
         folder.cleanup()
 
 class BankReconciliationTest(unittest.TestCase):

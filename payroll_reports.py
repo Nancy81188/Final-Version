@@ -206,7 +206,8 @@ def build_payroll_report(db, report="R10", period_type="quarterly", year=None, i
         summary[key] = {"employees": len(items), "gross": float(_sum(items, "gross_salary")), "income_tax": float(_sum(items, "income_tax")),
                         "retro_tax": float(_sum(items, "retro_tax")), "employee_nssf": float(_sum(items, "employee_nssf")), "employer_nssf": float(_sum(items, "employer_total"))}
         if not items:
-            sections.append({"heading": f"{group_label}", "headers": ["Note"], "rows": [[f"No {'posted ' if not include_drafts else ''}payroll for {group_label.lower()} in {label}"]], "total_rows": []})
+            sections.append({"heading": f"{group_label}", "headers": ["Note"],
+                    "rows": [[f"No {'posted ' if not include_drafts else ''}payroll for {group_label.lower()} in {label}"]], "total_rows": []})
             continue
         if report == "R10": sections += _r10_sections(group_label, items)
         elif report == "R5": sections += _r5_sections(group_label, items)
@@ -442,6 +443,8 @@ def build_ceilings_by_month(db, year):
         rows.append([f"{calendar.month_name[month]} {year}", _ceiling_text(s.get("employee_ceiling")), _ceiling_text(s.get("medical_ceiling")), _ceiling_text(s.get("family_ceiling")),
                      _rate_text(s.get("employee_nssf_rate")), _rate_text(s.get("medical_rate")), _rate_text(s.get("family_rate")), _rate_text(s.get("end_service_rate")),
                      _ceiling_text(s.get("tax_rounding")) if Decimal(str(s.get("tax_rounding") or 0)) else "-", _display(s.get("date_from"))])
-    headers = ["Month | الشهر", "Employee ceiling", "Sickness & maternity ceiling", "Family allowances ceiling", "Employee", "Employer sickness", "Family", "End of service", "Tax rounding", "Rules from"]
-    return {"report": "CEILINGS", "title": f"NSSF Ceilings by Month {year} | سقوف الضمان الاجتماعي الشهرية", "period_label": str(year), "meta": ["Monthly ceilings in LBP (the rules in force on the last day of each month)"],
+    headers = ["Month | الشهر", "Employee ceiling", "Sickness & maternity ceiling", "Family allowances ceiling", "Employee", "Employer sickness", "Family",
+            "End of service", "Tax rounding", "Rules from"]
+    return {"report": "CEILINGS", "title": f"NSSF Ceilings by Month {year} | سقوف الضمان الاجتماعي الشهرية", "period_label": str(year),
+            "meta": ["Monthly ceilings in LBP (the rules in force on the last day of each month)"],
             "sections": [{"heading": f"Year {year}", "headers": headers, "rows": rows, "total_rows": []}], "record_count": 12, "summary": {}}

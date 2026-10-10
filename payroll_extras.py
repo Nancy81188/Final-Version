@@ -86,7 +86,8 @@ def post_eos_provision(db, as_of, user_id):
     if not result["entry"]: raise ValueError("The provision booked already equals the provision needed")
     lines = [{"account_code": code, "line_currency": "LBP", "side": "D" if debit else "C", "amount": str(debit or credit)} for code, debit, credit in result["entry"]]
     voucher = db.save_journal_voucher({"entry_date": display_date(result["date"]), "currency": "LBP", "voucher_type": "06",
-                                       "description": f"END OF SERVICE PROVISION - {display_date(result['date'])}: needed {result['total_lbp']:,.0f} LBP, booked before {result['booked_lbp']:,.0f}"}, lines, user_id)
+                                       "description": f"END OF SERVICE PROVISION - {display_date(result['date'])}: needed {result['total_lbp']:,.0f} LBP, booked before {result['booked_lbp']:,.0f}"},
+                                               lines, user_id)
     return {**result, "voucher": voucher["voucher"]["entry_number"]}
 
 
@@ -138,7 +139,8 @@ def leave_balances(db, as_of, default_days=15, with_ids=False):
         earned = (per_year * months / 12).quantize(Decimal("0.01"))
         carried = _d(e.get("leave_carried")); used = taken.get(e["id"], ZERO); balance = carried + earned - used
         daily = (_d(e["base_salary"]) / 30)
-        rows.append({**({"employee_id": e["id"]} if with_ids else {}), "employee": e["full_name"], "number": e.get("employee_number") or "", "days_year": per_year, "carried": carried, "earned": earned,
+        rows.append({**({"employee_id": e["id"]} if with_ids else {}), "employee": e["full_name"], "number": e.get("employee_number") or "",
+                "days_year": per_year, "carried": carried, "earned": earned,
                      "taken": used, "balance": balance, "currency": e["currency"], "value": (balance * daily).quantize(Decimal("0.01"))})
     return {"date": as_of, "rows": rows}
 
@@ -172,7 +174,8 @@ def eos_sections(result):
             {"heading": "Entry", "headers": ["Account", "Debit", "Credit"], "rows": entry, "total_rows": []},
             {"heading": "Notes", "headers": ["Note"], "rows": [[n] for n in result["notes"] + [
                 "Indemnity = last monthly salary x years of service (Social Security Law Art. 50-54); the NSSF pays it from the 8.5% contributions and the employer pays the difference.",
-                "Contributions paid = the employer end-of-service share in Saber's posted payroll + 'End-of-service contributions before Saber' on the employee. An estimate for the accounts, not the NSSF settlement."]], "total_rows": []}]
+                "Contributions paid = the employer end-of-service share in Saber's posted payroll + 'End-of-service contributions before Saber' on the employee. An estimate for the accounts, not the NSSF settlement."]],
+                        "total_rows": []}]
 
 
 def leave_sections(result):

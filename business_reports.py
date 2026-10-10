@@ -97,7 +97,8 @@ def ageing(db, options):
         days = (as_of_date - datetime.strptime(due, "%Y-%m-%d")).days
         index = 0 if days <= 0 else next((i + 1 for i, limit in enumerate(limits) if days <= limit), len(limits) + 1)
         value = convert(open_amount, inv["currency"], day)
-        party = parties.setdefault(inv["party_id"], {"name": inv["party_name"] or "-", "account": inv.get("account_number") or "", "buckets": [ZERO] * len(labels), "unallocated": ZERO, "invoices": [], "due_by": ZERO})
+        party = parties.setdefault(inv["party_id"], {"name": inv["party_name"] or "-", "account": inv.get("account_number") or "",
+                "buckets": [ZERO] * len(labels), "unallocated": ZERO, "invoices": [], "due_by": ZERO})
         party["buckets"][index] += value
         if days >= 0: party["due_by"] += value
         party["invoices"].append([inv["invoice_number"], display_date(day), display_date(due), inv["currency"], _money(open_amount), max(days, 0), labels[index], _money(value)])
@@ -120,7 +121,8 @@ def ageing(db, options):
     rows.append(["TOTAL", f"{len(parties)} " + ("customer(s)" if kind == "sale" else "supplier(s)")] + [_money(v) for v in totals] +
                 [_money(grand), _money(total_unallocated), _money(grand - total_unallocated), f"{(sum(totals[1:], ZERO) / grand * 100):.0f}%" if grand > 0 else ""])
     summary = [[label, _money(value), f"{(value / grand * 100):.1f}%" if grand else "0.0%"] for label, value in zip(labels, totals)]
-    summary += [["TOTAL OPEN", _money(grand), "100.0%" if grand else "0.0%"], ["Less: receipts / payments not allocated", _money(total_unallocated), ""], ["NET BALANCE", _money(grand - total_unallocated), ""]]
+    summary += [["TOTAL OPEN", _money(grand), "100.0%" if grand else "0.0%"], ["Less: receipts / payments not allocated", _money(total_unallocated), ""],
+            ["NET BALANCE", _money(grand - total_unallocated), ""]]
     due_by = sum((party["due_by"] for party in parties.values()), ZERO)
     summary.append([f"Due by {display_date(as_of)}", _money(max(ZERO, due_by - total_unallocated)), "After unallocated receipts / payments"])
     who = "Customer" if kind == "sale" else "Supplier"
@@ -255,7 +257,8 @@ def top_parties(db, options):
     others = ranked[limit:]
     if others:
         o_ht = sum((v["ht"] for _k, v in others), ZERO); o_vat = sum((v["vat"] for _k, v in others), ZERO)
-        rows.append(["", f"Others ({len(others)})", "", _money(o_ht), _money(o_vat), _money(o_ht + o_vat), f"{((o_ht + o_vat) / grand * 100):.1f}%" if grand else "", "100.0%", sum(v["count"] for _k, v in others), ""])
+        rows.append(["", f"Others ({len(others)})", "", _money(o_ht), _money(o_vat), _money(o_ht + o_vat),
+                f"{((o_ht + o_vat) / grand * 100):.1f}%" if grand else "", "100.0%", sum(v["count"] for _k, v in others), ""])
     rows.append(["", "TOTAL", "", _money(grand_ht), _money(grand_vat), _money(grand), "100%", "", sum(v["count"] for _k, v in ranked), ""])
     who = "Client" if side == "clients" else "Supplier"
     sections = [{"heading": f"Top {limit} {who.lower()}s - {'sales' if side == 'clients' else 'purchases and expenses'} {display_date(start)} to {display_date(end)}",

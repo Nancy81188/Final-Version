@@ -171,7 +171,8 @@ def _audit(db, year, include_drafts):
     summary = [["Employees", "إجمالي عدد الأجراء", len(people)],
                ["of which with no tax due", "غير الخاضعين للضريبة", sum(1 for i in people if i["tax"] == 0)]]
     sections = [{"heading": "For accounting audit only", "headers": ["Item", "البيان", "Value"], "rows": summary, "total_rows": [], "fixed": True},
-                {"heading": "Sum of all R6 statements by line", "headers": ["Line", "Item", "الشرح", "(1) Total", "(2) Not taxable", "(3) Taxable"], "rows": body, "total_rows": [len(body) - 1], "fixed": True},
+                {"heading": "Sum of all R6 statements by line", "headers": ["Line", "Item", "الشرح", "(1) Total", "(2) Not taxable", "(3) Taxable"],
+                        "rows": body, "total_rows": [len(body) - 1], "fixed": True},
                 {"heading": "Reconciliation R6 vs R5", "headers": ["Check", "Sum of R6", "R5", "Difference", "Result"], "rows": check, "total_rows": [], "fixed": True}]
     return {"report": "AUDIT", "title": OFFICIAL["AUDIT"], "period_label": label, "date_from": start, "date_to": end,
             "meta": _company_meta(db, label, start, end), "sections": sections, "record_count": len(rows),
@@ -222,7 +223,8 @@ def _register(db, year, leavers=False):
                    "Extra indemnity", "Representation (taxable / not)", "No NSSF (end / family / sickness)", "Address | العنوان"]
         body = []
         for e in employees:
-            address = " - ".join(str(e.get(k) or "") for k in ("addr_governorate", "addr_caza", "addr_town", "addr_district", "addr_street", "addr_building", "addr_floor") if e.get(k)) or (e.get("address") or "")
+            address = " - ".join(str(e.get(k) or "") for k in ("addr_governorate", "addr_caza", "addr_town", "addr_district", "addr_street", "addr_building",
+                    "addr_floor") if e.get(k)) or (e.get("address") or "")
             flags = "/".join("x" if str(e.get(k) or "0") == "1" else "-" for k in ("nssf_no_end_service", "nssf_no_family", "nssf_no_medical"))
             body.append([e["employee_number"], e["full_name"], e.get("father_name") or "", e.get("job_title") or "",
                          " ".join(x for x in (e.get("unit_code") or "", e.get("unit_name") or "") if x), e.get("mof_number") or "", e.get("nssf_number") or "",

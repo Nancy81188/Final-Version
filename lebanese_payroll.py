@@ -23,7 +23,8 @@ BASE = {"tax_brackets": BRACKETS_2024, "single_allowance": "450000000", "spouse_
         "transport_daily_exempt": "450000", "default_transport_days": "26", "schooling_annual_exempt": "6000000", "schooling_max_children": "3",
         "schooling_public_child": "0", "schooling_public_cap": "0",
         "schooling_private_child": "0", "schooling_private_cap": "0",
-        "tax_rounding": "0", "minimum_wage": "18000000", "family_allowance_spouse": "600000", "family_allowance_child": "330000", "family_allowance_cap": "2250000", "family_allowance_max_children": "5"}
+        "tax_rounding": "0", "minimum_wage": "18000000", "family_allowance_spouse": "600000", "family_allowance_child": "330000",
+                "family_allowance_cap": "2250000", "family_allowance_max_children": "5"}
 
 # NSSF monthly family-benefit amounts (LBP). These are separate from the annual salary-tax deductions.
 FAMILY_ALLOWANCE_PERIODS = (

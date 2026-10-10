@@ -5,7 +5,13 @@ dimensions, documents); this file keeps the connection, setup, users, backups an
 the one class every other module uses."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    contextmanager, datetime, Decimal, DEFAULT_LEBANESE_ACCOUNTS, display_date, EXPENSE_ACCOUNT_9,
+    EXPENSE_NO_VAT_ACCOUNT_9, hash_password, hashlib, InvalidOperation, iso_date, json, LEBANESE_ACCOUNTS,
+    LEGACY_ACCOUNT_MAP, logging, os, parse_permissions, parse_ts, parse_vat_rate, Path, PERMISSION_MODULES, re,
+    register_money_functions, SCHEMA, secrets, SESSION_HOURS, sqlite3, threading, timedelta, timezone,
+    USER_VALIDITY_DAYS, utcnow, VAT_ACCOUNT_9, verify_password
+)
 from database_common import _soft_iso  # noqa: F401
 from db_invoices import InvoicesStore
 from db_journal import JournalStore
@@ -165,7 +171,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             rows = db.execute("SELECT e.id, e.entry_number, e.entry_date, e.description, l.debit, l.credit FROM journal_entries e JOIN journal_lines l ON l.entry_id=e.id ORDER BY e.id").fetchall()
         totals = {}
         for row in rows:
-            item = totals.setdefault(row["id"], {"id": row["id"], "entry_number": row["entry_number"], "entry_date": row["entry_date"], "description": row["description"], "debit": Decimal(0), "credit": Decimal(0)})
+            item = totals.setdefault(row["id"], {"id": row["id"], "entry_number": row["entry_number"], "entry_date": row["entry_date"],
+                    "description": row["description"], "debit": Decimal(0), "credit": Decimal(0)})
             try: item["debit"] += Decimal(str(row["debit"] or 0)); item["credit"] += Decimal(str(row["credit"] or 0))
             except (InvalidOperation, ValueError): item["debit"] = item["credit"] = None
         result = []
@@ -276,7 +283,10 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             db.execute("UPDATE invoices SET deductible_subtotal=subtotal WHERE CAST(deductible_subtotal AS REAL)=0 AND CAST(non_deductible_subtotal AS REAL)=0 AND CAST(subtotal AS REAL)<>0")
             db.execute("UPDATE invoice_items SET deductible_subtotal=subtotal WHERE CAST(deductible_subtotal AS REAL)=0 AND CAST(non_deductible_subtotal AS REAL)=0 AND CAST(subtotal AS REAL)<>0")
             expense_columns={row["name"] for row in db.execute("PRAGMA table_info(expenses)")}
-            for column,definition in (("with_vat_subtotal","TEXT NOT NULL DEFAULT '0'"),("without_vat_subtotal","TEXT NOT NULL DEFAULT '0'"),("expense_without_vat_account","TEXT NOT NULL DEFAULT '601100001'"),("expense_side","TEXT NOT NULL DEFAULT 'D'"),("expense_without_vat_side","TEXT NOT NULL DEFAULT 'D'"),("vat_side","TEXT NOT NULL DEFAULT 'D'"),("payment_side","TEXT NOT NULL DEFAULT 'C'")):
+            for column,definition in (("with_vat_subtotal","TEXT NOT NULL DEFAULT '0'"),("without_vat_subtotal","TEXT NOT NULL DEFAULT '0'"),
+                    ("expense_without_vat_account","TEXT NOT NULL DEFAULT '601100001'"),("expense_side","TEXT NOT NULL DEFAULT 'D'"),
+                    ("expense_without_vat_side","TEXT NOT NULL DEFAULT 'D'"),("vat_side","TEXT NOT NULL DEFAULT 'D'"),("payment_side",
+                    "TEXT NOT NULL DEFAULT 'C'")):
                 if column not in expense_columns: db.execute(f"ALTER TABLE expenses ADD COLUMN {column} {definition}")
             db.execute("UPDATE expenses SET with_vat_subtotal=subtotal WHERE CAST(with_vat_subtotal AS REAL)=0 AND CAST(without_vat_subtotal AS REAL)=0 AND CAST(subtotal AS REAL)<>0")
             party_columns={row["name"] for row in db.execute("PRAGMA table_info(parties)")}
@@ -372,7 +382,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
             for column,definition in (("unit","TEXT"),("discount_percent","TEXT"),("discount_amount","TEXT"),("gross_amount","TEXT")):
                 if column not in item_cols: db.execute(f"ALTER TABLE invoice_items ADD COLUMN {column} {definition}")
             inv_cols={row["name"] for row in db.execute("PRAGMA table_info(invoices)")}
-            for column,definition in (("doc_subtype","TEXT NOT NULL DEFAULT 'invoice'"),("invoice_discount_percent","TEXT"),("invoice_discount_amount","TEXT"),("gross_before_discount","TEXT"),("notes","TEXT")):
+            for column,definition in (("doc_subtype","TEXT NOT NULL DEFAULT 'invoice'"),("invoice_discount_percent","TEXT"),("invoice_discount_amount","TEXT"),
+                    ("gross_before_discount","TEXT"),("notes","TEXT")):
                 if column not in inv_cols: db.execute(f"ALTER TABLE invoices ADD COLUMN {column} {definition}")
             if "return_request_id" not in inv_cols: db.execute("ALTER TABLE invoices ADD COLUMN return_request_id TEXT")
             if "payment_account" not in inv_cols: db.execute("ALTER TABLE invoices ADD COLUMN payment_account TEXT")
@@ -748,7 +759,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         prefix={"client":"4111","supplier":"4011","asset_supplier":"4031","other_payable":"4619"}.get(category,"4011")
         account_number=party["account_number"]
         if not account_number:
-            last=db.execute("SELECT account_number FROM parties WHERE account_number LIKE ? AND length(account_number)=9 ORDER BY CAST(account_number AS INTEGER) DESC LIMIT 1",(prefix+"%",)).fetchone()
+            last=db.execute("SELECT account_number FROM parties WHERE account_number LIKE ? AND length(account_number)=9 ORDER BY CAST(account_number AS INTEGER) DESC LIMIT 1",
+                    (prefix+"%",)).fetchone()
             next_suffix=(int(last["account_number"][4:])+1) if last else 1
             if next_suffix>99999: raise ValueError(f"No account numbers remain under prefix {prefix}")
             account_number=f"{prefix}{next_suffix:05d}"
@@ -895,7 +907,8 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
 
     def list_backups(self):
         files=self._backup_files(); checks=self._backup_checks()
-        return [{"checked":("ok" if checks[path.name].get("ok") else "FAILED") if path.name in checks else "not checked","name":path.name,"size":path.stat().st_size,"modified":datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+        return [{"checked":("ok" if checks[path.name].get("ok") else "FAILED") if path.name in checks else "not checked","name":path.name,
+                "size":path.stat().st_size,"modified":datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
                  "kind":"safety" if "_safety" in path.stem else "automatic" if path.stem.endswith("_auto") else "older version" if path.name.startswith("saber_accounting_") and self.backup_label else "backup"}
                 for path in sorted(files.values(),key=lambda p:p.stat().st_mtime,reverse=True)]
 
@@ -1009,7 +1022,9 @@ class Database(InvoicesStore, JournalStore, DocumentsStore, PaymentsStore, Rates
         return {"code":code,"name":name}
 
     def save_settings(self, values, user_id):
-        allowed={"base_currency","second_currency","vat_rate","vat_currency","vat_second_currency","backup_interval_hours","company_name","company_address","company_phone","company_mof","company_nssf","company_email","company_website","company_logo","company_vat_registered","company_vat_date","vat_ratio_method"}
+        allowed={"base_currency","second_currency","vat_rate","vat_currency","vat_second_currency","backup_interval_hours","company_name","company_address",
+                "company_phone","company_mof","company_nssf","company_email","company_website","company_logo","company_vat_registered","company_vat_date",
+                "vat_ratio_method"}
         if str(values.get("base_currency") or "USD") not in self.currency_codes(): raise ValueError("Invalid base currency")
         if "vat_ratio_method" in values and str(values["vat_ratio_method"]).strip().lower() not in ("quarter","annual"):  # 2.9.83
             raise ValueError("VAT ratio method must be quarter or annual")

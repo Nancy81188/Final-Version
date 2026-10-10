@@ -1,7 +1,11 @@
 """Journal, profit & loss, fiscal year and financial reports screens. (moved out of desktop.py in 2.9.41, unchanged)."""
 from __future__ import annotations
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    bulk_action, chosen_values, datetime, export_excel, export_pdf, filedialog, flow_toolbars, GOLD, json, LIGHT,
+    main_currency, messagebox, MultiSelect, natural_sort_value, NAVY, parse_user_date, print_rows, row_matches_search,
+    safe_display_date, sortable_date, tk, ttk
+)
 
 
 MUTED = "#5f6b76"
@@ -39,7 +43,8 @@ class ReportsMixin:
         tk.Label(finder,text="Find in details",bg=LIGHT,font=("Segoe UI",9,"bold")).pack(side="left")
         details_entry=tk.Entry(finder,textvariable=self.journal_find_details,width=28); details_entry.pack(side="left",padx=(4,10)); details_entry.bind("<Return>",lambda _event:self.load_journal())
         tk.Button(finder,text="Find",command=self.load_journal,bg=GOLD,fg=NAVY,border=0,padx=12,pady=5).pack(side="left",padx=2)
-        tk.Button(finder,text="Clear",command=lambda:(self.journal_find.set(""),self.journal_find_details.set(""),self.load_journal()),bg=NAVY,fg="white",border=0,padx=10,pady=5).pack(side="left",padx=2)
+        tk.Button(finder,text="Clear",command=lambda:(self.journal_find.set(""),self.journal_find_details.set(""),self.load_journal()),bg=NAVY,fg="white",
+                border=0,padx=10,pady=5).pack(side="left",padx=2)
         for text,mode in (("Print Preview","preview"),("PDF","pdf"),("Print","print")):
             tk.Button(finder,text=text,command=lambda m=mode:self.journal_document(m),bg=NAVY,fg="white",border=0,padx=10,pady=5).pack(side="right",padx=2)
         actions=tk.Frame(self.journal_tab,bg=LIGHT); actions.pack(anchor="w",padx=10,pady=(6,4))
@@ -170,7 +175,8 @@ class ReportsMixin:
         try:
             if format_name=="print": print_rows(title,headers,values); return
             extension=".xlsx" if format_name=="xlsx" else ".pdf"
-            path=filedialog.asksaveasfilename(defaultextension=extension,filetypes=[("Excel workbook","*.xlsx")] if format_name=="xlsx" else [("PDF document","*.pdf")],initialfile="Saber_Accounting_General_Journal"+extension)
+            path=filedialog.asksaveasfilename(defaultextension=extension,filetypes=[("Excel workbook","*.xlsx")] if format_name=="xlsx" else [("PDF document",
+                    "*.pdf")],initialfile="Saber_Accounting_General_Journal"+extension)
             if not path: return
             (export_excel if format_name=="xlsx" else export_pdf)(path,title,headers,values)
             messagebox.showinfo("General Journal",f"Saved successfully:\n{path}")
@@ -222,7 +228,8 @@ class ReportsMixin:
         try: result=self.client.delete_fiscal_year(year)
         except Exception as exc: return messagebox.showerror("Delete Fiscal Year",str(exc))
         self.current_company=result["company"]
-        messagebox.showinfo("Delete Fiscal Year",f"{year} deleted. Backup: {result['backup']}\n{result['reopened_year']} is open again (closing removed).\n\nOpen {result['reopened_year']} and close it again to make a new opening.")
+        messagebox.showinfo("Delete Fiscal Year",
+                f"{year} deleted. Backup: {result['backup']}\n{result['reopened_year']} is open again (closing removed).\n\nOpen {result['reopened_year']} and close it again to make a new opening.")
         self.company_selection_screen()
 
     def preview_closing(self):
@@ -300,16 +307,19 @@ class ReportsMixin:
         closing_vouchers=", ".join(result.get("closing_vouchers",[])) or "no P&L balances"
         summary=" / ".join(f"{code}: {amount:,.2f}" for code,amount in result.get("net_results",{}).items()) or "No P&L activity"
         self.main_screen()
-        messagebox.showinfo("Fiscal Year",f"Year {year} closed.\nClosing 6&7 vouchers: {closing_vouchers}\nYear {year+1} opened for {self.current_company['name']}.\nOpening vouchers: {vouchers}\nNet results: {summary}")
+        messagebox.showinfo("Fiscal Year",
+                f"Year {year} closed.\nClosing 6&7 vouchers: {closing_vouchers}\nYear {year+1} opened for {self.current_company['name']}.\nOpening vouchers: {vouchers}\nNet results: {summary}")
 
     def reopen_fiscal_year(self):
         year=int(getattr(self,"current_fiscal_year",self.close_year.get()))
-        if not messagebox.askyesno("Delete Closing & Reopen",f"Delete ALL closing entries of {year} and open it again?\n\nThe opening vouchers of {year+1} are removed too, until you close {year} again."): return
+        if not messagebox.askyesno("Delete Closing & Reopen",
+                f"Delete ALL closing entries of {year} and open it again?\n\nThe opening vouchers of {year+1} are removed too, until you close {year} again."): return
         try: result=self.client.reopen_fiscal_year(year)
         except Exception as exc: return messagebox.showerror("Reopen Fiscal Year",str(exc))
         self.current_company=result.get("company",self.current_company); self.current_fiscal_year=year
         self.client.select_company_year(self.current_company["id"],year); self.main_screen()
-        messagebox.showinfo("Fiscal Year",f"Fiscal year {year} is open again.\nRemoved closing entries: {result.get('removed_closing_entries',0)}\nRemoved old opening entries: {result.get('removed_opening_entries',0)}")
+        messagebox.showinfo("Fiscal Year",
+                f"Fiscal year {year} is open again.\nRemoved closing entries: {result.get('removed_closing_entries',0)}\nRemoved old opening entries: {result.get('removed_opening_entries',0)}")
 
     def refresh_next_year_opening(self):
         year=int(getattr(self,"current_fiscal_year",self.close_year.get()))
@@ -340,17 +350,23 @@ class ReportsMixin:
         self.fin_filters={key:tk.StringVar(value="All") for key in FIN_FILTERS}; self.fin_filter_boxes={}
         self.build_financial_filter_row()
         nested=ttk.Notebook(self.reports_tab); nested.pack(fill="both",expand=True,padx=10,pady=(0,10)); self.financial_notebook=nested
-        gl=tk.Frame(nested,bg=LIGHT); bs=tk.Frame(nested,bg=LIGHT); vat=tk.Frame(nested,bg=LIGHT); cash=tk.Frame(nested,bg=LIGHT); cash_outlook=tk.Frame(nested,bg=LIGHT); aging=self.ageing_tab; comparative=tk.Frame(nested,bg=LIGHT)
-        nested.add(gl,text="General Ledger"); nested.add(bs,text="Balance Sheet"); nested.add(vat,text="Lebanese VAT Report"); nested.add(cash,text="Cash Flow"); nested.add(cash_outlook,text="Cash Flow Outlook"); nested.add(comparative,text="Comparative P&L"); self.ageing_page=aging; self.build_budget_page(nested); self.build_projection_page(nested); self.build_business_reports_page(nested)
+        gl=tk.Frame(nested,bg=LIGHT); bs=tk.Frame(nested,bg=LIGHT); vat=tk.Frame(nested,bg=LIGHT); cash=tk.Frame(nested,bg=LIGHT); cash_outlook=tk.Frame(nested,
+                bg=LIGHT); aging=self.ageing_tab; comparative=tk.Frame(nested,bg=LIGHT)
+        nested.add(gl,text="General Ledger"); nested.add(bs,text="Balance Sheet"); nested.add(vat,text="Lebanese VAT Report"); nested.add(cash,
+                text="Cash Flow"); nested.add(cash_outlook,text="Cash Flow Outlook"); nested.add(comparative,
+                text="Comparative P&L"); self.ageing_page=aging; self.build_budget_page(nested); self.build_projection_page(nested); self.build_business_reports_page(nested)
         self.build_management_pack_page(nested)  # 2.9.82
-        self.ledger_tree=self.table(gl,[("date","Date",95),("entry","Entry",90),("account","Account",85),("currency","Currency",70),("name","Account Name",180),("description","Description",200),("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
+        self.ledger_tree=self.table(gl,[("date","Date",95),("entry","Entry",90),("account","Account",85),("currency","Currency",70),("name","Account Name",180),
+                ("description","Description",200),("debit","Debit",105),("credit","Credit",105),("balance","Balance",110)])
         self.report_buttons(gl,"ledger"); self.ledger_tree._totals_skip={"balance"}
-        self.balance_tree=self.table(bs,[("type","Type",90),("account","Account",90),("currency","Currency",80),("name","Account Name",280),("debit","Debit",120),("credit","Credit",120),("balance","Balance",130)])
+        self.balance_tree=self.table(bs,[("type","Type",90),("account","Account",90),("currency","Currency",80),("name","Account Name",280),("debit","Debit",
+                120),("credit","Credit",120),("balance","Balance",130)])
         self.report_buttons(bs,"balance")
         self.vat_tree=self.table(vat,[("currency","Currency",85),("type","Type",100),("invoices","Count",75),("subtotal","Before VAT",130),("vat","VAT",110),("total","Total",130)])
         self.report_buttons(vat,"vat")
         self.vat_summary=tk.Label(vat,text="",bg=LIGHT,font=("Segoe UI",10,"bold")); self.vat_summary.pack(pady=(0,8))
-        self.cash_tree=self.table(cash,[("currency","Currency",90),("category","Cash Flow Category",280),("inflow","Inflow",140),("outflow","Outflow",140),("net","Net Cash Movement",160)]); self.report_buttons(cash,"cash")
+        self.cash_tree=self.table(cash,[("currency","Currency",90),("category","Cash Flow Category",280),("inflow","Inflow",140),("outflow","Outflow",140),
+                ("net","Net Cash Movement",160)]); self.report_buttons(cash,"cash")
         outlook_bar=tk.Frame(cash_outlook,bg=LIGHT); outlook_bar.pack(fill="x",padx=10,pady=8)
         self.cash_outlook_year=tk.StringVar(value=str(self.current_fiscal_year))
         self.cash_outlook_horizon=tk.StringVar(value="Quarter (3 months)")
@@ -409,8 +425,10 @@ class ReportsMixin:
         tk.Label(range_row,text="Type a number or name, or choose from the list.",bg=LIGHT,fg="#5f6b76").pack(side="left",padx=8)
         tk.Label(aging,text="Past dates use the current invoice outstanding balance; future dates show the expected lateness if no further payment is made.",
             bg=LIGHT,fg="#5f6b76",anchor="w").pack(fill="x",padx=12)
-        self.aging_tree=self.table(aging,[("kind","Type",85),("party","Customer / Supplier",220),("invoice","Invoice",110),("due","Due Date",100),("currency","Currency",75),("outstanding","Outstanding",120),("days","Days Overdue",110),("bucket","Aging Bucket",100)]); self.report_buttons(aging,"aging")
-        self.comparative_tree=self.table(comparative,[("currency","Currency",75),("type","Type",85),("account","Account",95),("name","Account Name",260),("current","Current Period",130),("prior","Prior Year",130),("variance","Variance",130)]); self.report_buttons(comparative,"comparative")
+        self.aging_tree=self.table(aging,[("kind","Type",85),("party","Customer / Supplier",220),("invoice","Invoice",110),("due","Due Date",100),("currency",
+                "Currency",75),("outstanding","Outstanding",120),("days","Days Overdue",110),("bucket","Aging Bucket",100)]); self.report_buttons(aging,"aging")
+        self.comparative_tree=self.table(comparative,[("currency","Currency",75),("type","Type",85),("account","Account",95),("name","Account Name",260),
+                ("current","Current Period",130),("prior","Prior Year",130),("variance","Variance",130)]); self.report_buttons(comparative,"comparative")
         self.enable_drill_down(self.comparative_tree,2,lambda:(self.financial_report_range() or (None,None)))  # 2.9.82
         self.enable_drill_down(self.balance_tree,1,lambda:(None,(self.financial_report_range() or (None,None))[1]))
         self.load_financial_reports()
@@ -506,11 +524,13 @@ class ReportsMixin:
         self.refresh_financial_filter_choices(ledger["items"])
         self.ledger_rows=[row for row in ledger["items"] if in_account_range(row["account_code"]) and self.financial_filter_ok(row)]; self.balance_rows=[row for row in balance if in_account_range(row["code"])]; self.vat_rows=vat["items"]; self.cash_rows=cash; self.comparative_rows=comparative["items"]
         self.ledger_tree.delete(*self.ledger_tree.get_children()); self.balance_tree.delete(*self.balance_tree.get_children()); self.vat_tree.delete(*self.vat_tree.get_children()); self.cash_tree.delete(*self.cash_tree.get_children()); self.comparative_tree.delete(*self.comparative_tree.get_children())
-        for r in self.ledger_rows: self.ledger_tree.insert("","end",values=(r["entry_date"],r["entry_number"],r["account_code"],r["currency"],r["account_name"],r["description"],f'{r["debit"]:,.2f}',f'{r["credit"]:,.2f}',f'{r["balance"]:,.2f}'))
+        for r in self.ledger_rows: self.ledger_tree.insert("","end",values=(r["entry_date"],r["entry_number"],r["account_code"],r["currency"],r["account_name"],
+                r["description"],f'{r["debit"]:,.2f}',f'{r["credit"]:,.2f}',f'{r["balance"]:,.2f}'))
         for r in balance: self.balance_tree.insert("","end",values=(r["type"],r["code"],r["currency"],r["name_en"],f'{r["debit"]:,.2f}',f'{r["credit"]:,.2f}',f'{r["balance"]:,.2f}'))
         for r in self.vat_rows: self.vat_tree.insert("","end",values=(r["currency"],r["kind"],r["invoices"],f'{r["subtotal"] or 0:,.2f}',f'{r["vat"] or 0:,.2f}',f'{r["total"] or 0:,.2f}'))
         for r in self.cash_rows: self.cash_tree.insert("","end",values=(r["currency"],r["category"],f'{r["inflow"]:,.2f}',f'{r["outflow"]:,.2f}',f'{r["net"]:,.2f}'))
-        for r in self.comparative_rows: self.comparative_tree.insert("","end",values=(r["currency"],r["type"],r["code"],r["name_en"],f'{r["current"]:,.2f}',f'{r["prior"]:,.2f}',f'{r["variance"]:,.2f}'))
+        for r in self.comparative_rows: self.comparative_tree.insert("","end",values=(r["currency"],r["type"],r["code"],r["name_en"],f'{r["current"]:,.2f}',
+                f'{r["prior"]:,.2f}',f'{r["variance"]:,.2f}'))
         self.vat_summary.config(text="VAT figures need the VAT right (ask the administrator)." if vat.get("_hidden") else
                                 "   ".join(f'{r["currency"]} VAT payable: {r["vat_payable"]:,.2f}' for r in vat["summary"]) or "No VAT activity")
 
@@ -547,7 +567,8 @@ class ReportsMixin:
     def refresh_ageing_tree(self):
         self.aging_tree.delete(*self.aging_tree.get_children())
         for r in self.visible_ageing_rows():
-            self.aging_tree.insert("","end",values=("Receivable" if r["kind"]=="sale" else "Payable",r["party_name"],r["invoice_number"],r.get("due_date") or r["invoice_date"],r["currency"],f'{r["outstanding"]:,.2f}',r["days_overdue"],r["bucket"]))
+            self.aging_tree.insert("","end",values=("Receivable" if r["kind"]=="sale" else "Payable",r["party_name"],r["invoice_number"],
+                    r.get("due_date") or r["invoice_date"],r["currency"],f'{r["outstanding"]:,.2f}',r["days_overdue"],r["bucket"]))
 
     def load_cashflow_outlook(self):
         from financial_projection import HORIZONS, completed_months, future_months, month_range, trailing_average
@@ -624,7 +645,8 @@ class ReportsMixin:
             notes.append(f"{code}: lowest cash {result['lowest']['closing']:,.2f} in {result['lowest']['month']}"+("  - NEGATIVE, plan financing" if result["lowest"]["closing"]<0 else ""))
         self.cash_budget_tree.delete(*self.cash_budget_tree.get_children())
         for row in self.cash_budget_rows:
-            self.cash_budget_tree.insert("","end",values=(row["month"],row["currency"],f'{row["opening"]:,.2f}',f'{row["inflow"]:,.2f}',f'{row["outflow"]:,.2f}',f'{row["net"]:,.2f}',f'{row["closing"]:,.2f}'))
+            self.cash_budget_tree.insert("","end",values=(row["month"],row["currency"],f'{row["opening"]:,.2f}',f'{row["inflow"]:,.2f}',
+                    f'{row["outflow"]:,.2f}',f'{row["net"]:,.2f}',f'{row["closing"]:,.2f}'))
         self.cash_budget_info.config(text=f"Cash budget {target} from {base} actuals: cash in {self.cash_budget_in.get()}%, cash out {self.cash_budget_out.get()}% per year.   "+"   |   ".join(notes),
                                      fg="#8B1E1E" if any("NEGATIVE" in n for n in notes) else NAVY)
 
@@ -685,13 +707,22 @@ class ReportsMixin:
         if not rows: messagebox.showinfo("5-Year Projection","No rows to project (check the base year and target date)")
 
     def financial_report_export(self,report,format_name):
-        if report=="ledger": title="General Ledger"; headers=["Date","Entry","Account","Currency","Name","Description","Debit","Credit","Balance"]; rows=[[r["entry_date"],r["entry_number"],r["account_code"],r["currency"],r["account_name"],r["description"],r["debit"],r["credit"],r["balance"]] for r in getattr(self,"ledger_rows",[])]
-        elif report=="balance": title="Balance Sheet"; headers=["Type","Account","Currency","Name","Debit","Credit","Balance"]; rows=[[r["type"],r["code"],r["currency"],r["name_en"],r["debit"],r["credit"],r["balance"]] for r in getattr(self,"balance_rows",[])]
-        elif report=="vat": title="Lebanese VAT Report"; headers=["Currency","Type","Count","Before VAT","VAT","Total"]; rows=[[r["currency"],r["kind"],r["invoices"],r["subtotal"],r["vat"],r["total"]] for r in getattr(self,"vat_rows",[])]
-        elif report=="cash": title="Cash Flow"; headers=["Currency","Category","Inflow","Outflow","Net"]; rows=[[r["currency"],r["category"],r["inflow"],r["outflow"],r["net"]] for r in getattr(self,"cash_rows",[])]
-        elif report=="cash_projection": title="Cash Flow Actual and Projection"; headers=["Month","Status","Currency","Inflow","Outflow","Net"]; rows=[[r["month"],r["status"],r["currency"],r["inflow"],r["outflow"],r["net"]] for r in getattr(self,"cash_projection_rows",[])]
-        elif report=="aging": title=f"Customer and Supplier Ageing as of {self.ageing_as_of.get()}"; headers=["Type","Party","Invoice","Due Date","Currency","Outstanding","Days Overdue","Bucket"]; rows=[["Receivable" if r["kind"]=="sale" else "Payable",r["party_name"],r["invoice_number"],r.get("due_date") or r["invoice_date"],r["currency"],r["outstanding"],r["days_overdue"],r["bucket"]] for r in self.visible_ageing_rows()]
-        else: title="Comparative Profit and Loss"; headers=["Currency","Type","Account","Name","Current Period","Prior Year","Variance"]; rows=[[r["currency"],r["type"],r["code"],r["name_en"],r["current"],r["prior"],r["variance"]] for r in getattr(self,"comparative_rows",[])]
+        if report=="ledger": title="General Ledger"; headers=["Date","Entry","Account","Currency","Name","Description","Debit","Credit",
+                "Balance"]; rows=[[r["entry_date"],r["entry_number"],r["account_code"],r["currency"],r["account_name"],r["description"],r["debit"],r["credit"],
+                r["balance"]] for r in getattr(self,"ledger_rows",[])]
+        elif report=="balance": title="Balance Sheet"; headers=["Type","Account","Currency","Name","Debit","Credit","Balance"]; rows=[[r["type"],r["code"],
+                r["currency"],r["name_en"],r["debit"],r["credit"],r["balance"]] for r in getattr(self,"balance_rows",[])]
+        elif report=="vat": title="Lebanese VAT Report"; headers=["Currency","Type","Count","Before VAT","VAT","Total"]; rows=[[r["currency"],r["kind"],
+                r["invoices"],r["subtotal"],r["vat"],r["total"]] for r in getattr(self,"vat_rows",[])]
+        elif report=="cash": title="Cash Flow"; headers=["Currency","Category","Inflow","Outflow","Net"]; rows=[[r["currency"],r["category"],r["inflow"],
+                r["outflow"],r["net"]] for r in getattr(self,"cash_rows",[])]
+        elif report=="cash_projection": title="Cash Flow Actual and Projection"; headers=["Month","Status","Currency","Inflow","Outflow",
+                "Net"]; rows=[[r["month"],r["status"],r["currency"],r["inflow"],r["outflow"],r["net"]] for r in getattr(self,"cash_projection_rows",[])]
+        elif report=="aging": title=f"Customer and Supplier Ageing as of {self.ageing_as_of.get()}"; headers=["Type","Party","Invoice","Due Date","Currency",
+                "Outstanding","Days Overdue","Bucket"]; rows=[["Receivable" if r["kind"]=="sale" else "Payable",r["party_name"],r["invoice_number"],
+                r.get("due_date") or r["invoice_date"],r["currency"],r["outstanding"],r["days_overdue"],r["bucket"]] for r in self.visible_ageing_rows()]
+        else: title="Comparative Profit and Loss"; headers=["Currency","Type","Account","Name","Current Period","Prior Year","Variance"]; rows=[[r["currency"],
+                r["type"],r["code"],r["name_en"],r["current"],r["prior"],r["variance"]] for r in getattr(self,"comparative_rows",[])]
         if not rows: return messagebox.showwarning(title,"No data to export")
         try:
             if format_name=="print": print_rows(title,headers,rows); return

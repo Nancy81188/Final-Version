@@ -302,7 +302,8 @@ def read_expenses(path):
             if not amount and not without: continue
             rows.append({"expense_date": _date(get("date")), "description": str(get("description") or get("reference") or f"Expense row {number}").strip(),
                          "category": str(get("category") or "General").strip(), "currency": str(get("currency") or "USD").strip().upper()[:3],
-                         "with_vat_subtotal": amount, "without_vat_subtotal": without, "vat": vat, "reference": str(get("reference") or "").strip(), "supplier": str(get("supplier") or "").strip(), "items": str(get("items") or "").strip(), "source_row": number})
+                         "with_vat_subtotal": amount, "without_vat_subtotal": without, "vat": vat, "reference": str(get("reference") or "").strip(),
+                                 "supplier": str(get("supplier") or "").strip(), "items": str(get("items") or "").strip(), "source_row": number})
         return rows
     finally: workbook.close()
 
@@ -366,7 +367,8 @@ def read_invoice_lines(path, kind):
         sheet = workbook.worksheets[0]; party = "customer" if kind == "sales" else "supplier"
         header, columns = _header_map(sheet, {"number": ("invoice no", "invoice", "number", "رقم"), "date": ("date", "تاريخ"), "party": (party, "client", "vendor", "name of"),
             "currency": ("currency", "عملة"), "item_code": ("item code", "code", "sku"), "description": ("description", "item name", "item", "بيان"), "qty": ("qty", "quantity", "كمية"),
-            "unit": ("unit",), "price": ("unit price", "unit cost", "price", "cost"), "discount": ("discount",), "vat": ("vat %", "vat"), "treatment": ("treatment",), "warehouse": ("warehouse", "store")})
+            "unit": ("unit",), "price": ("unit price", "unit cost", "price", "cost"), "discount": ("discount",), "vat": ("vat %", "vat"),
+                    "treatment": ("treatment",), "warehouse": ("warehouse", "store")})
         invoices = {}; order = []
         for number, row in enumerate(sheet.iter_rows(min_row=header + 1, values_only=True), header + 1):
             if not any(value not in (None, "") for value in row): continue
@@ -377,7 +379,8 @@ def read_invoice_lines(path, kind):
                 except ValueError: raise ValueError(f"Row {number}: {field} must be a number")
             key = str(get("number") or f"ROW-{number}").strip()
             if key not in invoices:
-                invoices[key] = {"invoice_number": key, "invoice_date": _date(get("date")), "party_name": str(get("party") or "").strip(), "currency": str(get("currency") or "USD").strip().upper()[:3],
+                invoices[key] = {"invoice_number": key, "invoice_date": _date(get("date")), "party_name": str(get("party") or "").strip(),
+                        "currency": str(get("currency") or "USD").strip().upper()[:3],
                                  "vat_treatment": str(get("treatment") or "Taxable").strip(), "warehouse": str(get("warehouse") or "MAIN").strip() or "MAIN", "lines": [], "source_row": number}
                 order.append(key)
             if not invoices[key]["party_name"]: raise ValueError(f"Row {number}: enter the {party}")

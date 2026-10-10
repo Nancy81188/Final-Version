@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from DocumentsStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, display_date, EXPENSE_ACCOUNT_9, iso_date, json, utcnow, VAT_ACCOUNT_9
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -50,7 +52,8 @@ class DocumentsStore:
                 db.execute("UPDATE party_documents SET file_name=?,mime_type=?,content=?,uploaded_by=?,uploaded_at=? WHERE id=?",
                     (str(item.get("file_name") or "document").strip(),str(item.get("mime_type") or "application/octet-stream"),content,user_id,utcnow(),int(document_id)))
             db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
-                (user_id,"update","party_document",int(document_id),json.dumps({"party_id":row["party_id"],"document_type":document_type,"issue_date":issue,"expiry_date":expiry,"active":bool(active),"new_file":bool(content)}),utcnow()))
+                (user_id,"update","party_document",int(document_id),json.dumps({"party_id":row["party_id"],"document_type":document_type,"issue_date":issue,
+                        "expiry_date":expiry,"active":bool(active),"new_file":bool(content)}),utcnow()))
             return int(document_id)
 
     def list_party_documents(self,party_id):
@@ -97,10 +100,13 @@ class DocumentsStore:
             result=db.execute("""INSERT INTO document_cases(case_number,case_type,document_date,party_id,currency,reference,description,customs_declaration_no,broker_name,
                 supplier_invoice_amount,freight,insurance,customs_duties,import_vat,broker_fees,total,status,supplier_account,expense_account,vat_account,branch_id,created_by,created_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(case_number,case_type,document_date,party_id,currency,str(item.get("reference") or ""),str(item.get("description") or ""),
-                str(item.get("customs_declaration_no") or ""),str(item.get("broker_name") or ""),*[str(amounts[key]) for key in ("supplier_invoice_amount","freight","insurance","customs_duties","import_vat","broker_fees")],
-                str(total),"draft",str(item.get("supplier_account") or ""),str(item.get("expense_account") or EXPENSE_ACCOUNT_9),str(item.get("vat_account") or VAT_ACCOUNT_9),self._branch_id(db,item),user_id,utcnow()))
+                str(item.get("customs_declaration_no") or ""),str(item.get("broker_name") or ""),*[str(amounts[key]) for key in ("supplier_invoice_amount",
+                        "freight","insurance","customs_duties","import_vat","broker_fees")],
+                str(total),"draft",str(item.get("supplier_account") or ""),str(item.get("expense_account") or EXPENSE_ACCOUNT_9),
+                        str(item.get("vat_account") or VAT_ACCOUNT_9),self._branch_id(db,item),user_id,utcnow()))
             case_id=result.lastrowid
-            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",(user_id,"create","document_case",case_id,json.dumps({"case_number":case_number,"type":case_type}),utcnow()))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",(user_id,"create","document_case",
+                    case_id,json.dumps({"case_number":case_number,"type":case_type}),utcnow()))
         return self.document_case(case_id)
 
     def add_case_attachment(self,case_id,role,file_name,mime_type,content,user_id):
@@ -141,7 +147,8 @@ class DocumentsStore:
         if missing: raise ValueError("Attach required document(s): "+", ".join(sorted(missing)))
         base=Decimal(str(case["supplier_invoice_amount"]))+Decimal(str(case["freight"]))+Decimal(str(case["insurance"]))+Decimal(str(case["customs_duties"]))+Decimal(str(case["broker_fees"]))
         vat=Decimal(str(case["import_vat"])); items=[]
-        components=(("Supplier invoice",case["supplier_invoice_amount"]),("Freight",case["freight"]),("Insurance",case["insurance"]),("Customs duties",case["customs_duties"]),("Customs broker fees",case["broker_fees"]))
+        components=(("Supplier invoice",case["supplier_invoice_amount"]),("Freight",case["freight"]),("Insurance",case["insurance"]),("Customs duties",
+                case["customs_duties"]),("Customs broker fees",case["broker_fees"]))
         for description,amount in components:
             if Decimal(str(amount)):
                 items.append({"description":description,"quantity":1,"unit_price":amount,"deductible_subtotal":amount,"vat_rate":0,"vat":0})
@@ -159,7 +166,8 @@ class DocumentsStore:
             for row in db.execute("SELECT * FROM case_attachments WHERE case_id=?",(int(case_id),)):
                 db.execute("INSERT INTO invoice_attachments(invoice_id,file_name,mime_type,content,uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?)",
                     (invoice_id,row["file_name"],row["mime_type"],row["content"],user_id,utcnow()))
-            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",(user_id,"post","document_case",int(case_id),json.dumps({"invoice_id":invoice_id}),utcnow()))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",(user_id,"post","document_case",
+                    int(case_id),json.dumps({"invoice_id":invoice_id}),utcnow()))
         return self.document_case(case_id)
 
     # ---------------------------------------------------------------- legal documents

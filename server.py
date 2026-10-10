@@ -284,7 +284,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 if path == "/api/production/recipes": return self._json(200,{"items":production.list_boms(self.db)})
                 if path == "/api/production/recipe": return self._json(200,production.get_bom(self.db,self._query(parsed,"item","")))
-                if path == "/api/production/plan": return self._json(200,production.plan(self.db,self._query(parsed,"item",""),self._query(parsed,"quantity","0"),self._query(parsed,"warehouse"),self._query(parsed,"date")))
+                if path == "/api/production/plan": return self._json(200,production.plan(self.db,self._query(parsed,"item",""),self._query(parsed,"quantity",
+                        "0"),self._query(parsed,"warehouse"),self._query(parsed,"date")))
                 if path == "/api/production/orders": return self._json(200,{"items":production.list_orders(self.db)})
                 if path.startswith("/api/production/orders/"): return self._json(200,production.get_order(self.db,int(path.rsplit("/",1)[-1])))
                 if path == "/api/production/report": return self._json(200,ledger_reports.json_ready(production.report(self.db,self._query(parsed,"from"),self._query(parsed,"to"))))
@@ -380,9 +381,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 year=self._query(parsed,"year"); result=vat_return.build_vat_return(self.db,year,self._query(parsed,"quarter"),None,False,self._previous_year_db(year),
                     self._query(parsed,"credit_brought_forward"),self._query(parsed,"refund_requested"))
                 check=vat_return.ledger_check(self.db,result)
-                try: check["settlement"]=vat_return.settlement_lines(self.db,result,self._query(parsed,"payable_account"),self._query(parsed,"credit_account"),self._query(parsed,"non_deductible_account"))
+                try: check["settlement"]=vat_return.settlement_lines(self.db,result,self._query(parsed,"payable_account"),self._query(parsed,"credit_account"),
+                        self._query(parsed,"non_deductible_account"))
                 except ValueError as exc: check["settlement_error"]=str(exc)
-                check.update(saved=bool(result["saved"]) and not result["changed_since_saved"],payable=result["payable_lbp"],credit_carried_forward=result["credit_carried_forward_lbp"],vat_currency=result["vat_currency"])
+                check.update(saved=bool(result["saved"]) and not result["changed_since_saved"],payable=result["payable_lbp"],
+                        credit_carried_forward=result["credit_carried_forward_lbp"],vat_currency=result["vat_currency"])
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,vat_return.json_ready(check))
         if path == "/api/alerts/documents":
@@ -400,7 +403,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             try:
                 year=int(self._query(parsed,"year")); year_db=self._year_db(year)
                 convert=self._query(parsed,"convert","")=="1" and self._query(parsed,"currency")
-                return self._json(200,{"items":(year_db.cash_flow_converted if convert else year_db.cash_flow)(self._query(parsed,"from_date"),self._query(parsed,"to_date"),self._query(parsed,"currency")),"year":year})
+                return self._json(200,{"items":(year_db.cash_flow_converted if convert else year_db.cash_flow)(self._query(parsed,"from_date"),
+                        self._query(parsed,"to_date"),self._query(parsed,"currency")),"year":year})
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path in ("/api/fiscal-year/profit-loss", "/api/fiscal-year/balance-sheet"):
             try:
@@ -594,7 +598,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/profit-loss":
             query=parse_qs(parsed.query)
             convert=query.get("convert",[""])[0]=="1" and query.get("currency",[None])[0]  # 2.9.80
-            return self._json(200,{"items":(self.db.profit_and_loss_converted if convert else self.db.profit_and_loss)(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0])})
+            return self._json(200,{"items":(self.db.profit_and_loss_converted if convert else self.db.profit_and_loss)(query.get("from_date",[None])[0],
+                    query.get("to_date",[None])[0],query.get("currency",[None])[0])})
         if path == "/api/fiscal-years":
             return self._json(200,{"items":self.db.list_fiscal_years()})
         if path == "/api/general-ledger":
@@ -610,7 +615,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         if path == "/api/cash-flow":
             query=parse_qs(parsed.query)
             convert=query.get("convert",[""])[0]=="1" and query.get("currency",[None])[0]  # 2.9.80
-            return self._json(200,{"items":(self.db.cash_flow_converted if convert else self.db.cash_flow)(query.get("from_date",[None])[0],query.get("to_date",[None])[0],query.get("currency",[None])[0])})
+            return self._json(200,{"items":(self.db.cash_flow_converted if convert else self.db.cash_flow)(query.get("from_date",[None])[0],query.get("to_date",
+                    [None])[0],query.get("currency",[None])[0])})
         if path == "/api/aging":
             query=parse_qs(parsed.query)
             return self._json(200,{"items":self.db.aging_report(query.get("as_of_date",[None])[0],query.get("kind",[None])[0],query.get("currency",[None])[0])})
@@ -692,7 +698,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(201,{"company":result})
         if not self._select_database(): return
         fiscal_admin_paths=("/api/reports/financial-config","/api/fiscal-years/reopen","/api/fiscal-years/refresh-opening","/api/fiscal-years/delete")
-        if path not in fiscal_admin_paths and self.headers.get("X-Company-ID") and self.headers.get("X-Fiscal-Year") and self.company_manager.year_status(self.headers.get("X-Company-ID"),self.headers.get("X-Fiscal-Year"))=="closed":
+        if path not in fiscal_admin_paths and self.headers.get("X-Company-ID") and self.headers.get("X-Fiscal-Year") and self.company_manager.year_status(self.headers.get("X-Company-ID"),
+                self.headers.get("X-Fiscal-Year"))=="closed":
             return self._json(423,{"error":"This fiscal year is closed and read-only"})
         if user["role"] == "viewer":
             return self._json(403,{"error":"Viewer access is read-only"})
@@ -766,8 +773,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if path == "/api/inventory/categories": return self._json(200,inventory.save_category(self.db,body,user["id"]))
                 if path == "/api/inventory/counts": return self._json(201,inventory.save_count(self.db,body.get("header",{}),body.get("lines",[]),user["id"],body.get("id"),bool(body.get("post"))))
                 if path == "/api/inventory/item-details": return self._json(200,inventory.set_item_details(self.db,body.get("items"),user["id"]))  # 2.9.101
-                if path == "/api/inventory/item-accounts": return self._json(200,inventory.set_item_accounts(self.db,body.get("item_ids"),body.get("cost_account"),body.get("sales_account"),user["id"]))  # 2.9.90
-                if path == "/api/inventory/find-or-create": return self._json(200,{"item":inventory.find_or_create_item(self.db,body.get("name"),body.get("unit"),body.get("sku"),user["id"],body.get("supplier_id"))})
+                if path == "/api/inventory/item-accounts": return self._json(200,inventory.set_item_accounts(self.db,body.get("item_ids"),
+                        body.get("cost_account"),body.get("sales_account"),user["id"]))  # 2.9.90
+                if path == "/api/inventory/find-or-create": return self._json(200,{"item":inventory.find_or_create_item(self.db,body.get("name"),
+                        body.get("unit"),body.get("sku"),user["id"],body.get("supplier_id"))})
             except KeyError as exc: return self._json(404,{"error":str(exc).strip("'")})
             except Exception as exc: return self._json(400,{"error":str(exc)})
         if path.startswith("/api/payments/") and path.endswith("/allocations"):
@@ -779,7 +788,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 import bank_rec
                 action=path.rsplit("/",1)[-1]
                 if action=="import": return self._json(201,{"added":bank_rec.add_statement_lines(self.db,body.get("account"),body.get("currency"),body.get("rows",[]),user["id"])})
-                if action=="auto-match": return self._json(200,{"matched":bank_rec.auto_match(self.db,body.get("account"),body.get("currency"),iso_date(body.get("from")),iso_date(body.get("to")),int(body.get("days") or 5))})
+                if action=="auto-match": return self._json(200,{"matched":bank_rec.auto_match(self.db,body.get("account"),body.get("currency"),
+                        iso_date(body.get("from")),iso_date(body.get("to")),int(body.get("days") or 5))})
                 if action=="match": return self._json(200,{"ok":bank_rec.match(self.db,body.get("statement_id"),body.get("journal_line_id"))})
                 if action=="unmatch": return self._json(200,{"ok":bank_rec.unmatch(self.db,body.get("statement_id"))})
                 if action=="delete": return self._json(200,{"ok":bank_rec.delete_statement_line(self.db,body.get("statement_id"))})
@@ -797,7 +807,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json(201,{"adjustment_id":adjustment_id})
         if path == "/api/vat-return/save":
             try:
-                year=body.get("year"); result=vat_return.save_return(self.db,year,body.get("quarter"),user["id"],self._previous_year_db(year),body.get("credit_brought_forward"),user["username"],body.get("refund_requested"))
+                year=body.get("year"); result=vat_return.save_return(self.db,year,body.get("quarter"),user["id"],self._previous_year_db(year),
+                        body.get("credit_brought_forward"),user["username"],body.get("refund_requested"))
             except Exception as exc: return self._json(400,{"error":str(exc)})
             return self._json(200,vat_return.json_ready(result))
         if path == "/api/payroll/eos-provision":  # 2.9.82

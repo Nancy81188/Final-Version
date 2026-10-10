@@ -2,7 +2,11 @@
 from __future__ import annotations
 from pathlib import Path
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    bulk_action, column_toggles, datetime, Decimal, export_excel, export_invoice_pdf, filedialog, flow_toolbars,
+    formatted_user_date, GOLD, LIGHT, messagebox, mimetypes, natural_sort_value, NAVY, PURCHASE_USES, resource_path,
+    ROUND_HALF_UP, SALE_TREATMENTS, sortable_date, TAXABLE_LABEL, tk, tr, ttk, uuid
+)
 from desktop_common import vat_rate, vat_rate_text, vat_currency  # 2.9.72
 from desktop_common import main_currency  # 2.9.71
 from desktop_sales_invoice import SalesInvoiceMixin  # 2.9.94: the sales invoice screen
@@ -10,7 +14,10 @@ from desktop_sales_invoice import SalesInvoiceMixin  # 2.9.94: the sales invoice
 
 class InvoicesMixin(SalesInvoiceMixin):
     def build_invoices(self):
-        l=self.language.get(); self.invoice_tree=self.table(self.invoices_tab,[("no",tr(l,"invoice_no"),125),("status","Status",70),("date",tr(l,"date"),88),("party",tr(l,"party"),160),("branch","Branch",120),("kind","Type",90),("currency",tr(l,"currency"),60),("deductible","Deductible",95),("non_deductible","Non-Deductible",105),("total",tr(l,"total"),90),("payment_method","Payment Method",110),("paid","Paid Amount",100),("lbp","LBP Eq.",105),("usd","USD Eq.",90),("debit","D",80),("credit","C",80),("vat_status","VAT Deductible",95)])
+        l=self.language.get(); self.invoice_tree=self.table(self.invoices_tab,[("no",tr(l,"invoice_no"),125),("status","Status",70),("date",tr(l,"date"),88),
+                ("party",tr(l,"party"),160),("branch","Branch",120),("kind","Type",90),("currency",tr(l,"currency"),60),("deductible","Deductible",95),
+                ("non_deductible","Non-Deductible",105),("total",tr(l,"total"),90),("payment_method","Payment Method",110),("paid","Paid Amount",100),("lbp",
+                "LBP Eq.",105),("usd","USD Eq.",90),("debit","D",80),("credit","C",80),("vat_status","VAT Deductible",95)])
         invoice_actions=tk.Frame(self.invoices_tab,bg=LIGHT); invoice_actions.pack(fill="x",anchor="w",pady=(0,10))
         # 2.9.68: Branch and Type are tick lists (one, several or All); D / C show the debit and / or credit rows
         from multi_select import MultiSelect
@@ -85,7 +92,8 @@ class InvoicesMixin(SalesInvoiceMixin):
         try: rows=self.client.invoices(); rates=self.client.exchange_rates()
         except Exception as exc: return messagebox.showerror("Error",str(exc))
         account=self.invoice_account_search.get().split(" - ",1)[0].strip()
-        if account: rows=[row for row in rows if account in (str(row.get("supplier_account") or ""),str(row.get("vat_account") or ""),str(row.get("expense_account") or ""),str(row.get("expense_no_vat_account") or ""))]
+        if account: rows=[row for row in rows if account in (str(row.get("supplier_account") or ""),str(row.get("vat_account") or ""),
+                str(row.get("expense_account") or ""),str(row.get("expense_no_vat_account") or ""))]
         selected=self.view_currency.get()
         rows=[r for r in rows if selected=="All Currencies" or r["currency"]==selected]
         from multi_select import chosen_values, matches
@@ -114,7 +122,13 @@ class InvoicesMixin(SalesInvoiceMixin):
         for r in rows:
             lbp,usd=self.exchange_equivalents(float(r["total"] or 0),r["currency"],rates)
             entry_label=self.invoice_entry_label(r)
-            self.invoice_tree.insert("","end",iid=str(r["id"]),values=(r["invoice_number"],"DELETED" if r.get("status")=="deleted" else str(r.get("status") or "").title(),r["invoice_date"],r["party_name"],r.get("branch_name") or "Head Office",entry_label,r["currency"],money(r.get("deductible_subtotal",r["subtotal"])),money(r.get("non_deductible_subtotal",0)),money(r["total"]),r.get("payment_method") or "",money(r.get("amount_paid")),"" if lbp is None else f"{lbp:,.2f}","" if usd is None else f"{usd:,.2f}",money(r["debit"]),money(r["credit"]),("Yes" if r.get("vat_recoverable",1) else "NO") if r.get("kind")=="purchase" and float(r.get("vat") or 0) else ""),tags=("deleted",) if r.get("status")=="deleted" else ())
+            self.invoice_tree.insert("","end",iid=str(r["id"]),values=(r["invoice_number"],
+                    "DELETED" if r.get("status")=="deleted" else str(r.get("status") or "").title(),r["invoice_date"],r["party_name"],
+                    r.get("branch_name") or "Head Office",entry_label,r["currency"],money(r.get("deductible_subtotal",r["subtotal"])),
+                    money(r.get("non_deductible_subtotal",0)),money(r["total"]),r.get("payment_method") or "",money(r.get("amount_paid")),
+                    "" if lbp is None else f"{lbp:,.2f}","" if usd is None else f"{usd:,.2f}",money(r["debit"]),money(r["credit"]),
+                    ("Yes" if r.get("vat_recoverable",1) else "NO") if r.get("kind")=="purchase" and float(r.get("vat") or 0) else ""),
+                    tags=("deleted",) if r.get("status")=="deleted" else ())
         self.invoice_tree.tag_configure("deleted",foreground="#8B1E1E")
 
     @staticmethod
@@ -136,14 +150,17 @@ class InvoicesMixin(SalesInvoiceMixin):
             treatment.set(next((k for k,v in SALE_TREATMENTS.items() if v==(row.get("vat_treatment") or "standard")),TAXABLE_LABEL))
             tk.Label(window,text="Sale type (Law 379/2001)",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=0,padx=12,pady=10,sticky="w")
             ttk.Combobox(window,textvariable=treatment,values=list(SALE_TREATMENTS),state="readonly",width=24).grid(row=0,column=1,padx=12,pady=10)
-            tk.Label(window,text="Zero-rated: exports and like transactions (Art. 19-21), deductible input VAT.\nExempt: Art. 16-17 activities and goods, reduces the deduction ratio.",bg=LIGHT,fg="#5f6b76",justify="left").grid(row=1,column=0,columnspan=2,padx=12,sticky="w")
+            tk.Label(window,text="Zero-rated: exports and like transactions (Art. 19-21), deductible input VAT.\nExempt: Art. 16-17 activities and goods, reduces the deduction ratio.",
+                    bg=LIGHT,fg="#5f6b76",justify="left").grid(row=1,column=0,columnspan=2,padx=12,sticky="w")
         else:
             use.set(next((k for k,v in PURCHASE_USES.items() if v==(row.get("vat_use") or "mixed")),"Mixed (partial deduction)"))
             tk.Label(window,text="Input VAT used for",bg=LIGHT,font=("Segoe UI",9,"bold")).grid(row=0,column=0,padx=12,pady=10,sticky="w")
             ttk.Combobox(window,textvariable=use,values=list(PURCHASE_USES),state="readonly",width=26).grid(row=0,column=1,padx=12,pady=10)
             tk.Checkbutton(window,text="Service from abroad - reverse charge (Art. 40)",variable=reverse,bg=LIGHT).grid(row=1,column=0,columnspan=2,padx=12,sticky="w")
         def save():
-            try: self.client.set_vat_classification("invoice",row["id"],SALE_TREATMENTS[treatment.get()] if sale else ("reverse_charge" if reverse.get() else "standard"),None if sale else PURCHASE_USES[use.get()])
+            try: self.client.set_vat_classification("invoice",row["id"],
+                    SALE_TREATMENTS[treatment.get()] if sale else ("reverse_charge" if reverse.get() else "standard"),
+                    None if sale else PURCHASE_USES[use.get()])
             except Exception as exc: return messagebox.showerror("VAT Treatment",str(exc),parent=window)
             window.destroy(); self.load_invoices()
         self.action_button(window,"Save",save).grid(row=2,column=0,columnspan=2,pady=12)
@@ -300,7 +317,8 @@ class InvoicesMixin(SalesInvoiceMixin):
             window.destroy()
             self.load_invoices(); self.load_dashboard(); self.load_journal(); self.load_trial()
             paid=float(values.get("amount_paid") or 0)
-            messagebox.showinfo("Invoices","Invoice updated successfully"+(f". Payment of {paid:,.2f} posted to {values.get('cash_account') or ('531' if (values.get('payment_method') or '').lower()=='cash' else '512')} (see its account statement)." if paid else ""))
+            messagebox.showinfo("Invoices",
+                    "Invoice updated successfully"+(f". Payment of {paid:,.2f} posted to {values.get('cash_account') or ('531' if (values.get('payment_method') or '').lower()=='cash' else '512')} (see its account statement)." if paid else ""))
 
         exchange_label.config(text=self.exchange_equivalent_text(float(row["total"] or 0),row["currency"]))
         exchange_label.grid(row=2,column=0,pady=(6,0))
@@ -582,7 +600,8 @@ class InvoicesMixin(SalesInvoiceMixin):
         headers=["Invoice Number","Date","Customer / Supplier","Type","Currency","Before VAT Deductible","Before VAT Non-Deductible","VAT","Total","Payment Method","Paid Amount","Debit","Credit",
                  "Supplier Account","VAT Account","Expense Account","Expense without VAT","Status","Source Row"]
         values=[[r["invoice_number"],r["invoice_date"],r["party_name"],r.get("entry_type") or r["kind"],r["currency"],r.get("deductible_subtotal",r["subtotal"]),r.get("non_deductible_subtotal",0),
-                 r["vat"],r["total"],r.get("payment_method") or "",r.get("amount_paid") or 0,r["debit"],r["credit"],r["supplier_account"],r["vat_account"],r["expense_account"],r.get("expense_no_vat_account","601100001"),r["status"],r["source_row"]] for r in rows]
+                 r["vat"],r["total"],r.get("payment_method") or "",r.get("amount_paid") or 0,r["debit"],r["credit"],r["supplier_account"],r["vat_account"],
+                         r["expense_account"],r.get("expense_no_vat_account","601100001"),r["status"],r["source_row"]] for r in rows]
         path=filedialog.asksaveasfilename(defaultextension=".xlsx",filetypes=[("Excel workbook","*.xlsx")],
                                           initialfile="Saber_Accounting_Invoices.xlsx")
         if not path: return
@@ -603,8 +622,10 @@ class InvoicesMixin(SalesInvoiceMixin):
                   "description":"","branch":"Head Office","due_date":"","payment_method":"Cash","amount_paid":"0","cash_account":""}
         variables={key:tk.StringVar(value=value) for key,value in defaults.items()}
         fields=[("Invoice Number","invoice_number"),("Date (DD-MM-YYYY)","invoice_date"),("Customer / Supplier","party_name"),
-                ("Description","description"),("Branch","branch"),("Type","kind"),("Currency","currency"),("Before VAT Deductible","deductible_subtotal"),("Before VAT Non-Deductible","non_deductible_subtotal"),("VAT","vat"),("Total","total"),
-                ("Supplier Account (C - Credit)","supplier_account"),("VAT Account (D - Debit)","vat_account"),("Expense Account (D - Debit)","expense_account"),("Expense without VAT","expense_no_vat_account"),
+                ("Description","description"),("Branch","branch"),("Type","kind"),("Currency","currency"),("Before VAT Deductible","deductible_subtotal"),
+                        ("Before VAT Non-Deductible","non_deductible_subtotal"),("VAT","vat"),("Total","total"),
+                ("Supplier Account (C - Credit)","supplier_account"),("VAT Account (D - Debit)","vat_account"),("Expense Account (D - Debit)",
+                        "expense_account"),("Expense without VAT","expense_no_vat_account"),
                 ("Due Date (DD-MM-YYYY)","due_date"),("Payment Method","payment_method"),("Paid Amount","amount_paid"),("Cash / Bank Account (paid)","cash_account")]
         for index,(label,key) in enumerate(fields):
             rr=index//2; cc=(index%2)*2
@@ -639,7 +660,8 @@ class InvoicesMixin(SalesInvoiceMixin):
     def add_item_to_selected_invoice(self):
         selected=self.invoice_tree.selection()
         if not selected: return messagebox.showwarning("Invoices","Select one invoice row")
-        invoice_id=int(selected[0]); window=tk.Toplevel(self); window.title("Add Item to Invoice"); window.configure(bg=LIGHT); window.transient(self); window.grab_set(); self.fit_dialog(window,520,420,360,300)
+        invoice_id=int(selected[0]); window=tk.Toplevel(self); window.title("Add Item to Invoice"); window.configure(bg=LIGHT); window.transient(self); window.grab_set(); self.fit_dialog(window,
+                520,420,360,300)
         defaults={"description":"","quantity":"1","unit_price":"0","subtotal":"0","vat_rate":f"{vat_rate(self):g}","vat":"0"}
         variables={key:tk.StringVar(value=value) for key,value in defaults.items()}
         fields=[("Description","description"),("Quantity","quantity"),("Unit Price","unit_price"),

@@ -298,7 +298,8 @@ class CNSSFormsMixin:
             }
             values, missing = build_form_values(
                 key, company, employee, report, filed,
-                year=year, period_type=period_type, index=(int(index_text) if period_type == "monthly" and index_text.isdigit() else int(index_text[1:]) if period_type == "quarterly" and index_text.startswith("Q") else 1),
+                year=year, period_type=period_type,
+                        index=(int(index_text) if period_type == "monthly" and index_text.isdigit() else int(index_text[1:]) if period_type == "quarterly" and index_text.startswith("Q") else 1),
                 payment_details=payment_details,
                 settlement_report=settlement_report,
             )

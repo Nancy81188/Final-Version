@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from desktop_common import *  # noqa: F401,F403
+from desktop_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, export_excel, filedialog, GOLD, json, LIGHT, messagebox, NAVY, tk
+)
 import payroll_lines as PL
 
 log = logging.getLogger("saber.payroll_sheet")

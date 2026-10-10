@@ -39,7 +39,8 @@ class AuditPackTest(unittest.TestCase):
             self.assertTrue(any(h.startswith(start) for h in headings), start)
         self.assertTrue(any("ACCOUNTING POLICIES" in h for h in headings))
         self.assertTrue(any(h.startswith("NOTES TO THE FINANCIAL STATEMENTS") for h in headings))
-        order = [next(i for i, h in enumerate(headings) if h.startswith(s)) for s in ("INDEPENDENT", "STATEMENT OF FINANCIAL", "STATEMENT OF PROFIT", "STATEMENT OF CHANGES", "STATEMENT OF CASH", "NOTES")]
+        order = [next(i for i, h in enumerate(headings) if h.startswith(s)) for s in ("INDEPENDENT", "STATEMENT OF FINANCIAL", "STATEMENT OF PROFIT",
+                "STATEMENT OF CHANGES", "STATEMENT OF CASH", "NOTES")]
         self.assertEqual(order, sorted(order))
 
     def test_cash_flow_reconciles_and_balance_sheet_balances(self):

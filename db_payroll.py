@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from PayrollStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, display_date, iso_date, json, timedelta, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -238,7 +240,9 @@ class PayrollStore:
                 mapping={**self.default_payroll_account_map(key),**(item.get(key) or {})}
                 db.execute(f"UPDATE payroll_settings SET {key}=? WHERE date_from=?",(json.dumps(mapping),date_from))
             for key in ("transport_daily_exempt","default_transport_days","schooling_annual_exempt","schooling_max_children",
-                        "schooling_public_child","schooling_public_cap","schooling_private_child","schooling_private_cap","tax_rounding","minimum_wage","max_children_deduction","family_allowance_spouse","family_allowance_child","family_allowance_cap","family_allowance_max_children"):
+                        "schooling_public_child","schooling_public_cap","schooling_private_child","schooling_private_cap","tax_rounding","minimum_wage",
+                                "max_children_deduction","family_allowance_spouse","family_allowance_child","family_allowance_cap",
+                                "family_allowance_max_children"):
                 if item.get(key) not in (None,""):
                     try: value=str(Decimal(str(item[key]).replace(",","")))
                     except Exception as exc: raise ValueError(f"{key.replace('_',' ').title()} must be a number") from exc
@@ -255,7 +259,8 @@ class PayrollStore:
         for period in lebanese_payroll.official_periods():
             self.save_payroll_settings({**period,**accounts,**maps},user_id)
         with self.connect() as db:
-            db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",(user_id,"apply","payroll_rules",json.dumps({"periods":len(lebanese_payroll.PERIODS)}),utcnow()))
+            db.execute("INSERT INTO audit_log(user_id,action,entity,details,created_at) VALUES(?,?,?,?,?)",(user_id,"apply","payroll_rules",
+                    json.dumps({"periods":len(lebanese_payroll.PERIODS)}),utcnow()))
         return self.list_payroll_settings()
 
     @staticmethod
@@ -448,7 +453,8 @@ class PayrollStore:
             for month in retro_months:
                 month_settings=self.payroll_settings_for(month); regular_month=to_lbp(money["salary"]+
                     money["overtime"]+money["commission"],month); extra=to_lbp(share,month)
-                for name,ceiling,rate in (("employee","employee_ceiling","employee_nssf_rate"),("medical","medical_ceiling","medical_rate"),("family","family_ceiling","family_rate"),("end_service","end_service_ceiling","end_service_rate")):
+                for name,ceiling,rate in (("employee","employee_ceiling","employee_nssf_rate"),("medical","medical_ceiling","medical_rate"),("family",
+                        "family_ceiling","family_rate"),("end_service","end_service_ceiling","end_service_rate")):
                     totals[name]+=contribution(ceiling,rate,regular_month+extra,month_settings)-contribution(ceiling,rate,regular_month,month_settings)
         # Eligibility remains category-specific: the nationality/age shortcut below is only a warning-bearing
         # approximation. Confirm CNSS coverage and any reciprocal-agreement exception before relying on it.
@@ -498,7 +504,9 @@ class PayrollStore:
             "employee_nssf_lbp":float(nssf["employee"][0]),"employer_medical":float(nssf["medical"][1]),"employer_end_service":float(nssf["end_service"][1]),
             "employer_family":float(nssf["family"][1]),"net_salary":float(net),"currency":currency,"retro_tax":float(retro_tax_value),"retro_tax_lbp":float(retro_tax_lbp),
             "regular_tax":float(from_lbp(rounded(regular_tax)).quantize(D("0.01"))),"one_off_tax":float(from_lbp(max(D("0"),one_off_tax)).quantize(D("0.01"))),
-            "worked_days":worked_days,"calendar_days":month_days,"transport_days":days,"exempt_transport":float(from_lbp(exempt_transport_lbp).quantize(D("0.01"))),"exempt_schooling":float(from_lbp(exempt_schooling_lbp).quantize(D("0.01"))),
+            "worked_days":worked_days,"calendar_days":month_days,"transport_days":days,
+                    "exempt_transport":float(from_lbp(exempt_transport_lbp).quantize(D("0.01"))),
+                    "exempt_schooling":float(from_lbp(exempt_schooling_lbp).quantize(D("0.01"))),
             "family_allowance":float(family_allowance),"family_deduction_lbp":float(allowance),
             "annualized_recurring_lbp":float(annual_regular),"annualized_taxable_lbp":float(max(D("0"),annual_regular-allowance)),
             "compliance_notes":notes,"period_date":period,"allowances":{k:float(v) for k,v in allowances.items()},
@@ -541,9 +549,11 @@ class PayrollStore:
         number=str(item.get("payroll_number") or "").strip()
         with self.connect() as db:
             if not number:
-                prefix=f"PAY-{period[:7].replace('-','')}-"; row=db.execute("SELECT payroll_number FROM payroll_records WHERE payroll_number LIKE ? ORDER BY payroll_number DESC LIMIT 1",(prefix+"%",)).fetchone()
+                prefix=f"PAY-{period[:7].replace('-','')}-"; row=db.execute("SELECT payroll_number FROM payroll_records WHERE payroll_number LIKE ? ORDER BY payroll_number DESC LIMIT 1",
+                        (prefix+"%",)).fetchone()
                 number=f"{prefix}{(int(row['payroll_number'].rsplit('-',1)[-1])+1 if row else 1):06d}"
-            fields=("salary","transport","overtime","commission","retro_salary","schooling","bonus","thirteenth_month","director_remuneration","gross_salary","taxable_salary","income_tax","income_tax_lbp",
+            fields=("salary","transport","overtime","commission","retro_salary","schooling","bonus","thirteenth_month","director_remuneration","gross_salary",
+                    "taxable_salary","income_tax","income_tax_lbp",
                 "nssf_base","employee_nssf","employer_medical","employer_end_service","employer_family","net_salary","retro_tax",
                 "transport_days","exempt_transport","exempt_schooling","family_allowance","regular_tax","one_off_tax","compliance_notes","allowances")
             values=[json.dumps(calc[field]) if field in ("compliance_notes","allowances") else str(calc[field]) for field in fields]
@@ -575,7 +585,9 @@ class PayrollStore:
             mapping["salary"]=salary_account; mapping["payable"]=payable_account
             tax_account=mapping["tax"]; nssf_account=mapping["nssf"]
             employer_expense=str(mapping.get("employer_social") or "").strip() or "6351"  # 2.9.80: was 621100002 (6211 = sub-contractors in the Lebanese chart)
-            component_names={"salary":"Salaries and Wages","transport":"Transportation","overtime":"Overtime","commission":"Commission","retro_salary":"Retroactive Salary","schooling":"Schooling Allowance","bonus":"Bonus","thirteenth_month":"13th Salary","director_remuneration":"Director Remuneration"}
+            component_names={"salary":"Salaries and Wages","transport":"Transportation","overtime":"Overtime","commission":"Commission",
+                    "retro_salary":"Retroactive Salary","schooling":"Schooling Allowance","bonus":"Bonus","thirteenth_month":"13th Salary",
+                    "director_remuneration":"Director Remuneration"}
             required=[(mapping[key],name,"expense") for key,name in component_names.items()]
             required+=((salary_account,"Salaries and Wages","expense"),(employer_expense,"Employer NSSF Contributions","expense"),
                 (payable_account,"Salaries Payable","liability"),(tax_account,"Payroll Tax Payable","liability"),(nssf_account,"NSSF Payable","liability"))
@@ -586,7 +598,8 @@ class PayrollStore:
             employer_nssf=sum((Decimal(record[name]) for name in ("employer_medical","employer_end_service","employer_family")),Decimal("0"))
             number=f'PAYJV-{record["payroll_number"]}'
             entry_id=db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,branch_id,created_by,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?)""",(number,display_date(record["period_date"]),f'Payroll - {record["full_name"]}',"payroll",record["id"],record["currency"],record["branch_id"],user_id,utcnow())).lastrowid
+                VALUES(?,?,?,?,?,?,?,?,?)""",(number,display_date(record["period_date"]),f'Payroll - {record["full_name"]}',"payroll",record["id"],
+                        record["currency"],record["branch_id"],user_id,utcnow())).lastrowid
             lines=[(mapping[key],Decimal(str(record[key] or 0)),Decimal("0")) for key in component_names]
             allowances_total=sum(self._record_allowances(record).values(),Decimal("0"))
             if allowances_total:
@@ -597,7 +610,8 @@ class PayrollStore:
             # Family allocation: its own posting account when one is set; otherwise offset on the NSSF account (as before).
             family_account=str(mapping.get("family_allowance") or "").strip() or nssf_account
             if family_account!=nssf_account: db.execute("INSERT OR IGNORE INTO accounts(code,name_en,type) VALUES(?,?,?)",(family_account,"Family Allocation","asset"))
-            lines+=((employer_expense,employer_nssf,Decimal("0")),(payable_account,Decimal("0"),net),(tax_account,Decimal("0"),tax),(nssf_account,Decimal("0"),employee_nssf+employer_nssf),(family_account,family_allowance,Decimal("0")))
+            lines+=((employer_expense,employer_nssf,Decimal("0")),(payable_account,Decimal("0"),net),(tax_account,Decimal("0"),tax),(nssf_account,Decimal("0"),
+                    employee_nssf+employer_nssf),(family_account,family_allowance,Decimal("0")))
             # 2.9.84: the salary tax is due in LBP. For a USD (or other currency) payslip the tax line carries the exact LBP tax
             # (income_tax_lbp) as its LBP value, so 4411 in LBP agrees with the tax return; the LBP rounding goes to the salary line.
             special={}
@@ -639,7 +653,8 @@ class PayrollStore:
         currency = str(item.get("currency") or "LBP").upper(); date = str(item.get("payment_date") or datetime.now().strftime("%d-%m-%Y"))
         cash = str(item.get("cash_account") or "531").split(" - ", 1)[0].strip()
         settings = self.payroll_settings_for(iso_date(date))
-        try: payable = json.loads(settings.get("employee_account_map") or "{}").get("nssf") if isinstance(settings.get("employee_account_map"), str) else (settings.get("employee_account_map") or {}).get("nssf")
+        try: payable = json.loads(settings.get("employee_account_map") or "{}").get("nssf") if isinstance(settings.get("employee_account_map"),
+                str) else (settings.get("employee_account_map") or {}).get("nssf")
         except ValueError: payable = None
         payable = payable or "4431"
         period = str(item.get("period_label") or "").strip(); reference = str(item.get("reference") or "").strip()

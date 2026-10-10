@@ -182,7 +182,8 @@ class SaberAccountingTest(unittest.TestCase):
             db.import_invoice({"invoice_number":"P-1","invoice_date":"02-06-2026","party_name":"Supplier A","kind":"purchase","currency":"USD","subtotal":400,"vat":44,"total":444},user["id"])
             db.add_payment({"kind":"customer_receipt","party_id":customer["id"],"payment_date":"03-06-2026","currency":"USD","amount":500,"cash_account":"531","party_account":"4111"},user["id"])
             db.add_payment({"kind":"supplier_payment","party_id":supplier["id"],"payment_date":"04-06-2026","currency":"USD","amount":200,"cash_account":"5121","party_account":"4011"},user["id"])
-            db.add_expense({"expense_date":"05-06-2026","description":"Office expense","category":"Office","currency":"USD","subtotal":100,"vat":11,"expense_account":"6011","vat_account":"4426.6","payment_account":"531"},user["id"])
+            db.add_expense({"expense_date":"05-06-2026","description":"Office expense","category":"Office","currency":"USD","subtotal":100,"vat":11,
+                    "expense_account":"6011","vat_account":"4426.6","payment_account":"531"},user["id"])
             self.assertEqual(len(db.list_payments()),2); self.assertEqual(len(db.list_expenses()),1)
             ledger=db.general_ledger("531","2026-01-01","2026-12-31","USD")
             self.assertTrue(ledger["items"])
@@ -259,7 +260,8 @@ class SaberAccountingTest(unittest.TestCase):
             db=Database(Path(folder)/"documents.db"); db.initialize("secret")
             user=db.user_for_token(db.login("admin","secret")["token"])
             supplier=db.save_party({"kind":"supplier","name":"Customs Supplier","currency":"USD"},user["id"])
-            document_id=db.add_party_document(supplier["id"],{"document_type":"MOF / VAT Certificate","issue_date":"01-01-2026","expiry_date":"31-12-2026","file_name":"mof.pdf","mime_type":"application/pdf"},b"PDF",user["id"])
+            document_id=db.add_party_document(supplier["id"],{"document_type":"MOF / VAT Certificate","issue_date":"01-01-2026","expiry_date":"31-12-2026",
+                    "file_name":"mof.pdf","mime_type":"application/pdf"},b"PDF",user["id"])
             self.assertEqual(db.get_party_document(document_id)["content"],b"PDF")
             for case_type,roles in (("purchase",("supplier_invoice",)),("expense",("expense_document",)),("customs",("supplier_invoice","customs_declaration","broker_invoice"))):
                 case=db.save_document_case({"case_type":case_type,"document_date":"24-09-2026","party_id":supplier["id"],"currency":"USD",
@@ -278,9 +280,12 @@ class SaberAccountingTest(unittest.TestCase):
             db=Database(Path(folder)/"advanced_reports.db"); db.initialize("secret")
             user=db.user_for_token(db.login("admin","secret")["token"])
             customer=db.save_party({"kind":"customer","name":"Report Customer","currency":"USD"},user["id"])
-            db.import_invoice({"invoice_number":"AR-1","invoice_date":"01-01-2026","due_date":"15-01-2026","party_name":"Report Customer","kind":"sale","currency":"USD","subtotal":100,"vat":11,"total":111,"status":"posted"},user["id"])
-            db.import_invoice({"invoice_number":"AR-0","invoice_date":"01-01-2025","party_name":"Report Customer","kind":"sale","currency":"USD","subtotal":80,"vat":8.8,"total":88.8,"status":"posted"},user["id"])
-            db.add_payment({"kind":"customer_receipt","payment_date":"20-01-2026","party_id":customer["id"],"currency":"USD","amount":50,"cash_account":"531","party_account":customer["account_number"]},user["id"])
+            db.import_invoice({"invoice_number":"AR-1","invoice_date":"01-01-2026","due_date":"15-01-2026","party_name":"Report Customer","kind":"sale",
+                    "currency":"USD","subtotal":100,"vat":11,"total":111,"status":"posted"},user["id"])
+            db.import_invoice({"invoice_number":"AR-0","invoice_date":"01-01-2025","party_name":"Report Customer","kind":"sale","currency":"USD","subtotal":80,
+                    "vat":8.8,"total":88.8,"status":"posted"},user["id"])
+            db.add_payment({"kind":"customer_receipt","payment_date":"20-01-2026","party_id":customer["id"],"currency":"USD","amount":50,"cash_account":"531",
+                    "party_account":customer["account_number"]},user["id"])
             aging=db.aging_report("20-02-2026","sale","USD")
             self.assertTrue(any(row["invoice_number"]=="AR-1" and row["bucket"]=="31-60" for row in aging))
             cash=db.cash_flow("2026-01-01","2026-12-31","USD")
@@ -310,10 +315,12 @@ class SaberAccountingTest(unittest.TestCase):
             db=Database(Path(folder)/"branches.db"); db.initialize("secret")
             user=db.user_for_token(db.login("admin","secret")["token"])
             north=db.save_branch({"name":"North Branch"},user["id"]); south=db.save_branch({"name":"South Branch"},user["id"])
-            invoice_id=db.import_invoice({"invoice_number":"BR-1","invoice_date":"22-09-2026","party_name":"Branch Supplier","kind":"purchase","currency":"USD","subtotal":100,"vat":11,"total":111,"branch_id":north["id"]},user["id"])
+            invoice_id=db.import_invoice({"invoice_number":"BR-1","invoice_date":"22-09-2026","party_name":"Branch Supplier","kind":"purchase","currency":"USD",
+                    "subtotal":100,"vat":11,"total":111,"branch_id":north["id"]},user["id"])
             invoice=next(row for row in db.list_invoices() if row["id"]==invoice_id)
             self.assertEqual(invoice["branch_name"],"North Branch")
-            voucher=db.save_journal_voucher({"entry_date":"22-09-2026","description":"South adjustment","currency":"USD","branch_id":south["id"]},[{"account_code":"531","debit":10,"credit":0},{"account_code":"4011","debit":0,"credit":10}],user["id"])
+            voucher=db.save_journal_voucher({"entry_date":"22-09-2026","description":"South adjustment","currency":"USD","branch_id":south["id"]},
+                    [{"account_code":"531","debit":10,"credit":0},{"account_code":"4011","debit":0,"credit":10}],user["id"])
             self.assertTrue(db.trial_balance(branch_id=north["id"])); self.assertTrue(db.trial_balance(branch_id=south["id"]))
             self.assertTrue(all(row["branch_id"]==south["id"] for row in db.journal(branch_id=south["id"])))
             party=next(row for row in db.list_parties() if row["name"]=="Branch Supplier")
@@ -438,7 +445,8 @@ class SaberAccountingTest(unittest.TestCase):
                 "kind":"expenses","entry_type":"expenses","currency":"USD","subtotal":100,"vat":0,"total":100},user["id"])
             saved=next(row for row in db.list_invoices() if row["id"]==invoice_id)
             self.assertEqual(saved["vat"],"0"); self.assertEqual(saved["total"],"100")
-            self.assertEqual(saved["expense_account"],"601100000"); self.assertEqual(saved["expense_no_vat_account"],"601100001"); self.assertEqual(saved["vat_account"],"44216")  # expenses VAT account
+            self.assertEqual(saved["expense_account"],"601100000"); self.assertEqual(saved["expense_no_vat_account"],
+                    "601100001"); self.assertEqual(saved["vat_account"],"44216")  # expenses VAT account
             changed=db.update_invoice(invoice_id,{"invoice_number":"NV-1","invoice_date":"22-09-2026","party_name":"Supplier NV",
                 "kind":"assets","entry_type":"assets","currency":"USD","subtotal":100,"vat":0,"total":100,"debit":75,"credit":25,
                 "supplier_account":saved["supplier_account"],"vat_account":saved["vat_account"],"expense_account":"601100123","expense_no_vat_account":"601100001",
@@ -532,8 +540,10 @@ class SaberAccountingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             db=Database(Path(folder)/"posting_filter.db"); db.initialize("secret")
             user=db.user_for_token(db.login("admin","secret")["token"])
-            db.import_invoice({"invoice_number":"POST-1","invoice_date":"01-01-2026","party_name":"Posted Client","kind":"sale","currency":"USD","subtotal":100,"vat":11,"total":111,"status":"posted"},user["id"])
-            db.import_invoice({"invoice_number":"REV-1","invoice_date":"02-01-2026","party_name":"Review Client","kind":"sale","currency":"USD","subtotal":200,"vat":22,"total":222,"status":"review"},user["id"])
+            db.import_invoice({"invoice_number":"POST-1","invoice_date":"01-01-2026","party_name":"Posted Client","kind":"sale","currency":"USD","subtotal":100,
+                    "vat":11,"total":111,"status":"posted"},user["id"])
+            db.import_invoice({"invoice_number":"REV-1","invoice_date":"02-01-2026","party_name":"Review Client","kind":"sale","currency":"USD","subtotal":200,
+                    "vat":22,"total":222,"status":"review"},user["id"])
             posted=db.trial_balance(posting_status="posted"); review=db.trial_balance(posting_status="review"); both=db.trial_balance(posting_status="both")
             self.assertTrue(posted); self.assertTrue(review)
             self.assertGreater(sum(abs(r["balance"]) for r in both),sum(abs(r["balance"]) for r in posted))
@@ -622,12 +632,16 @@ class SaberAccountingTest(unittest.TestCase):
             with db.connect() as connection:
                 linked=connection.execute("SELECT CAST(rate AS REAL) rate FROM exchange_rates WHERE rate_date='20-09-2026' AND from_currency='EUR' AND to_currency='LBP'").fetchone()
             self.assertAlmostEqual(linked["rate"],98450)
-            invoice_id=db.import_invoice({"invoice_number":"OPEN-1","invoice_date":"01-09-2026","party_name":"Supplier X","kind":"purchases","currency":"USD","deductible_subtotal":100,"non_deductible_subtotal":20,"vat":11,"total":131,"expense_no_vat_side":"C - Credit"},user["id"])
+            invoice_id=db.import_invoice({"invoice_number":"OPEN-1","invoice_date":"01-09-2026","party_name":"Supplier X","kind":"purchases","currency":"USD",
+                    "deductible_subtotal":100,"non_deductible_subtotal":20,"vat":11,"total":131,"expense_no_vat_side":"C - Credit"},user["id"])
             party=next(p for p in db.list_parties() if p["name"]=="Supplier X")
             with_opening=db.statement_of_account(party["id"],"2026-09-10","2026-09-30",None,True,"LBP")
             without_opening=db.statement_of_account(party["id"],"2026-09-10","2026-09-30",None,False,"LBP")
             self.assertTrue(with_opening["opening"]); self.assertFalse(without_opening["opening"])
-            expense_id=db.add_expense({"expense_date":"20-09-2026","description":"Credit-side correction","currency":"USD","with_vat_subtotal":10,"without_vat_subtotal":5,"vat":1.1,"expense_account":"601100000","expense_without_vat_account":"601100001","vat_account":"442660000","payment_account":"531","expense_side":"C - Credit","expense_without_vat_side":"D - Debit","vat_side":"D - Debit","payment_side":"D - Debit"},user["id"])
+            expense_id=db.add_expense({"expense_date":"20-09-2026","description":"Credit-side correction","currency":"USD","with_vat_subtotal":10,
+                    "without_vat_subtotal":5,"vat":1.1,"expense_account":"601100000","expense_without_vat_account":"601100001","vat_account":"442660000",
+                    "payment_account":"531","expense_side":"C - Credit","expense_without_vat_side":"D - Debit","vat_side":"D - Debit",
+                    "payment_side":"D - Debit"},user["id"])
             lines=[r for r in db.journal(currency="USD") if r["source_type"]=="expense" and r["source_id"]==expense_id]
             self.assertEqual(next(r for r in lines if r["account_code"]=="601100000")["credit"],10)
             trial=db.trial_balance("2026-09-20","2026-09-20")

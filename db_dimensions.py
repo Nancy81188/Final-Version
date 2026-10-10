@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from DimensionsStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    datetime, Decimal, iso_date, json, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -16,7 +18,8 @@ class DimensionsStore:
             value = item.get(f"{key}_id") or item.get(key)
             if value in (None, "", 0, "0", "None"): result.append(None); continue
             text = str(value).split(" - ", 1)[0].strip()
-            row = db.execute(f"SELECT id FROM {table} WHERE id=? OR code=? OR lower(name)=lower(?)", (int(text) if text.isdigit() and not text.startswith("0") and len(text) < 6 else -1, text, text)).fetchone()
+            row = db.execute(f"SELECT id FROM {table} WHERE id=? OR code=? OR lower(name)=lower(?)",
+                    (int(text) if text.isdigit() and not text.startswith("0") and len(text) < 6 else -1, text, text)).fetchone()
             if not row: raise ValueError(f"{key.title()} '{text}' was not found")
             result.append(row["id"])
         return tuple(result)

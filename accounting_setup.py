@@ -216,7 +216,8 @@ def year_end_check(db, year, previous_year_db=None):
         try:
             if not vat_return.ledger_check(db, result)["agreed"]: vat_issues.append(f"Q{quarter} differs from the books")
         except Exception as exc: vat_issues.append(f"Q{quarter} check: {exc}")
-    add(WARNING if vat_issues else OK, "Quarterly VAT", "; ".join(vat_issues) if vat_issues else (f"{vat_quarters} quarter(s) saved and agreeing with the books" if vat_quarters else "No VAT in the year"),
+    add(WARNING if vat_issues else OK, "Quarterly VAT",
+            "; ".join(vat_issues) if vat_issues else (f"{vat_quarters} quarter(s) saved and agreeing with the books" if vat_quarters else "No VAT in the year"),
         "Quarterly VAT: Generate, Check with the Books, Save Return, VAT Settlement Entry" if vat_issues else "")
     # 5. VAT accounts not settled at year end
     vat_left = {}
@@ -231,7 +232,8 @@ def year_end_check(db, year, previous_year_db=None):
             CAST(x.amount AS REAL)+CAST(COALESCE(x.exchange_difference,'0') AS REAL)-COALESCE((SELECT DSUM(CAST(a.amount AS REAL)) FROM payment_allocations a WHERE a.payment_id=x.id),0) free
             FROM payments x LEFT JOIN parties p ON p.id=x.party_id""")]
     free = [r for r in free if abs(r["free"] or 0) >= 0.01]
-    add(WARNING if free else OK, "Receipts / payments allocated", (f"{len(free)} not (fully) allocated, e.g. " + ", ".join(f"{r['payment_number']} {r['party']} {r['free']:,.2f} {r['currency']}" for r in free[:4])) if free else "All allocated to invoices",
+    add(WARNING if free else OK, "Receipts / payments allocated",
+            (f"{len(free)} not (fully) allocated, e.g. " + ", ".join(f"{r['payment_number']} {r['party']} {r['free']:,.2f} {r['currency']}" for r in free[:4])) if free else "All allocated to invoices",
         "Payment & Receipt: open each one and Auto Allocate (the ageing already applies them oldest first)" if free else "")
     # 7. negative stock
     try:
@@ -298,7 +300,8 @@ def year_end_check(db, year, previous_year_db=None):
         digits = ledger_reports._digits(r["code"])
         if len(digits) >= 9 and digits.startswith(("40", "41")): parties[str(r["code"])] = parties.get(str(r["code"]), ZERO) + (r["signed"]["USD"] or ZERO)
     odd = [f"{code} {value:,.2f}" for code, value in sorted(parties.items()) if (code.startswith("41") and value < Decimal("-0.01")) or (code.startswith("40") and value > Decimal("0.01"))]
-    add(WARNING if odd else OK, "Customers / suppliers on the right side", ("Customers in credit / suppliers in debit (USD): " + ", ".join(odd[:6])) if odd else "Customers in debit, suppliers in credit",
+    add(WARNING if odd else OK, "Customers / suppliers on the right side",
+            ("Customers in credit / suppliers in debit (USD): " + ", ".join(odd[:6])) if odd else "Customers in debit, suppliers in credit",
         "Usually an advance or a payment on the wrong party: check their statements" if odd else "")
     errors = sum(1 for r in results if r["status"] == ERROR); warnings = sum(1 for r in results if r["status"] == WARNING)
     return {"year": year, "results": results, "errors": errors, "warnings": warnings,

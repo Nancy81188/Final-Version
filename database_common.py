@@ -24,7 +24,8 @@ VAT_ACCOUNT_9 = "44210"  # VAT on purchases (was 442660000)
 EXPENSE_NO_VAT_ACCOUNT_9 = "601100001"
 SESSION_HOURS = 24
 USER_VALIDITY_DAYS = 365
-PERMISSION_MODULES = ("payroll", "vat", "delete", "approve")  # 2.9.93: "approve" = approve and post documents others prepared  # 2.9.52: "delete" = delete / cancel posted documents, replace all invoices
+PERMISSION_MODULES = ("payroll", "vat", "delete",
+        "approve")  # 2.9.93: "approve" = approve and post documents others prepared  # 2.9.52: "delete" = delete / cancel posted documents, replace all invoices
 
 SCHEMA = """
 PRAGMA foreign_keys=ON;

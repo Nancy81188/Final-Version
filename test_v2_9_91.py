@@ -27,7 +27,8 @@ class VatOnceTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.addCleanup(folder.cleanup)
         db = Database(Path(folder.name) / "v.db"); db.initialize("secret12345"); self.addCleanup(db.release)
         db.save_exchange_rate({"date_from": "01-01-2025", "date_to": "31-12-2025", "from_currency": "USD", "to_currency": "LBP", "rate": "89500"}, 1)
-        db.create_manual_invoice({"invoice_date": "10-11-2025", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"}, [{"description": "S", "quantity": 1, "unit_price": 100, "vat_rate": 11}], 1)
+        db.create_manual_invoice({"invoice_date": "10-11-2025", "party_name": "C", "kind": "sales", "currency": "USD", "status": "posted"},
+                [{"description": "S", "quantity": 1, "unit_price": 100, "vat_rate": 11}], 1)
         memo = {}; vat_return.build_vat_return(db, 2025, 4, _memo=memo)
         self.assertEqual(sum(1 for key in memo if isinstance(key, tuple) and key and key[0] == "documents"), 1)
 

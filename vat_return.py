@@ -384,7 +384,8 @@ def _build_vat_return(db, year, quarter, currency, include_review, previous_year
               (("net", totals_lbp["net"]), ("payable", payable), ("credit_carried_forward", credit_cf), ("credit_brought_forward", credit_bf))}
     return {"year": int(year), "quarter": int(quarter), "date_from": start, "date_to": end, "due_date": due_date(year, quarter), "currency_filter": currency or "All",
         "include_review": bool(include_review), "per_currency": per_currency, "totals_lbp": totals_lbp,
-        "deduction_ratio": ratio, "ratio_source": ratio_source, "ratio_method": method, "ytd_turnover_lbp": {"taxable": ytd_taxable, "exempt": ytd_exempt}, "ytd_turnover_detail": ytd_detail if int(quarter) != 4 else final_detail, "annual_adjustment_detail": adjustment_detail,
+        "deduction_ratio": ratio, "ratio_source": ratio_source, "ratio_method": method, "ytd_turnover_lbp": {"taxable": ytd_taxable, "exempt": ytd_exempt},
+                "ytd_turnover_detail": ytd_detail if int(quarter) != 4 else final_detail, "annual_adjustment_detail": adjustment_detail,
         "credit_brought_forward_lbp": credit_bf, "credit_source": source, "net_after_credit_lbp": net_after_credit,
         "payable_lbp": payable, "refund_requested_lbp": refund, "credit_carried_forward_lbp": credit_cf, "documents": documents, "adjustments": adjustments,
         "skipped": skipped, "review_excluded": review_excluded, "warnings": warnings, "saved": saved, "changed_since_saved": changed,
@@ -674,7 +675,9 @@ def export_sections(result):
         for row in summary: row.append(_money(Decimal(str(row[3] or 0)) * Decimal(str(second_rate))) if row[3] not in ("", None) else "")
         meta.append(f"{vc2} equivalent at 1 {vc} = {Decimal(str(second_rate)):.6g} {vc2} ({display_date(result['date_to'])}).")
     sections.append({"heading": f"VAT calculation summary - all currencies in {vc} | ملخص احتساب الضريبة", "headers": headers, "rows": summary,
-                     "total_rows": [labels.index(l) for l in ("TOTAL OUTPUT VAT", "TOTAL DEDUCTIBLE VAT", "NET VAT FOR THE PERIOD (output VAT less deductible input VAT)", "VAT PAYABLE TO THE MINISTRY OF FINANCE", "Credit carried forward to the next period")]})
+                     "total_rows": [labels.index(l) for l in ("TOTAL OUTPUT VAT", "TOTAL DEDUCTIBLE VAT",
+                             "NET VAT FOR THE PERIOD (output VAT less deductible input VAT)", "VAT PAYABLE TO THE MINISTRY OF FINANCE",
+                             "Credit carried forward to the next period")]})
     turnover = result.get("ytd_turnover_lbp", {})
     ratio_rows = [[f"Taxable and zero-rated turnover ({vc}, year to date)", turnover.get("taxable", ZERO)], [f"Exempt turnover ({vc}, year to date)", turnover.get("exempt", ZERO)],
                   ["Deduction ratio applied", f"{ratio * 100:.2f}%"], ["Basis", result.get("ratio_source", "")]]
@@ -865,8 +868,10 @@ def official_form(result, company):
                 {"heading": "Q11-2 Annex - partial right of deduction (Art. 31) | ملحق التصريح الدوري لحق الحسم الجزئي", "fixed": True,
                  "headers": ["Box | الخانة", "Item", "البيان", "(1) Amount | المبلغ", "(2) Deductible VAT | الضريبة القابلة للحسم"], "rows": q11, "total_rows": [3, 7, 11]},
                 {"heading": "Deduction ratio | نسبة الحسم", "fixed": True, "headers": ["Item", "البيان", "Value"], "rows": ratio_rows, "total_rows": []},
-                {"heading": "Q13-2 Annex - ten largest suppliers | أكبر عشرة موردين", "fixed": True, "headers": ["#", "Supplier | المورد", "MOF No. | رقم التسجيل", "Purchases (LBP)"], "rows": top(suppliers), "total_rows": []},
-                {"heading": "Q13-2 Annex - ten largest customers | أكبر عشرة زبائن", "fixed": True, "headers": ["#", "Customer | الزبون", "MOF No. | رقم التسجيل", "Sales (LBP)"], "rows": top(customers), "total_rows": []}]
+                {"heading": "Q13-2 Annex - ten largest suppliers | أكبر عشرة موردين", "fixed": True, "headers": ["#", "Supplier | المورد",
+                        "MOF No. | رقم التسجيل", "Purchases (LBP)"], "rows": top(suppliers), "total_rows": []},
+                {"heading": "Q13-2 Annex - ten largest customers | أكبر عشرة زبائن", "fixed": True, "headers": ["#", "Customer | الزبون",
+                        "MOF No. | رقم التسجيل", "Sales (LBP)"], "rows": top(customers), "total_rows": []}]
     return head, sections
 
 

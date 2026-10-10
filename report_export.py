@@ -187,14 +187,16 @@ def export_invoice_pdf(path, invoice, items, logo_path=None, company=None):
         except Exception: logo_cell=None
     if logo_cell:
         left_stack=Table([[logo_cell,left]],colWidths=[22*mm,None])
-        left_stack.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"MIDDLE"),("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(0,0),4),("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0)]))
+        left_stack.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"MIDDLE"),("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(0,0),4),("TOPPADDING",(0,0),
+                (-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0)]))
     else:
         left_stack=left
     right=[pdf_paragraph(title,title_style,True)]
     if status[0]!="DUE":
         badge=Table([[Paragraph(status[0],ParagraphStyle("badge",parent=styles["Normal"],fontName="Helvetica-Bold",fontSize=9,textColor=colors.white,alignment=TA_CENTER))]],colWidths=[24*mm])
         badge.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),status[1]),("TOPPADDING",(0,0),(-1,-1),3),("BOTTOMPADDING",(0,0),(-1,-1),3)]))
-        right+=[Spacer(1,2*mm),Table([[badge]],colWidths=[24*mm],hAlign="RIGHT",style=[("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0),("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0)])]
+        right+=[Spacer(1,2*mm),Table([[badge]],colWidths=[24*mm],hAlign="RIGHT",style=[("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0),
+                ("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0)])]
     band=Table([[left_stack,right]],colWidths=[CONTENT_W*0.60,CONTENT_W*0.40])
     band.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"MIDDLE"),("BACKGROUND",(0,0),(-1,-1),NAVY_C),("LEFTPADDING",(0,0),(-1,-1),10),
         ("RIGHTPADDING",(0,0),(-1,-1),10),("TOPPADDING",(0,0),(-1,-1),9),("BOTTOMPADDING",(0,0),(-1,-1),9),("LINEBELOW",(0,0),(-1,-1),2.2,GOLD_C)]))
@@ -589,7 +591,8 @@ def _contents_entries(sections):
         heading = str(section.get("heading") or "")
         if heading.startswith("PREPARER REVIEW"): continue
         if heading.startswith("INDEPENDENT AUDITOR"): items.append(("Independent auditor's report", index))
-        elif heading.startswith("STATEMENT OF"): items.append((heading.split(" as at ")[0].split(" for the ")[0].split(" (")[0].title().replace(" Or ", " or ").replace(" And ", " and ").replace(" Of ", " of ").replace(" In ", " in "), index))
+        elif heading.startswith("STATEMENT OF"): items.append((heading.split(" as at ")[0].split(" for the ")[0].split(" (")[0].title().replace(" Or ",
+                " or ").replace(" And ", " and ").replace(" Of ", " of ").replace(" In ", " in "), index))
         elif heading.startswith("NOTES TO THE FINANCIAL STATEMENTS"):
             items.append(("Notes to the financial statements", index)); break
     return items
@@ -694,7 +697,8 @@ def _build_sections_pdf(path, title, meta, sections, found_pages, contents_pages
     available = doc.width - 12
     for section_index, section in enumerate(sections):
         after_cover = financial and story and type(story[-1]).__name__ == "PageBreak"
-        if not after_cover and ((financial and (section["heading"].startswith(("Statement of", "Notes: account")) or section["heading"].endswith("DRAFT - Addressee"))) or (section.get("page_break") and story)):
+        if not after_cover and ((financial and (section["heading"].startswith(("Statement of",
+                "Notes: account")) or section["heading"].endswith("DRAFT - Addressee"))) or (section.get("page_break") and story)):
             from reportlab.platypus import PageBreak
             story.append(PageBreak())
         story.append(_page_marker(found_pages, section_index))  # 2.9.97: the page of this part, for the contents

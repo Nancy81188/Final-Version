@@ -17,7 +17,10 @@ from desktop_common import flow_toolbars
 NAVY, GOLD, LIGHT = "#102A43", "#B78B45", "#F4F7FA"  # 2.9.59: the same colours on every screen
 RED, MUTED = "#8B1E1E", "#5f6b76"
 DOC_TYPES = {"Opening Stock": "opening", "Stock Receipt": "receipt", "Stock Issue": "issue", "Adjustment +": "adjustment_in", "Adjustment -": "adjustment_out", "Transfer": "transfer"}
-REPORTS = {"Inventory Summary": "summary", "Stock by Brand & Warehouse": "brands", "Stock Ageing": "ageing", "Inventory Analysis (3D)": "analysis3d", "Inventory Health": "health", "Stock Valuation": "valuation", "Stock Card": "stock_card", "Stock Movements": "movements", "Stock Turnover": "turnover", "Stock by Supplier": "supplier_stock", "Physical Count Variances": "count_variances", "Sales Margin (COGS)": "margin", "Reorder Report": "reorder", "Slow-moving Stock": "slow", "Stock vs Ledger": "ledger_check"}
+REPORTS = {"Inventory Summary": "summary", "Stock by Brand & Warehouse": "brands", "Stock Ageing": "ageing", "Inventory Analysis (3D)": "analysis3d",
+        "Inventory Health": "health", "Stock Valuation": "valuation", "Stock Card": "stock_card", "Stock Movements": "movements", "Stock Turnover": "turnover",
+        "Stock by Supplier": "supplier_stock", "Physical Count Variances": "count_variances", "Sales Margin (COGS)": "margin", "Reorder Report": "reorder",
+        "Slow-moving Stock": "slow", "Stock vs Ledger": "ledger_check"}
 
 
 def _num(value):
@@ -33,7 +36,8 @@ def _dd(value):
 class InventoryMixin:
     def build_inventory(self):
         nested = ttk.Notebook(self.inventory_tab); nested.pack(fill="both", expand=True, padx=8, pady=8)
-        pages = {name: tk.Frame(nested, bg=LIGHT) for name in ("Items", "Categories & Units", "Stock In / Stock Out", "Stock Documents", "Production", "Physical Inventory", "Inventory Reports", "Ageing Report", "Warehouses & Settings")}
+        pages = {name: tk.Frame(nested, bg=LIGHT) for name in ("Items", "Categories & Units", "Stock In / Stock Out", "Stock Documents", "Production",
+                "Physical Inventory", "Inventory Reports", "Ageing Report", "Warehouses & Settings")}
         for name, page in pages.items(): nested.add(page, text=name)
         self.ageing_tab=pages["Ageing Report"]
         self.build_items_page(pages["Items"]); self.build_categories_page(pages["Categories & Units"]); self.build_stock_in_out_page(pages["Stock In / Stock Out"])
@@ -51,7 +55,8 @@ class InventoryMixin:
         self.items_tree.delete(*self.items_tree.get_children())
         for i in self.inventory_rows:
             status = "Inactive" if not i["active"] else "Reorder" if i["reorder_level"] and i["quantity"] <= i["reorder_level"] else "OK"
-            self.items_tree.insert("", "end", iid=str(i["id"]), values=(i["sku"], i["name"], i.get("category") or "", i.get("subcategory") or "", i.get("brand") or "", i.get("supplier_name") or "", i["unit"],
+            self.items_tree.insert("", "end", iid=str(i["id"]), values=(i["sku"], i["name"], i.get("category") or "", i.get("subcategory") or "",
+                    i.get("brand") or "", i.get("supplier_name") or "", i["unit"],
                 f'{i["quantity"]:,.3f}', f'{i["average_cost"]:,.4f}', f'{i["stock_value"]:,.2f}', f'{i["sales_price"]:,.2f}', status), tags=("reorder",) if status == "Reorder" else ())
         self.load_item_lists()
         names = [f'{w["code"]} - {w["name"]}' for w in self.warehouse_rows if w["active"]]
@@ -88,11 +93,14 @@ class InventoryMixin:
     # ------------------------------------------------------------ items
     def build_items_page(self, page):
         form = tk.LabelFrame(page, text="Item", bg=LIGHT, padx=8, pady=5); form.pack(fill="x", padx=8, pady=6)
-        self.item_id = None; self.item_vars = {k: tk.StringVar() for k in ("sku", "name", "unit", "category", "subcategory", "brand", "supplier_name", "location", "sales_price", "reorder_level", "barcode", "notes", "default_vat", "cost_account", "stock_account")}
+        self.item_id = None; self.item_vars = {k: tk.StringVar() for k in ("sku", "name", "unit", "category", "subcategory", "brand", "supplier_name",
+                "location", "sales_price", "reorder_level", "barcode", "notes", "default_vat", "cost_account", "stock_account")}
         self.item_vars["unit"].set("unit"); self.item_vars["default_vat"].set(vat_rate_text(self)); self.item_active = tk.BooleanVar(value=True)
         self.item_boxes = {}
         for index, (key, label, width) in enumerate((("sku", "Item Code (auto if blank)", 14), ("name", "Item Name", 24), ("unit", "Unit", 12), ("category", "Category", 16),
-                                                     ("subcategory", "Subcategory", 16), ("brand", "Brand", 16), ("supplier_name", "Supplier", 22), ("sales_price", "Sales Price", 11), ("default_vat", "Default VAT", 9), ("reorder_level", "Reorder Level", 9),
+                                                     ("subcategory", "Subcategory", 16), ("brand", "Brand", 16), ("supplier_name", "Supplier", 22),
+                                                             ("sales_price", "Sales Price", 11), ("default_vat", "Default VAT", 9), ("reorder_level",
+                                                             "Reorder Level", 9),
                                                      ("location", "Location (shelf)", 12), ("barcode", "Barcode", 14), ("notes", "Notes", 24),
                                                      ("stock_account", "Stock Account", 26), ("cost_account", "Cost Account (linked)", 24))):
             tk.Label(form, text=label, bg=LIGHT).grid(row=index // 3, column=(index % 3) * 2, sticky="w", padx=4, pady=2)
@@ -109,7 +117,8 @@ class InventoryMixin:
             widget.grid(row=index // 3, column=(index % 3) * 2 + 1, sticky="w", padx=4, pady=2)
             if key == "brand": self.item_brand_widgets = (form.grid_slaves(row=index // 3, column=(index % 3) * 2)[0], widget)
         self.item_link_label = tk.Label(form, text="", bg=LIGHT, fg=NAVY, anchor="w", justify="left", wraplength=620); self.item_link_label.grid(row=5, column=0, columnspan=4, sticky="w", padx=4)
-        self.item_cost_label = tk.Label(form, text="Cost price (average of purchases): -", bg=LIGHT, fg="#1a5fb4", cursor="hand2", font=("Segoe UI", 9, "bold", "underline")); self.item_cost_label.grid(row=5, column=4, columnspan=2, sticky="w", padx=4)
+        self.item_cost_label = tk.Label(form, text="Cost price (average of purchases): -", bg=LIGHT, fg="#1a5fb4", cursor="hand2", font=("Segoe UI", 9, "bold",
+                "underline")); self.item_cost_label.grid(row=5, column=4, columnspan=2, sticky="w", padx=4)
         # The cost is a link: click it to open the item's Stock Card (each purchase / sale and the running average cost).
         self.item_cost_label.bind("<Button-1>", lambda _event: self.open_item_cost_link())
         buttons = tk.Frame(form, bg=LIGHT); buttons.grid(row=6, column=0, columnspan=6, sticky="w", pady=(4, 0))
@@ -119,7 +128,8 @@ class InventoryMixin:
         tk.Button(buttons, text="Save", command=self.save_item, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(buttons, "Stock Card", lambda: self.open_stock_card()).pack(side="left", padx=3)
         tk.Label(buttons, text="Quantity and cost come from the stock documents. Double-click an item to edit it.", bg=LIGHT, fg=MUTED).pack(side="left", padx=10)
-        self.items_tree = self.table(page, [("sku", "Item Code", 95), ("name", "Item", 200), ("category", "Category", 95), ("subcategory", "Subcategory", 95), ("brand", "Brand", 90), ("supplier", "Supplier", 120),
+        self.items_tree = self.table(page, [("sku", "Item Code", 95), ("name", "Item", 200), ("category", "Category", 95), ("subcategory", "Subcategory", 95),
+                ("brand", "Brand", 90), ("supplier", "Supplier", 120),
             ("unit", "Unit", 50), ("qty", "On Hand", 80), ("cost", "Cost Price (avg)", 100), ("value", "Stock Value", 100), ("price", "Sales Price", 85), ("status", "Status", 65)])
         self.items_tree.tag_configure("reorder", foreground=RED); self.items_tree.bind("<Double-1>", lambda _e: self.edit_item())
 
@@ -161,7 +171,8 @@ class InventoryMixin:
         selected = self.items_tree.selection()
         if not selected: return
         item = next(i for i in self.inventory_rows if str(i["id"]) == selected[0]); self.item_id = item["id"]
-        for key in self.item_vars: self.item_vars[key].set("" if item.get(key) in (None, 0.0) and key in ("barcode", "notes", "category", "brand") else str(item.get(key) if item.get(key) is not None else ""))
+        for key in self.item_vars: self.item_vars[key].set("" if item.get(key) in (None, 0.0) and key in ("barcode", "notes", "category",
+                "brand") else str(item.get(key) if item.get(key) is not None else ""))
         self.item_vars["default_vat"].set("0%" if str(item.get("default_vat") or "11").strip() in ("0", "0.0", "0%") else vat_rate_text(self))
         self.item_vars["sales_price"].set(f'{item["sales_price"]:g}'); self.item_vars["reorder_level"].set(f'{item["reorder_level"]:g}'); self.item_active.set(bool(item["active"]))
         self.item_vars["stock_account"].set(self.item_stock_choice(item.get("stock_account") or "37"))
@@ -409,9 +420,11 @@ class InventoryMixin:
         self.ir_category_box = MultiSelect(bar2, self.ir_category, width=14, title="Category", bg=LIGHT); self.ir_category_box.pack(side="left", padx=(4, 8))
         self.ir_subcategory = tk.StringVar(value="All"); self.ir_unit = tk.StringVar(value="All"); self.ir_supplier = tk.StringVar(value="All")
         bar3 = tk.Frame(page, bg=LIGHT); bar3.pack(fill="x", padx=8, pady=(4, 0), after=bar2)
-        tk.Label(bar3, text="Subcategory", bg=LIGHT).pack(side="left"); self.ir_subcategory_box = MultiSelect(bar3, self.ir_subcategory, width=14, title="Subcategory", bg=LIGHT); self.ir_subcategory_box.pack(side="left", padx=(4, 8))
+        tk.Label(bar3, text="Subcategory", bg=LIGHT).pack(side="left"); self.ir_subcategory_box = MultiSelect(bar3, self.ir_subcategory, width=14,
+                title="Subcategory", bg=LIGHT); self.ir_subcategory_box.pack(side="left", padx=(4, 8))
         tk.Label(bar3, text="Unit", bg=LIGHT).pack(side="left"); self.ir_unit_box = MultiSelect(bar3, self.ir_unit, width=8, title="Unit", bg=LIGHT); self.ir_unit_box.pack(side="left", padx=(4, 8))
-        tk.Label(bar3, text="Supplier", bg=LIGHT).pack(side="left"); self.ir_supplier_box = MultiSelect(bar3, self.ir_supplier, width=22, title="Supplier", bg=LIGHT); self.ir_supplier_box.pack(side="left", padx=(4, 8))
+        tk.Label(bar3, text="Supplier", bg=LIGHT).pack(side="left"); self.ir_supplier_box = MultiSelect(bar3, self.ir_supplier, width=22, title="Supplier",
+                bg=LIGHT); self.ir_supplier_box.pack(side="left", padx=(4, 8))
         self.ir_brand = tk.StringVar(value="All"); self.ir_project = tk.StringVar(value="All"); self.ir_branch = tk.StringVar(value="All"); self.ir_filter_groups = {}
         for key, label, variable, width in (("brand", "Brand", self.ir_brand, 14), ("project", "Project", self.ir_project, 18), ("branch", "Branch", self.ir_branch, 14)):
             group = tk.Frame(bar3, bg=LIGHT); group.pack(side="left"); self.ir_filter_groups[key] = group
@@ -524,13 +537,16 @@ class InventoryMixin:
     def build_inventory_settings_page(self, page):
         box = tk.LabelFrame(page, text="Inventory settings", bg=LIGHT, padx=8, pady=6); box.pack(fill="x", padx=8, pady=6)
         self.inv_currency = tk.StringVar(value="USD"); self.inv_method = tk.StringVar(value="Weighted average")
-        tk.Label(box, text="Stock valued in", bg=LIGHT).pack(side="left"); ttk.Combobox(box, textvariable=self.inv_currency, values=self.currency_codes, state="readonly", width=6).pack(side="left", padx=(4, 10))
-        tk.Label(box, text="Costing method", bg=LIGHT).pack(side="left"); ttk.Combobox(box, textvariable=self.inv_method, values=["Weighted average", "FIFO"], state="readonly", width=16).pack(side="left", padx=(4, 10))
+        tk.Label(box, text="Stock valued in", bg=LIGHT).pack(side="left"); ttk.Combobox(box, textvariable=self.inv_currency, values=self.currency_codes,
+                state="readonly", width=6).pack(side="left", padx=(4, 10))
+        tk.Label(box, text="Costing method", bg=LIGHT).pack(side="left"); ttk.Combobox(box, textvariable=self.inv_method, values=["Weighted average", "FIFO"],
+                state="readonly", width=16).pack(side="left", padx=(4, 10))
         self.inv_show = {key: tk.BooleanVar(value=True) for key in ("brand", "warehouse", "project", "branch")}
         show_box = tk.LabelFrame(page, text="Show in the inventory screens | يظهر في الشاشات", bg=LIGHT, padx=8, pady=4); show_box.pack(fill="x", padx=8, pady=(0, 6))
         for key, label in (("brand", "Brand"), ("warehouse", "Warehouse"), ("project", "Project"), ("branch", "Branch")):
             tk.Checkbutton(show_box, text=label, variable=self.inv_show[key], bg=LIGHT).pack(side="left", padx=8)
-        tk.Label(show_box, text="Tick only what you use; the others disappear from items, stock documents and report filters. Save Settings to keep the choice.", bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
+        tk.Label(show_box, text="Tick only what you use; the others disappear from items, stock documents and report filters. Save Settings to keep the choice.",
+                bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
         self.inv_ask = {key: tk.BooleanVar(value=False) for key in ("category", "subcategory", "brand")}  # 2.9.101
         ask_box = tk.LabelFrame(page, text="New item on a purchase: ask for | صنف جديد في المشتريات: اطلب", bg=LIGHT, padx=8, pady=4); ask_box.pack(fill="x", padx=8, pady=(0, 6))
         for key, label in (("category", "Category"), ("subcategory", "Subcategory"), ("brand", "Brand")):
@@ -539,7 +555,8 @@ class InventoryMixin:
                  text="When a purchase creates new items, a table opens to choose their category / brand. Save Settings to keep the choice.").pack(side="left", padx=8)
         self.action_button(box, "Save Settings", self.save_inventory_settings).pack(side="left", padx=4)
         year = getattr(self, "current_fiscal_year", datetime.now().year)
-        tk.Button(box, text=f"Post Stock Variation {year}", command=self.post_stock_variation, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(20, 4))
+        tk.Button(box, text=f"Post Stock Variation {year}", command=self.post_stock_variation, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9,
+                "bold")).pack(side="left", padx=(20, 4))
         # 2.9.82: the stock variation of a month, so the P&L shows each month's cost of sales and gross margin
         self.monthly_variation_end = tk.StringVar(value=datetime.now().strftime("%m-%Y") if str(datetime.now().year) == str(year) else f"12-{year}")
         tk.Label(box, text="Month (MM-YYYY)", bg=LIGHT).pack(side="left", padx=(12, 2)); tk.Entry(box, textvariable=self.monthly_variation_end, width=8).pack(side="left")
@@ -557,7 +574,8 @@ class InventoryMixin:
         self.action_button(form, "New", lambda: (setattr(self, "wh_id", None), self.wh_code.set(""), self.wh_name.set(""), self.wh_active.set(True))).pack(side="left", padx=3)
         tk.Button(form, text="Save Warehouse", command=self.save_warehouse, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.warehouses_tree = ttk.Treeview(wh, columns=("code", "name", "active"), show="headings", height=6)
-        for key, label, width in (("code", "Code", 90), ("name", "Warehouse", 300), ("active", "Active", 80)): self.warehouses_tree.heading(key, text=label); self.warehouses_tree.column(key, width=width)
+        for key, label, width in (("code", "Code", 90), ("name", "Warehouse", 300), ("active", "Active", 80)): self.warehouses_tree.heading(key,
+                text=label); self.warehouses_tree.column(key, width=width)
         self.warehouses_tree.pack(fill="both", expand=True, pady=6); self.warehouses_tree.bind("<Double-1>", lambda _e: self.edit_warehouse()); add_search_bar(self.warehouses_tree)  # 2.9.78
 
     def edit_warehouse(self):
@@ -674,7 +692,8 @@ class InventoryMixin:
         self.action_button(form, "Add Category", lambda: self.save_category("category")).grid(row=0, column=2, padx=4)
         self.sub_name = tk.StringVar()
         tk.Label(form, text="New subcategory", bg=LIGHT).grid(row=1, column=0, sticky="w", pady=4); tk.Entry(form, textvariable=self.sub_name, width=22).grid(row=1, column=1, padx=4)
-        tk.Label(form, text="in", bg=LIGHT).grid(row=1, column=2, sticky="w"); self.cat_parent_box = ttk.Combobox(form, textvariable=self.cat_parent, state="readonly", width=18); self.cat_parent_box.grid(row=1, column=3, padx=4)
+        tk.Label(form, text="in", bg=LIGHT).grid(row=1, column=2, sticky="w"); self.cat_parent_box = ttk.Combobox(form, textvariable=self.cat_parent,
+                state="readonly", width=18); self.cat_parent_box.grid(row=1, column=3, padx=4)
         self.action_button(form, "Add Subcategory", lambda: self.save_category("subcategory")).grid(row=1, column=4, padx=4)
         self.cat_tree = ttk.Treeview(left, columns=("level",), height=14); self.cat_tree.heading("#0", text="Name"); self.cat_tree.heading("level", text="Level")
         self.cat_tree.column("#0", width=260); self.cat_tree.pack(fill="both", expand=True, pady=6)
@@ -696,14 +715,16 @@ class InventoryMixin:
         bar = tk.Frame(page, bg=LIGHT); bar.pack(fill="x", padx=8, pady=6)
         ttk.Combobox(bar, textvariable=self.sio_vars["direction"], values=["Stock In (add)", "Stock Out (remove)"], state="readonly", width=18).pack(side="left", padx=(0, 8))
         tk.Label(bar, text="Date", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.sio_vars["date"], 11).pack(side="left", padx=(4, 8))
-        tk.Label(bar, text="Warehouse", bg=LIGHT).pack(side="left"); self.sio_wh_box = ttk.Combobox(bar, textvariable=self.sio_vars["warehouse"], state="readonly", width=18); self.sio_wh_box.pack(side="left", padx=(4, 8))
+        tk.Label(bar, text="Warehouse", bg=LIGHT).pack(side="left"); self.sio_wh_box = ttk.Combobox(bar, textvariable=self.sio_vars["warehouse"],
+                state="readonly", width=18); self.sio_wh_box.pack(side="left", padx=(4, 8))
         tk.Label(bar, text="Reason", bg=LIGHT).pack(side="left"); tk.Entry(bar, textvariable=self.sio_vars["reason"], width=28).pack(side="left", padx=4)
         self.action_button(bar, "Transfer Between Warehouses", self.new_warehouse_transfer).pack(side="right", padx=4)
         bottom = tk.Frame(page, bg=LIGHT); bottom.pack(side="bottom", fill="x", padx=8, pady=6)
         self.action_button(bottom, "Add Line", lambda: self.sio_sheet.insert(self.sio_row())).pack(side="left", padx=(0, 3))
         tk.Button(bottom, text="Delete Line", command=lambda: self.sio_sheet.delete_selected(), bg=RED, fg="white", border=0, padx=10, pady=6).pack(side="left", padx=3)
         tk.Button(bottom, text="Save", command=self.save_stock_in_out, bg=GOLD, fg=NAVY, border=0, padx=18, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(12, 3))
-        tk.Label(bottom, text="Stock In: cost = average cost unless you type another. Stock Out: leaves at the average cost. Quantities and costs update at once.", bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
+        tk.Label(bottom, text="Stock In: cost = average cost unless you type another. Stock Out: leaves at the average cost. Quantities and costs update at once.",
+                bg=LIGHT, fg=MUTED).pack(side="left", padx=8)
         self.sio_sheet = EditableSheet(self, page, [("line", "#", 40, "center"), ("sku", "Item Code", 110, "w"), ("name", "Item", 260, "w"), ("unit", "Unit", 60, "center"),
             ("on_hand", "On Hand", 100, "e"), ("quantity", "Quantity", 100, "e"), ("unit_cost", "Unit Cost (average)", 130, "e"), ("value", "Value", 120, "e")],
             ["sku", "quantity", "unit_cost"], self.sio_changed, height=10)
@@ -734,7 +755,8 @@ class InventoryMixin:
         lines = [r for r in self.sio_sheet.ordered() if r.get("sku") and _num(r.get("quantity"))]
         if not lines: return messagebox.showwarning("Stock In / Out", "Add at least one item with a quantity")
         stock_in = self.sio_vars["direction"].get().startswith("Stock In")
-        header = {"doc_type": "adjustment_in" if stock_in else "adjustment_out", "doc_date": self.sio_vars["date"].get(), "warehouse_id": (self.sio_vars["warehouse"].get() or "MAIN").split(" - ", 1)[0],
+        header = {"doc_type": "adjustment_in" if stock_in else "adjustment_out", "doc_date": self.sio_vars["date"].get(),
+                "warehouse_id": (self.sio_vars["warehouse"].get() or "MAIN").split(" - ", 1)[0],
                   "notes": self.sio_vars["reason"].get().strip() or ("Stock in" if stock_in else "Stock out")}
         try: saved = self.client.save_stock_document(header, [{"sku": r["sku"], "quantity": r["quantity"], "unit_cost": r.get("unit_cost") if stock_in else 0} for r in lines])
         except Exception as exc: return messagebox.showerror("Stock In / Out", str(exc))
@@ -748,7 +770,8 @@ class InventoryMixin:
         def fill(*_a):
             tree.delete(*tree.get_children()); text = search.get().casefold()
             for i in getattr(self, "inventory_rows", []):
-                if i["active"] and (not text or text in f'{i["sku"]} {i["name"]} {i.get("category") or ""} {i.get("barcode") or ""}'.casefold()): tree.insert("", "end", values=(i["sku"], i["name"], i.get("category") or "", f'{i["quantity"]:,.3f}'))
+                if i["active"] and (not text or text in f'{i["sku"]} {i["name"]} {i.get("category") or ""} {i.get("barcode") or ""}'.casefold()): tree.insert("",
+                        "end", values=(i["sku"], i["name"], i.get("category") or "", f'{i["quantity"]:,.3f}'))
         def choose(_e=None):
             if tree.selection(): value = tree.item(tree.selection()[0], "values")[0]; window.destroy(); callback(value)
         search.trace_add("write", fill); tree.bind("<Double-1>", choose); tree.bind("<Return>", choose); fill(); search_arrows(entry, tree, choose, search)  # 2.9.78
@@ -758,16 +781,19 @@ class InventoryMixin:
         self.pc_id = None; self.pc_vars = {k: tk.StringVar() for k in ("date", "warehouse", "find")}; self.pc_vars["date"].set(self.fiscal_today())
         bar = tk.Frame(page, bg=LIGHT); bar.pack(fill="x", padx=8, pady=6)
         tk.Label(bar, text="Count date", bg=LIGHT).pack(side="left"); self.date_entry(bar, self.pc_vars["date"], 11).pack(side="left", padx=(4, 8))
-        tk.Label(bar, text="Warehouse", bg=LIGHT).pack(side="left"); self.pc_wh_box = ttk.Combobox(bar, textvariable=self.pc_vars["warehouse"], state="readonly", width=18); self.pc_wh_box.pack(side="left", padx=(4, 8))
+        tk.Label(bar, text="Warehouse", bg=LIGHT).pack(side="left"); self.pc_wh_box = ttk.Combobox(bar, textvariable=self.pc_vars["warehouse"],
+                state="readonly", width=18); self.pc_wh_box.pack(side="left", padx=(4, 8))
         tk.Button(bar, text="Load Stock on Hand", command=self.load_count_sheet, bg=GOLD, fg=NAVY, border=0, padx=12, pady=5, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(bar, "Add Item", self.add_physical_item).pack(side="left", padx=3)
-        tk.Label(bar, text="Open count", bg=LIGHT).pack(side="left", padx=(12, 2)); self.pc_find_box = ttk.Combobox(bar, textvariable=self.pc_vars["find"], state="readonly", width=34); self.pc_find_box.pack(side="left")
+        tk.Label(bar, text="Open count", bg=LIGHT).pack(side="left", padx=(12, 2)); self.pc_find_box = ttk.Combobox(bar, textvariable=self.pc_vars["find"],
+                state="readonly", width=34); self.pc_find_box.pack(side="left")
         self.pc_find_box.bind("<<ComboboxSelected>>", lambda _e: self.open_count())
         self.pc_find_box.bind("<KeyRelease>", lambda _e: self.filter_inventory_find(self.pc_find_box, self.pc_vars["find"], "pc_map"))
         self.pc_find_box.bind("<Return>", lambda _e: self.open_count())
         bottom = tk.Frame(page, bg=LIGHT); bottom.pack(side="bottom", fill="x", padx=8, pady=6)
         self.action_button(bottom, "Save Count", lambda: self.save_count(False)).pack(side="left", padx=(0, 3))
-        tk.Button(bottom, text="Apply Count to Stock + Journal", command=lambda: self.save_count(True), bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        tk.Button(bottom, text="Apply Count to Stock + Journal", command=lambda: self.save_count(True), bg=GOLD, fg=NAVY, border=0, padx=14, pady=6,
+                font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(bottom, "Print / PDF", lambda: self.count_document("preview")).pack(side="left", padx=3)
         self.action_button(bottom, "Excel Count Sheet", self.export_count_excel).pack(side="left", padx=3)
         self.action_button(bottom, "Upload Counts (Excel)", self.upload_count_excel).pack(side="left", padx=3)
@@ -827,7 +853,8 @@ class InventoryMixin:
         try: saved = self.client.save_physical_count({"count_date": self.pc_vars["date"].get(), "warehouse_id": self.warehouse_id_of(self.pc_vars["warehouse"].get())}, lines, self.pc_id, post)
         except Exception as exc: return messagebox.showerror("Physical Inventory", str(exc))
         self.pc_id = saved["id"]
-        messagebox.showinfo("Physical Inventory", f'{saved["number"]} saved' + (f' and applied: {saved.get("adjustment_numbers") or "no difference"}\n(the JV is in the General Journal)' if post else " (draft)"))
+        messagebox.showinfo("Physical Inventory",
+                f'{saved["number"]} saved' + (f' and applied: {saved.get("adjustment_numbers") or "no difference"}\n(the JV is in the General Journal)' if post else " (draft)"))
         self.load_inventory(); self.load_counts()
         if post:
             for refresh in ("load_journal", "load_trial"):
@@ -854,14 +881,17 @@ class InventoryMixin:
         if count["status"] == "posted": self.pc_info.config(text=f'{count["number"]} is posted ({count.get("adjustment_numbers") or "no difference"}): shown for printing')
 
     def count_rows_for_export(self):
-        return [[r["sku"], r["name"], r.get("location") or "", r["unit"], r["system_qty"], r["counted"] if r.get("counted") not in ("", None) else "", r["difference"] if r.get("difference") is not None else "",
+        return [[r["sku"], r["name"], r.get("location") or "", r["unit"], r["system_qty"], r["counted"] if r.get("counted") not in ("", None) else "",
+                r["difference"] if r.get("difference") is not None else "",
                  round((r["difference"] or 0) * r["unit_cost"], 2) if r.get("difference") else ""] for r in self.pc_sheet.ordered()]
 
     def count_document(self, mode):
         rows = self.count_rows_for_export()
         if not rows: return messagebox.showwarning("Physical Inventory", "Load the stock on hand first")
-        self.output_sections("Physical Inventory Count", [f"Date: {self.pc_vars['date'].get()}   Warehouse: {self.pc_vars['warehouse'].get()}", "Counted by: ______________   Checked by: ______________"],
-            [{"heading": "Count sheet", "headers": ["Item Code", "Item", "Location", "Unit", "Stock on Hand", "Physical Count", "Difference", "Difference Value"], "rows": rows, "total_rows": []}], "Physical_Count", mode)
+        self.output_sections("Physical Inventory Count", [f"Date: {self.pc_vars['date'].get()}   Warehouse: {self.pc_vars['warehouse'].get()}",
+                "Counted by: ______________   Checked by: ______________"],
+            [{"heading": "Count sheet", "headers": ["Item Code", "Item", "Location", "Unit", "Stock on Hand", "Physical Count", "Difference",
+                    "Difference Value"], "rows": rows, "total_rows": []}], "Physical_Count", mode)
 
     def export_count_excel(self):
         from report_export import export_excel

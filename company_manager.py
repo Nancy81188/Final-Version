@@ -231,7 +231,8 @@ class CompanyManager:
         self._copy_master_data(master_db,target,tables=("users",))
         with target.connect() as db:
             for code in main+vat_pair: db.execute("INSERT OR IGNORE INTO currencies(code,name) VALUES(?,?)",(code,code))
-        settings={"base_currency":main[0],"second_currency":main[1],"vat_rate":str(vat_rate),"vat_currency":vat_pair[0],"vat_second_currency":vat_pair[1],"company_name":name,"company_address":item.get("address","").strip(),"company_phone":item.get("phone","").strip(),
+        settings={"base_currency":main[0],"second_currency":main[1],"vat_rate":str(vat_rate),"vat_currency":vat_pair[0],"vat_second_currency":vat_pair[1],
+                "company_name":name,"company_address":item.get("address","").strip(),"company_phone":item.get("phone","").strip(),
             "company_mof":item.get("mof_number","").strip(),"company_email":item.get("email","").strip(),"company_website":item.get("website","").strip()}
         with target.connect() as db:
             for key,value in settings.items(): db.execute("INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,value))
@@ -277,7 +278,8 @@ class CompanyManager:
         source=Database(self._database_path(previous["database"]))
         import fixed_assets
         fixed_assets.check_carry_forward(source,year)
-        path=self.year_file(company,year,data); path.parent.mkdir(parents=True,exist_ok=True); target=Database(path); target.initialize(secrets.token_urlsafe(24)); self._copy_master_data(source,target)
+        path=self.year_file(company,year,data); path.parent.mkdir(parents=True,
+                exist_ok=True); target=Database(path); target.initialize(secrets.token_urlsafe(24)); self._copy_master_data(source,target)
         import inventory
         inventory.carry_forward(source,target,year,user_id)
         fixed_assets.carry_forward(source,target,year)

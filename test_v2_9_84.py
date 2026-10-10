@@ -127,7 +127,8 @@ class AssetBeforeSaberTest(_Book):
             fixed_assets.save_asset(self.db, {"asset_code": "OLD", "name": "Old truck", "acquired_on": "01-01-2022", "start_on": "01-01-2022", "currency": "USD", "cost": "6000",
                                               "useful_months": "60", "asset_account": "2244", "depreciation_account": "681", "accumulated_account": "2824", "opening_date": "31-12-2021"}, user_id=1)
         asset = fixed_assets.save_asset(self.db, {"asset_code": "OLD", "name": "Old truck", "acquired_on": "01-01-2022", "start_on": "01-01-2022", "currency": "USD", "cost": "6000",
-                                                  "useful_months": "60", "asset_account": "2244", "depreciation_account": "681", "accumulated_account": "2824", "opening_date": "31-12-2024"}, user_id=1)
+                                                  "useful_months": "60", "asset_account": "2244", "depreciation_account": "681", "accumulated_account": "2824",
+                                                          "opening_date": "31-12-2024"}, user_id=1)
         row = fixed_assets.monthly_table(self.db, "31-01-2025")["groups"][0]["assets"][0]
         self.assertEqual((row["old"], row["current"], row["net"]), (Decimal("3600.00"), Decimal("100.00"), Decimal("2300.00")))
         result = fixed_assets.post_category_month(self.db, "2244", "31-01-2025", 1)  # no "post the earlier months first"

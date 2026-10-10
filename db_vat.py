@@ -3,7 +3,9 @@
 Part of the Database class (split out of database.py in 2.9.63, code unchanged): Database inherits from VatStore."""
 from __future__ import annotations
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    Decimal, json, utcnow
+)
 from database_common import _soft_iso  # noqa: F401
 
 
@@ -38,7 +40,8 @@ class VatStore:
             db.execute(f"UPDATE {table} SET vat_recoverable=? WHERE id=?",(recoverable,document_id))
             if not recoverable and vat>0:
                 entry=db.execute("""INSERT INTO journal_entries(entry_number,entry_date,description,source_type,source_id,currency,branch_id,created_by,created_at)
-                    VALUES(?,?,?,?,?,?,?,?,?)""",(f"VATND-{source[:3].upper()}-{document_id}",date,f"Non-deductible VAT {number}","vat_reclass",document_id,currency,branch_id,user_id,utcnow())).lastrowid
+                    VALUES(?,?,?,?,?,?,?,?,?)""",(f"VATND-{source[:3].upper()}-{document_id}",date,f"Non-deductible VAT {number}","vat_reclass",document_id,
+                            currency,branch_id,user_id,utcnow())).lastrowid
                 for code,debit,credit in ((cost_account,vat,Decimal("0")),(vat_account,Decimal("0"),vat)):
                     db.execute("INSERT INTO journal_lines(entry_id,account_id,party_id,description,debit,credit) VALUES(?,?,?,?,?,?)",
                         (entry,self._account_id(db,code),party_id,"Non-deductible VAT reclassification",str(debit),str(credit)))

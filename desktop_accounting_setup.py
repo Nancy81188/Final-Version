@@ -33,7 +33,8 @@ class AccountingSetupMixin:
                 check = tk.Checkbutton(box, text=labels[key], variable=variables[key], bg=LIGHT, anchor="w", state="normal" if editable else "disabled")
                 check.grid(row=1 + index % 12, column=index // 12, sticky="w", padx=(0, 12))
         buttons = tk.Frame(page, bg=LIGHT); buttons.pack(fill="x", padx=12, pady=4)
-        if is_admin: tk.Button(buttons, text="Save for the Company", command=self.save_company_view, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
+        if is_admin: tk.Button(buttons, text="Save for the Company", command=self.save_company_view, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6,
+                font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
         self.action_button(buttons, "Save for Me", self.save_my_view).pack(side="left", padx=3)
         accounts = tk.LabelFrame(page, text="Default posting accounts - used when a document does not name an account", bg=LIGHT, padx=8, pady=6)
         accounts.pack(fill="x", padx=8, pady=6)
@@ -45,7 +46,8 @@ class AccountingSetupMixin:
             if not is_admin: box.configure(state="disabled")
             default = f'default {item["default"]}' + (f' - {item["default_name"]}' if item.get("default_name") else "")
             tk.Label(accounts, text=f'{item["used_for"]}  ({default})', bg=LIGHT, fg=MUTED, anchor="w", justify="left", wraplength=420).grid(row=row, column=2, sticky="w")  # 2.9.98: wraps
-        tk.Label(accounts, text=values.get("payroll_note") or "", bg=LIGHT, fg=NAVY, anchor="w", justify="left", wraplength=900).grid(row=len(self.setup_default_vars), column=0, columnspan=3, sticky="w", pady=(6, 0))
+        tk.Label(accounts, text=values.get("payroll_note") or "", bg=LIGHT, fg=NAVY, anchor="w", justify="left",
+                wraplength=900).grid(row=len(self.setup_default_vars), column=0, columnspan=3, sticky="w", pady=(6, 0))
         if is_admin:
             bar = tk.Frame(accounts, bg=LIGHT); bar.grid(row=len(self.setup_default_vars) + 1, column=0, columnspan=3, sticky="w", pady=(6, 0))
             tk.Button(bar, text="Save Default Accounts", command=self.save_default_accounts, bg=GOLD, fg=NAVY, border=0, padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="left", padx=3)
@@ -244,7 +246,8 @@ class AccountingSetupMixin:
         self.audit_tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y")
         self.audit_detail = tk.Label(page, text="Select a line to read its details in full.", bg=LIGHT, fg=NAVY, anchor="w", justify="left", wraplength=1100)
         self.audit_detail.pack(fill="x", padx=10, pady=(0, 8))
-        self.audit_tree.bind("<<TreeviewSelect>>", lambda _e: self.audit_detail.config(text=str(self.audit_tree.item(self.audit_tree.selection()[0], "values")[-1])) if self.audit_tree.selection() else None)
+        self.audit_tree.bind("<<TreeviewSelect>>", lambda _e: self.audit_detail.config(text=str(self.audit_tree.item(self.audit_tree.selection()[0],
+                "values")[-1])) if self.audit_tree.selection() else None)
         self.audit_rows = []
 
     def load_audit_trail(self):

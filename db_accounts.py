@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import re
 
-from database_common import *  # noqa: F401,F403
+from database_common import (  # 2.9.102: the names this module uses (no more 'import *')
+    Decimal, DEFAULT_LEBANESE_ACCOUNTS, display_date, EXPENSE_ACCOUNT_9, EXPENSE_NO_VAT_ACCOUNT_9, iso_date, json,
+    LEBANESE_ACCOUNTS, utcnow, VAT_ACCOUNT_9
+)
 from database_common import _soft_iso  # noqa: F401
 
 # text columns that hold an account code (table, column)
